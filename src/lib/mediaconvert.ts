@@ -96,6 +96,7 @@ function buildSettings(inputUrl: string, outputBase: string): JobSettings {
           HlsGroupSettings: {
             Destination: outputBase,
             SegmentLength: 6,
+            MinSegmentLength: 0,
             SegmentControl: 'SEGMENTED_FILES',
             DirectoryStructure: 'SINGLE_DIRECTORY',
             ManifestDurationFormat: 'INTEGER',
