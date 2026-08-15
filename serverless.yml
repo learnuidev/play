@@ -121,6 +121,15 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  retry-video:
+    handler: src/functions/videos/retry-video.handler
+    events:
+      - http:
+          path: videos/{videoId}/retry
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
