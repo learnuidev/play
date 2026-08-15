@@ -9,7 +9,7 @@ custom:
     bundle: true
     minify: false
     sourcemap: true
-    target: node20
+    target: node22
     platform: node
     # Bundle the AWS SDK v3 (no node_modules packaging needed)
   authorizer:
@@ -19,7 +19,7 @@ custom:
 
 provider:
   name: aws
-  runtime: nodejs20.x
+  runtime: nodejs22.x
   region: ${opt:region, 'us-east-1'}
   stage: ${opt:stage, 'dev'}
   timeout: 30
