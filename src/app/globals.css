@@ -22,7 +22,9 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
 }
 
 a {
@@ -132,8 +134,8 @@ code {
   color: var(--muted);
 }
 
-.form-row input[type='text'],
-.form-row input[type='file'] {
+.form-row input[type="text"],
+.form-row input[type="file"] {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text);
@@ -264,42 +266,6 @@ code {
   max-width: 960px;
   margin: 0 auto;
   padding: 24px 16px;
-}
-
-.player-wrapper {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-
-.player-wrapper video {
-  display: block;
-}
-
-.quality-selector {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 5;
-}
-
-.quality-selector select {
-  appearance: none;
-  background: rgba(0, 0, 0, 0.65);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.quality-selector select:hover {
-  background: rgba(0, 0, 0, 0.85);
 }
 
 .player-info {
