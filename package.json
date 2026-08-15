@@ -1,0 +1,29 @@
+{
+  "name": "play-backend",
+  "version": "1.0.0",
+  "description": "Serverless video streaming backend for Play (AWS + TypeScript + DynamoDB)",
+  "private": true,
+  "scripts": {
+    "deploy": "serverless deploy",
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:prod": "serverless deploy --stage prod",
+    "package": "serverless package",
+    "typecheck": "tsc --noEmit",
+    "remove": "serverless remove"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-mediaconvert": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.600.0",
+    "aws-cloudfront-sign": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.141",
+    "@types/node": "^20.14.15",
+    "serverless": "^3.39.0",
+    "serverless-esbuild": "^1.52.1",
+    "typescript": "^5.5.4"
+  }
+}
