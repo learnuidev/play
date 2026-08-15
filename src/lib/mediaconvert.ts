@@ -34,6 +34,9 @@ const RENDITIONS: Rendition[] = [
   { name: '1080p', width: 1920, height: 1080, maxBitrate: 4_500_000 },
   { name: '720p', width: 1280, height: 720, maxBitrate: 2_800_000 },
   { name: '480p', width: 854, height: 480, maxBitrate: 1_400_000 },
+  { name: '360p', width: 640, height: 360, maxBitrate: 800_000 },
+  { name: '240p', width: 426, height: 240, maxBitrate: 500_000 },
+  { name: '144p', width: 256, height: 144, maxBitrate: 300_000 },
 ];
 
 const audioDescriptions: AudioDescription[] = [
