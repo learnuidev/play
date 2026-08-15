@@ -3,10 +3,12 @@
 import videojs from 'video.js';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import type { StreamResponse, Video } from '@/types';
 import { StatusBadge } from '@/components/status-badge';
+
+const POLL_INTERVAL_MS = 5000;
 
 type XhrOptions = { uri?: string };
 
@@ -24,27 +26,34 @@ export default function VideoPage() {
   const [video, setVideo] = useState<Video | null>(null);
   const [stream, setStream] = useState<StreamResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const videoRes = await api.getVideo(videoId);
+      setVideo(videoRes.video);
+      if (videoRes.video.status === 'READY') {
+        const streamRes = await api.getStream(videoId);
+        setStream(streamRes);
+      } else {
+        setStream(null);
+      }
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load video');
+    }
+  }, [videoId]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const videoRes = await api.getVideo(videoId);
-        if (cancelled) return;
-        setVideo(videoRes.video);
+    load();
+  }, [load]);
 
-        if (videoRes.video.status === 'READY') {
-          const streamRes = await api.getStream(videoId);
-          if (!cancelled) setStream(streamRes);
-        }
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load video');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [videoId]);
+  useEffect(() => {
+    if (!video) return;
+    if (video.status !== 'UPLOADING' && video.status !== 'PROCESSING') return;
+    const timer = setInterval(load, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [video, load]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -87,6 +96,19 @@ export default function VideoPage() {
     };
   }, [stream]);
 
+  async function handleRetry() {
+    setRetrying(true);
+    setError(null);
+    try {
+      await api.retryVideo(videoId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry processing');
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   return (
     <div className="player-page">
       <header className="app-header">
@@ -101,10 +123,19 @@ export default function VideoPage() {
       {video && video.status !== 'READY' ? (
         <div className="empty-state">
           <h2>{video.title}</h2>
-          <p>
-            This video is still being processed (status: <strong>{video.status}</strong>). It will
-            be available to stream once encoding finishes.
-          </p>
+          {video.status === 'FAILED' ? (
+            <>
+              <p>This video failed to process.</p>
+              <button className="btn btn-primary" onClick={handleRetry} disabled={retrying}>
+                {retrying ? 'Retrying…' : 'Retry processing'}
+              </button>
+            </>
+          ) : (
+            <p>
+              This video is still being processed (status: <strong>{video.status}</strong>). It
+              will be available to stream once encoding finishes.
+            </p>
+          )}
         </div>
       ) : (
         <>
