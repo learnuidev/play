@@ -13,6 +13,9 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const video = await getVideo(videoId);
   if (!video) throw new HttpError(404, 'Video not found');
   if (video.ownerId !== ownerId) throw new HttpError(403, 'Forbidden');
+  if (video.status === 'PROCESSING') {
+    throw new HttpError(409, 'Cannot delete a video while it is encoding');
+  }
 
   await deletePrefix(`uploads/${videoId}/`);
   await deletePrefix(`processed/${videoId}/`);
