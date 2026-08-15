@@ -1,5 +1,5 @@
 service: play-backend
-frameworkVersion: '^3'
+frameworkVersion: "^3"
 
 plugins:
   - serverless-esbuild
@@ -33,6 +33,7 @@ provider:
     CLOUDFRONT_PRIVATE_KEY: ${ssm:/play/cloudfront/private-key}
     MEDIACONVERT_ROLE_ARN: !GetAtt MediaConvertRole.Arn
     STREAM_URL_TTL_SECONDS: 900
+    AWS_SDK_JS_NODE_VERSION_SUPPORT_WARNING_DISABLED: "true"
 
   iam:
     role:
@@ -46,7 +47,7 @@ provider:
             - dynamodb:Query
           Resource:
             - !GetAtt VideosTable.Arn
-            - !Sub '${VideosTable.Arn}/index/*'
+            - !Sub "${VideosTable.Arn}/index/*"
         - Effect: Allow
           Action:
             - s3:GetObject
@@ -55,13 +56,13 @@ provider:
             - s3:ListBucket
           Resource:
             - !GetAtt VideosBucket.Arn
-            - !Sub '${VideosBucket.Arn}/*'
+            - !Sub "${VideosBucket.Arn}/*"
         - Effect: Allow
           Action:
             - mediaconvert:CreateJob
             - mediaconvert:GetJob
             - mediaconvert:DescribeEndpoints
-          Resource: '*'
+          Resource: "*"
         - Effect: Allow
           Action: iam:PassRole
           Resource: !GetAtt MediaConvertRole.Arn
@@ -210,13 +211,13 @@ resources:
           Status: Suspended
         CorsConfiguration:
           CorsRules:
-            - AllowedHeaders: ['*']
+            - AllowedHeaders: ["*"]
               AllowedMethods:
                 - GET
                 - PUT
                 - HEAD
               AllowedOrigins:
-                - '*'
+                - "*"
               ExposedHeaders:
                 - ETag
 
@@ -225,21 +226,25 @@ resources:
       Properties:
         Bucket: !Ref VideosBucket
         PolicyDocument:
-          Version: '2012-10-17'
+          Version: "2012-10-17"
           Statement:
             - Effect: Allow
               Principal:
                 Service: cloudfront.amazonaws.com
               Action: s3:GetObject
-              Resource: !Sub '${VideosBucket.Arn}/*'
+              Resource: !Sub "${VideosBucket.Arn}/*"
               Condition:
                 StringEquals:
-                  AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${VideoDistribution}'
+                  AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${VideoDistribution}"
 
     CloudFrontLogsBucket:
       Type: AWS::S3::Bucket
       DeletionPolicy: Retain
       Properties:
+        AccessControl: LogDeliveryWrite
+        OwnershipControls:
+          Rules:
+            - ObjectOwnership: BucketOwnerPreferred
         PublicAccessBlockConfiguration:
           BlockPublicAcls: true
           IgnorePublicAcls: true
@@ -249,24 +254,6 @@ resources:
           ServerSideEncryptionConfiguration:
             - ServerSideEncryptionByDefault:
                 SSEAlgorithm: AES256
-
-    CloudFrontLogsBucketPolicy:
-      Type: AWS::S3::BucketPolicy
-      Properties:
-        Bucket: !Ref CloudFrontLogsBucket
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Principal:
-                Service: logging.s3.amazonaws.com
-              Action: s3:PutObject
-              Resource: !Sub '${CloudFrontLogsBucket.Arn}/*'
-              Condition:
-                StringEquals:
-                  aws:SourceAccount: !Ref AWS::AccountId
-                ArnLike:
-                  aws:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${VideoDistribution}'
 
     VideoOriginAccessControl:
       Type: AWS::CloudFront::OriginAccessControl
@@ -302,7 +289,7 @@ resources:
           Logging:
             Bucket: !GetAtt CloudFrontLogsBucket.DomainName
             IncludeCookies: false
-            Prefix: 'cloudfront/'
+            Prefix: "cloudfront/"
           PriceClass: PriceClass_100
           DefaultCacheBehavior:
             TargetOriginId: s3-videos
@@ -331,7 +318,7 @@ resources:
       Type: AWS::IAM::Role
       Properties:
         AssumeRolePolicyDocument:
-          Version: '2012-10-17'
+          Version: "2012-10-17"
           Statement:
             - Effect: Allow
               Principal:
@@ -340,7 +327,7 @@ resources:
         Policies:
           - PolicyName: MediaConvertS3Access
             PolicyDocument:
-              Version: '2012-10-17'
+              Version: "2012-10-17"
               Statement:
                 - Effect: Allow
                   Action:
@@ -348,7 +335,7 @@ resources:
                     - s3:ListBucket
                   Resource:
                     - !GetAtt VideosBucket.Arn
-                    - !Sub '${VideosBucket.Arn}/uploads/*'
+                    - !Sub "${VideosBucket.Arn}/uploads/*"
                 - Effect: Allow
                   Action:
                     - s3:GetObject
@@ -357,7 +344,7 @@ resources:
                     - s3:ListBucket
                   Resource:
                     - !GetAtt VideosBucket.Arn
-                    - !Sub '${VideosBucket.Arn}/processed/*'
+                    - !Sub "${VideosBucket.Arn}/processed/*"
 
     CognitoUserPool:
       Type: AWS::Cognito::UserPool
@@ -369,7 +356,7 @@ resources:
           - email
         UsernameAttributes:
           - email
-        MfaConfiguration: 'OFF'
+        MfaConfiguration: "OFF"
         Policies:
           PasswordPolicy:
             MinimumLength: 8
@@ -398,7 +385,7 @@ resources:
   Outputs:
     ApiUrl:
       Description: REST API base URL
-      Value: !Sub 'https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${sls:stage}'
+      Value: !Sub "https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${sls:stage}"
     CognitoUserPoolId:
       Description: Cognito user pool id
       Value: !Ref CognitoUserPool
