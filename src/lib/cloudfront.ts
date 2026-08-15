@@ -1,21 +1,24 @@
-import { createSign } from 'node:crypto';
-import type { StreamInfo } from '../types';
-import { env } from './config';
+import { createSign } from "node:crypto";
+import type { StreamInfo } from "../types";
+import { env } from "./config";
+
+// wip
 
 /** CloudFront uses URL-safe base64 (no padding) for Policy/Signature values. */
-function toUrlSafeBase64(input: string): string {
-  return Buffer.from(input)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '~')
-    .replace(/=/g, '_');
+function toUrlSafeBase64(input: string | Buffer): string {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
+  return buf
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "~")
+    .replace(/=/g, "_");
 }
 
 /** RSA-SHA1 signature over the policy JSON, as CloudFront expects. */
-function signPolicy(policyJson: string, privateKeyPem: string): string {
-  const signer = createSign('RSA-SHA1');
+function signPolicy(policyJson: string, privateKeyPem: string): Buffer {
+  const signer = createSign("RSA-SHA1");
   signer.update(policyJson);
-  return signer.sign(privateKeyPem, 'base64');
+  return signer.sign(privateKeyPem);
 }
 
 /**
@@ -29,7 +32,7 @@ function signPolicy(policyJson: string, privateKeyPem: string): string {
  * appends this query string to each segment request.
  */
 export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
-  const pathPrefix = manifestKey.split('/').slice(0, 3).join('/'); // processed/{videoId}/hls
+  const pathPrefix = manifestKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/hls
   const baseUrl = `https://${env.cloudfrontDomain}/${manifestKey}`;
   const expiresAt = Math.floor(Date.now() / 1000) + env.streamTtlSeconds;
   const resource = `https://${env.cloudfrontDomain}/${pathPrefix}/*`;
@@ -39,14 +42,16 @@ export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
       {
         Resource: resource,
         Condition: {
-          DateLessThan: { 'AWS:EpochTime': expiresAt },
+          DateLessThan: { "AWS:EpochTime": expiresAt },
         },
       },
     ],
   });
 
   const policy = toUrlSafeBase64(policyJson);
-  const signature = toUrlSafeBase64(signPolicy(policyJson, env.cloudfrontPrivateKey));
+  const signature = toUrlSafeBase64(
+    signPolicy(policyJson, env.cloudfrontPrivateKey),
+  );
   const signedQuery = `Policy=${policy}&Signature=${signature}&Key-Pair-Id=${env.cloudfrontKeyPairId}`;
 
   return {
