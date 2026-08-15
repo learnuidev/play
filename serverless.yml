@@ -1,0 +1,368 @@
+service: play-backend
+frameworkVersion: '^3'
+
+plugins:
+  - serverless-esbuild
+
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: true
+    target: node20
+    platform: node
+    # Bundle the AWS SDK v3 (no node_modules packaging needed)
+  authorizer:
+    name: cognito-authorizer
+    type: COGNITO_USER_POOLS
+    arn: !GetAtt CognitoUserPool.Arn
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  timeout: 30
+  memorySize: 512
+
+  environment:
+    VIDEOS_TABLE: !Ref VideosTable
+    VIDEOS_BUCKET: !Ref VideosBucket
+    CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
+    CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
+    CLOUDFRONT_PRIVATE_KEY: ${env:CLOUDFRONT_PRIVATE_KEY, ''}
+    MEDIACONVERT_ROLE_ARN: !GetAtt MediaConvertRole.Arn
+    STREAM_URL_TTL_SECONDS: 900
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+          Resource:
+            - !GetAtt VideosTable.Arn
+            - !Sub '${VideosTable.Arn}/index/*'
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+            - s3:ListBucket
+          Resource:
+            - !GetAtt VideosBucket.Arn
+            - !Sub '${VideosBucket.Arn}/*'
+        - Effect: Allow
+          Action:
+            - mediaconvert:CreateJob
+            - mediaconvert:GetJob
+            - mediaconvert:DescribeEndpoints
+          Resource: '*'
+        - Effect: Allow
+          Action: iam:PassRole
+          Resource: !GetAtt MediaConvertRole.Arn
+
+functions:
+  create-video:
+    handler: src/functions/videos/create-video.handler
+    events:
+      - http:
+          path: videos
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-videos:
+    handler: src/functions/videos/list-videos.handler
+    events:
+      - http:
+          path: videos
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-video:
+    handler: src/functions/videos/get-video.handler
+    events:
+      - http:
+          path: videos/{videoId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-video:
+    handler: src/functions/videos/update-video.handler
+    events:
+      - http:
+          path: videos/{videoId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  delete-video:
+    handler: src/functions/videos/delete-video.handler
+    events:
+      - http:
+          path: videos/{videoId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  stream-video:
+    handler: src/functions/videos/stream-video.handler
+    events:
+      - http:
+          path: videos/{videoId}/stream
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  process-video:
+    handler: src/functions/processing/process-video.handler
+    timeout: 60
+    events:
+      - s3:
+          bucket: !Ref VideosBucket
+          event: s3:ObjectCreated:*
+          existing: true
+          rules:
+            - prefix: uploads/
+
+  video-processing-complete:
+    handler: src/functions/processing/video-processing-complete.handler
+    timeout: 60
+    events:
+      - cloudwatchEvent:
+          event:
+            source:
+              - aws.mediaconvert
+            detail-type:
+              - MediaConvert Job State Change
+            detail:
+              status:
+                - COMPLETE
+                - ERROR
+                - CANCELED
+
+resources:
+  Resources:
+    VideosTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: videoId
+            AttributeType: S
+          - AttributeName: ownerId
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: videoId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: OwnerStatusIndex
+            KeySchema:
+              - AttributeName: ownerId
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: OwnerCreatedIndex
+            KeySchema:
+              - AttributeName: ownerId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    VideosBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      Properties:
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          IgnorePublicAcls: true
+          BlockPublicPolicy: true
+          RestrictPublicBuckets: true
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        VersioningConfiguration:
+          Status: Suspended
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders: ['*']
+              AllowedMethods:
+                - GET
+                - PUT
+                - HEAD
+              AllowedOrigins:
+                - '*'
+              ExposedHeaders:
+                - ETag
+
+    VideosBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref VideosBucket
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action: s3:GetObject
+              Resource: !Sub '${VideosBucket.Arn}/*'
+              Condition:
+                StringEquals:
+                  AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${VideoDistribution}'
+
+    VideoOriginAccessControl:
+      Type: AWS::CloudFront::OriginAccessControl
+      Properties:
+        OriginAccessControlConfig:
+          Name: play-videos-oac-${sls:stage}
+          OriginAccessControlOriginType: s3
+          SigningBehavior: always
+          SigningProtocol: sigv4
+
+    VideoPublicKey:
+      Type: AWS::CloudFront::PublicKey
+      Properties:
+        PublicKeyConfig:
+          Name: play-videos-public-key-${sls:stage}
+          CallerReference: play-videos-public-key-${sls:stage}
+          EncodedKey: ${env:CLOUDFRONT_PUBLIC_KEY, ''}
+
+    VideoKeyGroup:
+      Type: AWS::CloudFront::KeyGroup
+      Properties:
+        KeyGroupConfig:
+          Name: play-videos-key-group-${sls:stage}
+          Items:
+            - !Ref VideoPublicKey
+
+    VideoDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Comment: Play video streaming distribution
+          Enabled: true
+          PriceClass: PriceClass_100
+          DefaultCacheBehavior:
+            TargetOriginId: s3-videos
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            Compress: true
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            TrustedKeyGroups:
+              - !Ref VideoKeyGroup
+          CacheBehaviors:
+            - PathPattern: /processed/*
+              TargetOriginId: s3-videos
+              ViewerProtocolPolicy: redirect-to-https
+              AllowedMethods: [GET, HEAD, OPTIONS]
+              Compress: true
+              CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+              TrustedKeyGroups:
+                - !Ref VideoKeyGroup
+          Origins:
+            - Id: s3-videos
+              DomainName: !GetAtt VideosBucket.RegionalDomainName
+              OriginAccessControlId: !Ref VideoOriginAccessControl
+              S3OriginConfig: {}
+
+    MediaConvertRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: mediaconvert.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: MediaConvertS3Access
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:ListBucket
+                  Resource:
+                    - !GetAtt VideosBucket.Arn
+                    - !Sub '${VideosBucket.Arn}/uploads/*'
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                    - s3:DeleteObject
+                    - s3:ListBucket
+                  Resource:
+                    - !GetAtt VideosBucket.Arn
+                    - !Sub '${VideosBucket.Arn}/processed/*'
+
+    CognitoUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: play-users-${sls:stage}
+        AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: false
+        AutoVerifiedAttributes:
+          - email
+        UsernameAttributes:
+          - email
+        MfaConfiguration: 'OFF'
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireLowercase: true
+            RequireUppercase: true
+            RequireNumbers: true
+            RequireSymbols: false
+        Schema:
+          - Name: email
+            AttributeDataType: String
+            Required: true
+            Mutable: true
+
+    CognitoUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        UserPoolId: !Ref CognitoUserPool
+        ClientName: play-app-${sls:stage}
+        GenerateSecret: false
+        PreventUserExistenceErrors: ENABLED
+        ExplicitAuthFlows:
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+          - ALLOW_USER_PASSWORD_AUTH
+
+  Outputs:
+    ApiUrl:
+      Description: REST API base URL
+      Value: !Sub 'https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${sls:stage}'
+    CognitoUserPoolId:
+      Description: Cognito user pool id
+      Value: !Ref CognitoUserPool
+    CognitoUserPoolClientId:
+      Description: Cognito app client id
+      Value: !Ref CognitoUserPoolClient
+    CloudFrontDomain:
+      Description: CloudFront distribution domain
+      Value: !GetAtt VideoDistribution.DomainName
+    VideosBucketName:
+      Description: S3 bucket name
+      Value: !Ref VideosBucket
