@@ -102,7 +102,12 @@ export function VideoList({ status }: { status: VideoStatus | 'ALL' }) {
                 {retrying === video.videoId ? 'Retrying…' : 'Retry'}
               </button>
             )}
-            <button className="btn btn-danger" onClick={() => handleDelete(video.videoId)}>
+            <button
+              className="btn btn-danger"
+              onClick={() => handleDelete(video.videoId)}
+              disabled={video.status === 'PROCESSING'}
+              title={video.status === 'PROCESSING' ? 'Cannot delete while encoding' : undefined}
+            >
               Delete
             </button>
           </div>
