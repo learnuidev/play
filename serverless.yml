@@ -30,7 +30,7 @@ provider:
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
-    CLOUDFRONT_PRIVATE_KEY: ${env:CLOUDFRONT_PRIVATE_KEY, ''}
+    CLOUDFRONT_PRIVATE_KEY: ${ssm:/play/cloudfront/private-key}
     MEDIACONVERT_ROLE_ARN: !GetAtt MediaConvertRole.Arn
     STREAM_URL_TTL_SECONDS: 900
 
@@ -250,8 +250,8 @@ resources:
       Properties:
         PublicKeyConfig:
           Name: play-videos-public-key-${sls:stage}
-          CallerReference: play-videos-public-key-${sls:stage}
-          EncodedKey: ${env:CLOUDFRONT_PUBLIC_KEY, ''}
+          CallerReference: play-videos-public-key-${sls:stage}-${ssm:/play/cloudfront/key-ref}
+          EncodedKey: ${ssm:/play/cloudfront/public-key}
 
     VideoKeyGroup:
       Type: AWS::CloudFront::KeyGroup
