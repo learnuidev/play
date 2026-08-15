@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "get-env": "node scripts/get-env.js"
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.5.2",
