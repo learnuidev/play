@@ -280,6 +280,28 @@ code {
   display: block;
 }
 
+.quality-selector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+}
+
+.quality-selector select {
+  appearance: none;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.quality-selector select:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+
 .player-info {
   margin-top: 16px;
   color: var(--muted);
