@@ -3,6 +3,11 @@ import {
   DescribeEndpointsCommand,
   MediaConvertClient,
 } from '@aws-sdk/client-mediaconvert';
+import type {
+  AudioDescription,
+  JobSettings,
+  VideoDescription,
+} from '@aws-sdk/client-mediaconvert';
 import { env } from './config';
 
 let client: MediaConvertClient | undefined;
@@ -31,7 +36,7 @@ const RENDITIONS: Rendition[] = [
   { name: '480p', width: 854, height: 480, maxBitrate: 1_400_000 },
 ];
 
-const audioDescriptions = [
+const audioDescriptions: AudioDescription[] = [
   {
     AudioSourceName: 'Audio Selector 1',
     CodecSettings: {
@@ -45,7 +50,7 @@ const audioDescriptions = [
   },
 ];
 
-function videoDescription(rendition: Rendition) {
+function videoDescription(rendition: Rendition): VideoDescription {
   return {
     Width: rendition.width,
     Height: rendition.height,
@@ -65,14 +70,14 @@ function videoDescription(rendition: Rendition) {
         EntropyEncoding: 'CABAC',
         Syntax: 'DEFAULT',
         InterlaceMode: 'PROGRESSIVE',
-        QualityTuning: 'SINGLE_PASS_HQ',
+        QualityTuningLevel: 'SINGLE_PASS_HQ',
         FlickerAdaptiveQuantization: 'ENABLED',
       },
     },
   };
 }
 
-function buildSettings(inputUrl: string, outputBase: string) {
+function buildSettings(inputUrl: string, outputBase: string): JobSettings {
   return {
     TimecodeConfig: { Source: 'ZEROBASED' },
     Inputs: [
@@ -98,7 +103,6 @@ function buildSettings(inputUrl: string, outputBase: string) {
             StreamInfResolution: 'INCLUDE',
             TimedMetadataId3Frame: 'PRIV',
             TimedMetadataId3Period: 10,
-            DestinationType: 'S3',
           },
         },
         Outputs: RENDITIONS.map((rendition) => ({

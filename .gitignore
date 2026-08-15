@@ -8,6 +8,10 @@ node_modules
 .env.*
 !.env.example
 
+
+# pem
+*.pem
+
 # logs
 *.log
 npm-debug.log*
