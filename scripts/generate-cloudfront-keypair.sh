@@ -5,7 +5,6 @@
 #
 #   /play/cloudfront/private-key  (SecureString)  base64 of PKCS#8 private key
 #   /play/cloudfront/public-key   (String)        PEM (BEGIN/END PUBLIC KEY) as CloudFront expects
-#   /play/cloudfront/key-ref      (String)        short fingerprint for CallerReference
 #
 # The backend (serverless.yml) reads these parameters via ${ssm:...}, so no
 # keys need to live in .env or local environment variables.
@@ -38,9 +37,9 @@ openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
   -in cloudfront_private.pem -out cloudfront_private_pkcs8.pem
 openssl rsa -in cloudfront_private.pem -pubout -out cloudfront_public.pem
 
-PUB_PEM="$(cat cloudfront_public.pem)"
+PUB_PEM="$(cat cloudfront_public.pem; printf 'SENTINEL')"
+PUB_PEM="${PUB_PEM%SENTINEL}"
 PRIV_B64="$(base64 < cloudfront_private_pkcs8.pem | tr -d '\n')"
-KEY_REF="$(openssl rsa -pubin -in cloudfront_public.pem -outform DER | shasum -a 256 | cut -d' ' -f1 | cut -c1-16)"
 
 echo
 echo "Writing keys to SSM (profile: $PROFILE, region: $REGION)..."
@@ -60,19 +59,10 @@ aws ssm put-parameter \
   --profile "$PROFILE" \
   --region "$REGION" >/dev/null
 
-aws ssm put-parameter \
-  --name /play/cloudfront/key-ref \
-  --type String \
-  --value "$KEY_REF" \
-  --overwrite \
-  --profile "$PROFILE" \
-  --region "$REGION" >/dev/null
-
 echo
 echo "SSM parameters written:"
 echo "  /play/cloudfront/private-key (SecureString)"
 echo "  /play/cloudfront/public-key  (String)"
-echo "  /play/cloudfront/key-ref     (String) = $KEY_REF"
 echo
 echo "Now run: serverless deploy --aws-profile $PROFILE --region $REGION"
 echo

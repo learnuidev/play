@@ -250,7 +250,7 @@ resources:
       Properties:
         PublicKeyConfig:
           Name: play-videos-public-key-${sls:stage}
-          CallerReference: play-videos-public-key-${sls:stage}-${ssm:/play/cloudfront/key-ref}
+          CallerReference: play-videos-public-key-${sls:stage}
           EncodedKey: ${ssm:/play/cloudfront/public-key}
 
     VideoKeyGroup:
