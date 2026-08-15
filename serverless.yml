@@ -236,6 +236,38 @@ resources:
                 StringEquals:
                   AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${VideoDistribution}'
 
+    CloudFrontLogsBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      Properties:
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          IgnorePublicAcls: true
+          BlockPublicPolicy: true
+          RestrictPublicBuckets: true
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+
+    CloudFrontLogsBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref CloudFrontLogsBucket
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: logging.s3.amazonaws.com
+              Action: s3:PutObject
+              Resource: !Sub '${CloudFrontLogsBucket.Arn}/*'
+              Condition:
+                StringEquals:
+                  aws:SourceAccount: !Ref AWS::AccountId
+                ArnLike:
+                  aws:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${VideoDistribution}'
+
     VideoOriginAccessControl:
       Type: AWS::CloudFront::OriginAccessControl
       Properties:
@@ -267,6 +299,10 @@ resources:
         DistributionConfig:
           Comment: Play video streaming distribution
           Enabled: true
+          Logging:
+            Bucket: !GetAtt CloudFrontLogsBucket.DomainName
+            IncludeCookies: false
+            Prefix: 'cloudfront/'
           PriceClass: PriceClass_100
           DefaultCacheBehavior:
             TargetOriginId: s3-videos
