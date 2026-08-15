@@ -106,6 +106,7 @@ function buildSettings(inputUrl: string, outputBase: string): JobSettings {
         },
         Outputs: RENDITIONS.map((rendition) => ({
           NameModifier: rendition.name,
+          ContainerSettings: { Container: 'M3U8' },
           VideoDescription: videoDescription(rendition),
           AudioDescriptions: audioDescriptions,
         })),
