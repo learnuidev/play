@@ -71,7 +71,6 @@ function videoDescription(rendition: Rendition): VideoDescription {
         Syntax: 'DEFAULT',
         InterlaceMode: 'PROGRESSIVE',
         QualityTuningLevel: 'SINGLE_PASS_HQ',
-        FlickerAdaptiveQuantization: 'ENABLED',
       },
     },
   };
