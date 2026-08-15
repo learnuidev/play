@@ -1,28 +1,19 @@
 'use client';
 
-import videojs from 'video.js';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import ReactPlayer from 'react-player';
 import { api } from '@/lib/api';
 import type { StreamResponse, Video } from '@/types';
 import { StatusBadge } from '@/components/status-badge';
 
 const POLL_INTERVAL_MS = 5000;
 
-type XhrOptions = { uri?: string };
-
-interface VhsXhr {
-  onRequest(cb: (options: XhrOptions) => XhrOptions): void;
-  offRequest(cb: (options: XhrOptions) => XhrOptions): void;
-}
-
 export default function VideoPage() {
   const params = useParams<{ id: string }>();
   const videoId = params.id;
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const playerRef = useRef<ReturnType<typeof videojs> | null>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const [stream, setStream] = useState<StreamResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,47 +45,6 @@ export default function VideoPage() {
     const timer = setInterval(load, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [video, load]);
-
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el || !stream) return;
-
-    const vhsXhr = (videojs as unknown as { Vhs: { xhr: VhsXhr } }).Vhs.xhr;
-
-    const appendSignature = (options: XhrOptions): XhrOptions => {
-      if (options.uri && !options.uri.includes('Policy=')) {
-        const separator = options.uri.includes('?') ? '&' : '?';
-        options.uri = `${options.uri}${separator}${stream.signedQuery}`;
-      }
-      return options;
-    };
-
-    vhsXhr.onRequest(appendSignature);
-
-    const player = videojs(el, {
-      controls: true,
-      responsive: true,
-      fluid: true,
-      preload: 'auto',
-      playsinline: true,
-      sources: [{ src: stream.manifestUrl, type: 'application/x-mpegurl' }],
-    });
-
-    playerRef.current = player;
-
-    player.on('error', () => {
-      const err = player.error();
-      if (err) setError(err.message || 'Failed to play stream');
-    });
-
-    return () => {
-      vhsXhr.offRequest(appendSignature);
-      if (playerRef.current) {
-        playerRef.current.dispose();
-        playerRef.current = null;
-      }
-    };
-  }, [stream]);
 
   async function handleRetry() {
     setRetrying(true);
@@ -139,9 +89,29 @@ export default function VideoPage() {
         </div>
       ) : (
         <>
-          <div data-vjs-player>
-            <video ref={videoRef} className="video-js vjs-big-play-centered" playsInline />
-          </div>
+          {stream && (
+            <div className="player-wrapper">
+              <ReactPlayer
+                src={stream.manifestUrl}
+                controls
+                playing
+                playsInline
+                width="100%"
+                height="100%"
+                config={{
+                  hls: {
+                    xhrSetup: (xhr, url) => {
+                      if (!url.includes('Policy=')) {
+                        const separator = url.includes('?') ? '&' : '?';
+                        xhr.open('GET', `${url}${separator}${stream.signedQuery}`, true);
+                      }
+                    },
+                  },
+                }}
+                onError={() => setError('Failed to play stream')}
+              />
+            </div>
+          )}
           <div className="player-info">
             {video && (
               <>
