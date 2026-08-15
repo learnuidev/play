@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import 'video.js/dist/video-js.css';
 import './globals.css';
 import { Providers } from './providers';
 

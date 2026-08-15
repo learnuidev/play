@@ -173,6 +173,23 @@ code {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  transition: border-color 0.15s;
+}
+
+.video-card:hover {
+  border-color: var(--accent);
+}
+
+.video-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text);
+  flex: 1;
+}
+
+.video-card-link:hover h3 {
+  color: var(--accent);
 }
 
 .video-card h3 {
@@ -244,12 +261,12 @@ code {
   padding: 24px 16px;
 }
 
-.player-page video {
+.player-page .video-js {
   width: 100%;
-  aspect-ratio: 16 / 9;
   background: #000;
   border-radius: 12px;
   border: 1px solid var(--border);
+  overflow: hidden;
 }
 
 .player-info {

@@ -71,7 +71,16 @@ export function VideoUploader({ onUploaded }: VideoUploaderProps) {
     <div className="upload-form">
       <div className="form-row">
         <label htmlFor="video-file">Video file</label>
-        <input id="video-file" ref={fileRef} type="file" accept="video/*" />
+        <input
+          id="video-file"
+          ref={fileRef}
+          type="file"
+          accept="video/*"
+          onChange={(e) => {
+            const name = e.target.files?.[0]?.name;
+            if (name) setTitle(name.replace(/\.[^.]+$/, ''));
+          }}
+        />
       </div>
       <div className="form-row">
         <label htmlFor="video-title">Title</label>

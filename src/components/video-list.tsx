@@ -23,6 +23,7 @@ export function VideoList({ status }: { status: VideoStatus | 'ALL' }) {
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
 
   const filter = status === 'ALL' ? undefined : status;
 
@@ -60,6 +61,19 @@ export function VideoList({ status }: { status: VideoStatus | 'ALL' }) {
     }
   }
 
+  async function handleRetry(videoId: string) {
+    setRetrying(videoId);
+    setError(null);
+    try {
+      await api.retryVideo(videoId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry processing');
+    } finally {
+      setRetrying(null);
+    }
+  }
+
   if (loading) return <div className="empty-state">Loading…</div>;
   if (error) return <div className="empty-state error-text">{error}</div>;
   if (videos.length === 0) return <div className="empty-state">No videos yet. Upload one above.</div>;
@@ -68,19 +82,25 @@ export function VideoList({ status }: { status: VideoStatus | 'ALL' }) {
     <div className="video-grid">
       {videos.map((video) => (
         <div className="video-card" key={video.videoId}>
-          <StatusBadge status={video.status} />
-          <h3>{video.title}</h3>
-          <div className="desc">{video.description || '—'}</div>
-          <div className="meta">
-            {video.fileName}
-            <br />
-            {formatBytes(video.size)} · {formatDate(video.createdAt)}
-          </div>
+          <Link className="video-card-link" href={`/videos/${video.videoId}`}>
+            <StatusBadge status={video.status} />
+            <h3>{video.title}</h3>
+            <div className="desc">{video.description || '—'}</div>
+            <div className="meta">
+              {video.fileName}
+              <br />
+              {formatBytes(video.size)} · {formatDate(video.createdAt)}
+            </div>
+          </Link>
           <div className="actions">
-            {video.status === 'READY' && (
-              <Link className="btn btn-primary" href={`/videos/${video.videoId}`}>
-                Stream
-              </Link>
+            {video.status === 'FAILED' && (
+              <button
+                className="btn btn-primary"
+                disabled={retrying === video.videoId}
+                onClick={() => handleRetry(video.videoId)}
+              >
+                {retrying === video.videoId ? 'Retrying…' : 'Retry'}
+              </button>
             )}
             <button className="btn btn-danger" onClick={() => handleDelete(video.videoId)}>
               Delete

@@ -60,5 +60,7 @@ export const api = {
 
   deleteVideo: (videoId: string) => request<void>(`/videos/${videoId}`, { method: 'DELETE' }),
 
+  retryVideo: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}/retry`, { method: 'POST' }),
+
   getStream: (videoId: string) => request<StreamResponse>(`/videos/${videoId}/stream`),
 };

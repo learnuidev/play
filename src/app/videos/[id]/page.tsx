@@ -1,6 +1,6 @@
 'use client';
 
-import Hls from 'hls.js';
+import videojs from 'video.js';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -8,11 +8,19 @@ import { api } from '@/lib/api';
 import type { StreamResponse, Video } from '@/types';
 import { StatusBadge } from '@/components/status-badge';
 
+type XhrOptions = { uri?: string };
+
+interface VhsXhr {
+  onRequest(cb: (options: XhrOptions) => XhrOptions): void;
+  offRequest(cb: (options: XhrOptions) => XhrOptions): void;
+}
+
 export default function VideoPage() {
   const params = useParams<{ id: string }>();
   const videoId = params.id;
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<ReturnType<typeof videojs> | null>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const [stream, setStream] = useState<StreamResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,32 +50,40 @@ export default function VideoPage() {
     const el = videoRef.current;
     if (!el || !stream) return;
 
-    let hls: Hls | undefined;
+    const vhsXhr = (videojs as unknown as { Vhs: { xhr: VhsXhr } }).Vhs.xhr;
 
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        xhrSetup: (xhr, url) => {
-          if (stream.signedQuery && !url.includes('Policy=')) {
-            const separator = url.includes('?') ? '&' : '?';
-            xhr.open('GET', `${url}${separator}${stream.signedQuery}`, true);
-          }
-        },
-      });
-      hls.loadSource(stream.manifestUrl);
-      hls.attachMedia(el);
-      hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (data.fatal) {
-          setError('Failed to play stream');
-        }
-      });
-    } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
-      el.src = stream.manifestUrl;
-    } else {
-      setError('This browser does not support HLS playback');
-    }
+    const appendSignature = (options: XhrOptions): XhrOptions => {
+      if (options.uri && !options.uri.includes('Policy=')) {
+        const separator = options.uri.includes('?') ? '&' : '?';
+        options.uri = `${options.uri}${separator}${stream.signedQuery}`;
+      }
+      return options;
+    };
+
+    vhsXhr.onRequest(appendSignature);
+
+    const player = videojs(el, {
+      controls: true,
+      responsive: true,
+      fluid: true,
+      preload: 'auto',
+      playsinline: true,
+      sources: [{ src: stream.manifestUrl, type: 'application/x-mpegurl' }],
+    });
+
+    playerRef.current = player;
+
+    player.on('error', () => {
+      const err = player.error();
+      if (err) setError(err.message || 'Failed to play stream');
+    });
 
     return () => {
-      hls?.destroy();
+      vhsXhr.offRequest(appendSignature);
+      if (playerRef.current) {
+        playerRef.current.dispose();
+        playerRef.current = null;
+      }
     };
   }, [stream]);
 
@@ -92,7 +108,9 @@ export default function VideoPage() {
         </div>
       ) : (
         <>
-          <video ref={videoRef} controls playsInline />
+          <div data-vjs-player>
+            <video ref={videoRef} className="video-js vjs-big-play-centered" playsInline />
+          </div>
           <div className="player-info">
             {video && (
               <>
