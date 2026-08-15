@@ -10,18 +10,28 @@ export class HttpError extends Error {
   }
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'Content-Type, X-Amz-Date, Authorization, X-Api-Key, X-Amz-Security-Token, X-Amz-User-Agent',
+  'Access-Control-Allow-Methods': 'OPTIONS, GET, POST, PUT, PATCH, DELETE',
+};
+
 export const ok = (data: unknown, statusCode = 200): APIGatewayProxyResult => ({
   statusCode,
+  headers: CORS_HEADERS,
   body: JSON.stringify(data),
 });
 
 export const noContent = (): APIGatewayProxyResult => ({
   statusCode: 204,
+  headers: CORS_HEADERS,
   body: '',
 });
 
 export const fail = (statusCode: number, message: string): APIGatewayProxyResult => ({
   statusCode,
+  headers: CORS_HEADERS,
   body: JSON.stringify({ error: { code: statusCode, message } }),
 });
 
