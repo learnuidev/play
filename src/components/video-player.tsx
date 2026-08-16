@@ -21,6 +21,7 @@ export interface VideoPlayerHandle {
 interface VideoPlayerProps {
   src: string;
   signedQuery: string;
+  poster?: string;
   tracks?: SubtitleTrack[];
   onTimeUpdate?: (timeMs: number) => void;
   onActiveTrackChange?: (language: string | null) => void;
@@ -28,7 +29,7 @@ interface VideoPlayerProps {
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
   function VideoPlayer(
-    { src, signedQuery, tracks = [], onTimeUpdate, onActiveTrackChange },
+    { src, signedQuery, poster, tracks = [], onTimeUpdate, onActiveTrackChange },
     ref,
   ) {
     // Appends the CloudFront path-scoped signature to every HLS request
@@ -140,6 +141,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             ref={videoRef}
             src={src}
             config={config}
+            poster={poster}
             playsInline
             crossOrigin="anonymous"
           >

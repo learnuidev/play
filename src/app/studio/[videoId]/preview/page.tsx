@@ -6,6 +6,7 @@ import { ArrowLeftIcon, FilmIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStream, useVideo } from "@/modules/video/video.queries";
 import { useSubtitles } from "@/modules/subtitle/subtitle.queries";
+import { useThumbnail } from "@/modules/thumbnail/thumbnail.queries";
 import { parseVtt } from "@/lib/vtt";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -24,6 +25,10 @@ export default function PreviewPage() {
   const { data: subtitle } = useSubtitles(
     videoId,
     isReady && video?.subtitleStatus === "READY",
+  );
+  const { data: thumbnail } = useThumbnail(
+    videoId,
+    isReady && video?.thumbnailStatus === "READY",
   );
 
   const tracks = (subtitle?.tracks ?? []).map((track) => ({
@@ -150,6 +155,7 @@ export default function PreviewPage() {
                 ref={playerRef}
                 src={stream.manifestUrl}
                 signedQuery={stream.signedQuery}
+                poster={thumbnail?.thumbnailUrl}
                 tracks={tracks}
                 onTimeUpdate={handleTimeUpdate}
                 onActiveTrackChange={handleActiveTrackChange}
