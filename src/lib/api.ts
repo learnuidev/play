@@ -5,6 +5,8 @@ import type {
   ListVideosResponse,
   StreamResponse,
   SubtitleResponse,
+  ThumbnailResponse,
+  UploadThumbnailResponse,
   Video,
   VideoStatus,
 } from '@/types';
@@ -79,5 +81,16 @@ export const api = {
     request<{ video: Video }>(`/videos/${videoId}/subtitles`, {
       method: 'PUT',
       body: JSON.stringify(language ? { content, language } : { content }),
+    }),
+
+  getThumbnail: (videoId: string) => request<ThumbnailResponse>(`/videos/${videoId}/thumbnail`),
+
+  generateThumbnail: (videoId: string) =>
+    request<{ video: Video }>(`/videos/${videoId}/thumbnail`, { method: 'POST' }),
+
+  uploadThumbnail: (videoId: string, payload: { contentType: string; size?: number }) =>
+    request<UploadThumbnailResponse>(`/videos/${videoId}/thumbnail`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     }),
 };

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { EyeIcon, PlayIcon } from 'lucide-react';
 import type { Video } from '@/types';
 import { Button } from '@/components/ui/button';
+import { useThumbnail } from '@/modules/thumbnail/thumbnail.queries';
 import { VideoStatusBadge } from './status-badge';
 
 function formatBytes(bytes: number): string {
@@ -18,13 +19,26 @@ function formatDate(ts: number): string {
 }
 
 export function VideoCard({ video }: { video: Video }) {
+  const thumbnailReady = video.thumbnailStatus === 'READY' && !!video.thumbnailKey;
+  const { data: thumbnail } = useThumbnail(video.videoId, thumbnailReady);
+
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-ring/40 hover:shadow-xl">
-      <Link href={`/studio/${video.videoId}`} className="relative aspect-video overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-zinc-800 via-zinc-900 to-black" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,var(--muted)_0%,transparent_70%)] opacity-20" />
+      <Link href={`/studio/${video.videoId}`} className="relative aspect-video overflow-hidden bg-zinc-900">
+        {thumbnail ? (
+          <img
+            src={thumbnail.thumbnailUrl}
+            alt={video.title}
+            className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover:scale-105"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-zinc-800 via-zinc-900 to-black" />
+        )}
+        {!thumbnail && (
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,var(--muted)_0%,transparent_70%)] opacity-20" />
+        )}
         <div className="absolute inset-0 flex items-center justify-center">
-          <PlayIcon className="size-12 text-white/20 transition-all duration-300 group-hover:scale-110 group-hover:text-white/60" />
+          <PlayIcon className="size-12 text-white/30 transition-all duration-300 group-hover:scale-110 group-hover:text-white/70" />
         </div>
         <VideoStatusBadge status={video.status} className="absolute left-3 top-3" />
       </Link>

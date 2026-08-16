@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StudioPageHeader } from '@/components/studio/page-header';
 import { VideoStatusBadge } from '@/components/studio/status-badge';
 import { VideoGeneralForm } from '@/components/studio/video-general-form';
+import { VideoThumbnail } from '@/components/studio/video-thumbnail';
 import { VideoTranscriptions } from '@/components/studio/video-transcriptions';
 
 export default function VideoPage() {
@@ -54,10 +55,14 @@ export default function VideoPage() {
             <Tabs defaultValue="general">
               <TabsList className="mb-6">
                 <TabsTrigger value="general">General</TabsTrigger>
+                <TabsTrigger value="thumbnail">Thumbnail</TabsTrigger>
                 <TabsTrigger value="transcriptions">Transcriptions</TabsTrigger>
               </TabsList>
               <TabsContent value="general">
                 <VideoGeneralForm video={video} />
+              </TabsContent>
+              <TabsContent value="thumbnail">
+                <VideoThumbnail video={video} />
               </TabsContent>
               <TabsContent value="transcriptions">
                 <VideoTranscriptions video={video} />

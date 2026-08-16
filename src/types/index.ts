@@ -18,6 +18,15 @@ export const SUBTITLE_STATUS_LABELS: Record<SubtitleStatus, string> = {
   FAILED: 'Subtitles failed',
 };
 
+export type ThumbnailStatus = 'NONE' | 'GENERATING' | 'READY' | 'FAILED';
+
+export const THUMBNAIL_STATUS_LABELS: Record<ThumbnailStatus, string> = {
+  NONE: 'No thumbnail',
+  GENERATING: 'Generating thumbnail…',
+  READY: 'Thumbnail ready',
+  FAILED: 'Thumbnail failed',
+};
+
 export interface Video {
   videoId: string;
   ownerId: string;
@@ -33,6 +42,8 @@ export interface Video {
   subtitleKey?: string;
   subtitleLanguage?: string;
   translations?: Record<string, SubtitleTranslation>;
+  thumbnailStatus?: ThumbnailStatus;
+  thumbnailKey?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -83,6 +94,23 @@ export interface StreamResponse {
   baseUrl: string;
   signedQuery: string;
   expiresAt: number;
+}
+
+export interface ThumbnailResponse {
+  videoId: string;
+  thumbnailUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
+export interface UploadThumbnailResponse {
+  video: Video;
+  upload: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+  };
 }
 
 export interface SubtitleTrackInfo {
