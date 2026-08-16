@@ -2,7 +2,6 @@ import { buildSignedThumbnailUrl } from './cloudfront';
 import {
   createPresignedUploadUrl,
   deleteObjects,
-  deletePrefix,
   listKeysUnderPrefix,
 } from './s3';
 import type { ThumbnailInfo } from '../types';
@@ -17,11 +16,6 @@ export function thumbnailPrefix(videoId: string): string {
 /** Builds a signed CloudFront URL for the given thumbnail key. */
 export function buildThumbnailSignedUrl(thumbnailKey: string): ThumbnailInfo {
   return buildSignedThumbnailUrl(thumbnailKey);
-}
-
-/** Deletes every thumbnail object for a video. */
-export async function deleteThumbnails(videoId: string): Promise<void> {
-  await deletePrefix(thumbnailPrefix(videoId));
 }
 
 export interface CustomThumbnailUpload {
