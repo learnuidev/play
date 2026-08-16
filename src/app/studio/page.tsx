@@ -1,17 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { PlusIcon } from 'lucide-react';
-import { api } from '@/lib/api';
-import type { Video, VideoStatus } from '@/types';
+import type { VideoStatus } from '@/types';
+import { useVideos } from '@/modules/video/video.queries';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StudioPageHeader } from '@/components/studio/page-header';
 import { VideoCard } from '@/components/studio/video-card';
-
-const POLL_INTERVAL_MS = 5000;
 
 const FILTERS: Array<VideoStatus | 'ALL'> = ['ALL', 'READY', 'PROCESSING', 'UPLOADING', 'FAILED'];
 
@@ -21,33 +19,8 @@ function filterLabel(f: VideoStatus | 'ALL'): string {
 
 export default function StudioPage() {
   const [filter, setFilter] = useState<VideoStatus | 'ALL'>('ALL');
-  const [videos, setVideos] = useState<Video[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await api.listVideos(filter === 'ALL' ? undefined : filter);
-      setVideos(res.videos);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load videos');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    setLoading(true);
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    const hasInProgress = videos.some((v) => v.status === 'UPLOADING' || v.status === 'PROCESSING');
-    if (!hasInProgress) return;
-    const timer = setInterval(load, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [videos, load]);
+  const { data, isLoading, isError, error } = useVideos(filter);
+  const videos = data?.videos ?? [];
 
   return (
     <div className="flex h-svh flex-col">
@@ -81,9 +54,13 @@ export default function StudioPage() {
             ))}
           </div>
 
-          {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+          {isError && (
+            <p className="mb-4 text-sm text-destructive">
+              {error instanceof Error ? error.message : 'Failed to load videos'}
+            </p>
+          )}
 
-          {loading ? (
+          {isLoading ? (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="flex flex-col gap-3 overflow-hidden rounded-2xl border">

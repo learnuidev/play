@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { FilmIcon, Loader2Icon, UploadIcon } from 'lucide-react';
-import { api } from '@/lib/api';
+import { useCreateVideo } from '@/modules/video/video.queries';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,7 @@ export function UploadForm() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const create = useCreateVideo();
 
   function pickFile(f: File | undefined | null) {
     if (!f) return;
@@ -48,7 +49,7 @@ export function UploadForm() {
     try {
       setUploading(true);
       setProgress(0);
-      const created = await api.createVideo({
+      const created = await create.mutateAsync({
         title: title.trim(),
         description: description.trim(),
         fileName: file.name,

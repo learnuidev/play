@@ -2,10 +2,9 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeftIcon, FilmIcon } from 'lucide-react';
-import { api } from '@/lib/api';
-import type { StreamResponse, SubtitleResponse, Video } from '@/types';
+import { useStream, useVideo } from '@/modules/video/video.queries';
+import { useSubtitles } from '@/modules/subtitle/subtitle.queries';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StudioPageHeader } from '@/components/studio/page-header';
@@ -14,42 +13,15 @@ import { VideoPlayer } from '@/components/video-player';
 
 export default function PreviewPage() {
   const { videoId } = useParams<{ videoId: string }>();
-  const [video, setVideo] = useState<Video | null>(null);
-  const [stream, setStream] = useState<StreamResponse | null>(null);
-  const [subtitle, setSubtitle] = useState<SubtitleResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: videoRes, isError, error } = useVideo(videoId);
+  const video = videoRes?.video;
+  const isReady = video?.status === 'READY';
 
-  const load = useCallback(async () => {
-    try {
-      const videoRes = await api.getVideo(videoId);
-      setVideo(videoRes.video);
-
-      if (videoRes.video.status === 'READY') {
-        const streamRes = await api.getStream(videoId);
-        setStream(streamRes);
-
-        if (videoRes.video.subtitleStatus === 'READY' && videoRes.video.subtitleKey) {
-          try {
-            setSubtitle(await api.getSubtitles(videoId));
-          } catch {
-            setSubtitle(null);
-          }
-        } else {
-          setSubtitle(null);
-        }
-      } else {
-        setStream(null);
-        setSubtitle(null);
-      }
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load preview');
-    }
-  }, [videoId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const { data: stream } = useStream(videoId, isReady);
+  const { data: subtitle } = useSubtitles(
+    videoId,
+    isReady && video?.subtitleStatus === 'READY',
+  );
 
   const tracks = (subtitle?.tracks ?? []).map((track) => ({
     src: track.subtitleUrl,
@@ -61,7 +33,7 @@ export default function PreviewPage() {
     <div className="flex h-svh flex-col">
       <StudioPageHeader
         title={video?.title ?? 'Preview'}
-        description={video?.status === 'READY' ? 'Final video preview' : undefined}
+        description={isReady ? 'Final video preview' : undefined}
         actions={
           <>
             {video && <VideoStatusBadge status={video.status} />}
@@ -77,7 +49,11 @@ export default function PreviewPage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl px-6 py-6">
-          {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+          {isError && (
+            <p className="mb-4 text-sm text-destructive">
+              {error instanceof Error ? error.message : 'Failed to load preview'}
+            </p>
+          )}
 
           {!video ? (
             <Skeleton className="aspect-video w-full rounded-2xl" />

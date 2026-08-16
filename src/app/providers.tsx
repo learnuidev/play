@@ -6,6 +6,7 @@ import { ThemeProvider } from 'next-themes';
 import { isAuthConfigured } from '@/lib/amplify';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
+import { QueryProvider } from '@/components/query-provider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   if (!isAuthConfigured) {
@@ -33,12 +34,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
-      <TooltipProvider>
-        <Authenticator.Provider>
-          <Authenticator>{children}</Authenticator>
-        </Authenticator.Provider>
-        <Toaster />
-      </TooltipProvider>
+      <QueryProvider>
+        <TooltipProvider>
+          <Authenticator.Provider>
+            <Authenticator>{children}</Authenticator>
+          </Authenticator.Provider>
+          <Toaster />
+        </TooltipProvider>
+      </QueryProvider>
     </ThemeProvider>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, useState } from 'react';
-import { api } from '@/lib/api';
+import { useSaveSubtitles } from '@/modules/subtitle/subtitle.queries';
 import { formatTimestamp, parseTimestamp, parseVtt, serializeVtt } from '@/lib/vtt';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,6 @@ import type { SubtitleCue } from '@/types';
 interface SubtitleEditorProps {
   videoId: string;
   initialContent: string;
-  onSaved: () => void;
 }
 
 let cueCounter = 0;
@@ -48,14 +47,14 @@ function TrashIcon() {
   );
 }
 
-export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEditorProps) {
+export function SubtitleEditor({ videoId, initialContent }: SubtitleEditorProps) {
   const [cues, setCues] = useState<SubtitleCue[]>(() => parseVtt(initialContent));
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const justAddedRef = useRef(false);
+  const save = useSaveSubtitles(videoId);
 
   const virtualizer = useVirtualizer({
     count: cues.length,
@@ -145,7 +144,7 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
     return null;
   }
 
-  async function handleSave() {
+  function handleSave() {
     setError(null);
     setSaved(false);
 
@@ -155,17 +154,15 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
       return;
     }
 
-    setSaving(true);
-    try {
-      await api.saveSubtitles(videoId, serializeVtt(cues));
-      setDirty(false);
-      setSaved(true);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save subtitles');
-    } finally {
-      setSaving(false);
-    }
+    save.mutate(serializeVtt(cues), {
+      onSuccess: () => {
+        setDirty(false);
+        setSaved(true);
+      },
+      onError: (err) => {
+        setError(err instanceof Error ? err.message : 'Failed to save subtitles');
+      },
+    });
   }
 
   return (
@@ -186,8 +183,8 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
           <Button variant="outline" size="sm" onClick={addCue}>
             + Add cue
           </Button>
-          <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save subtitles'}
+          <Button size="sm" onClick={handleSave} disabled={save.isPending}>
+            {save.isPending ? 'Saving…' : 'Save subtitles'}
           </Button>
           {saved && !dirty && <span className="text-xs text-emerald-400">Saved</span>}
         </div>
