@@ -72,4 +72,12 @@ export interface SubtitleResponse {
   baseUrl: string;
   signedQuery: string;
   expiresAt: number;
+  content: string;
+}
+
+export interface SubtitleCue {
+  id: string;
+  start: string;
+  end: string;
+  text: string;
 }

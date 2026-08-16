@@ -68,4 +68,10 @@ export const api = {
   generateSubtitles: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}/subtitles`, { method: 'POST' }),
 
   getSubtitles: (videoId: string) => request<SubtitleResponse>(`/videos/${videoId}/subtitles`),
+
+  saveSubtitles: (videoId: string, content: string) =>
+    request<{ video: Video }>(`/videos/${videoId}/subtitles`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
 };

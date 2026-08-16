@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.5.2",
+    "@tanstack/react-virtual": "^3.14.9",
     "@videojs/react": "^10.0.0-beta.26",
     "aws-amplify": "^6.7.0",
     "next": "^14.2.15",

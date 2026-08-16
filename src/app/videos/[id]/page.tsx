@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { StreamResponse, SubtitleResponse, Video } from "@/types";
 import { StatusBadge } from "@/components/status-badge";
+import { SubtitleEditor } from "@/components/subtitle-editor";
 import { VideoPlayer } from "@/components/video-player";
 
 const POLL_INTERVAL_MS = 5000;
@@ -20,6 +21,7 @@ export default function VideoPage() {
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -173,6 +175,11 @@ export default function VideoPage() {
                   {subtitleStatus === "GENERATING" && (
                     <span className="desc">Subtitle generation in progress…</span>
                   )}
+                  {subtitleStatus === "READY" && (
+                    <button className="btn" onClick={() => setEditing((v) => !v)}>
+                      {editing ? "Close editor" : "Edit subtitles"}
+                    </button>
+                  )}
                   {showSubtitleAction && (
                     <button
                       className="btn btn-primary"
@@ -190,6 +197,14 @@ export default function VideoPage() {
               </>
             )}
           </div>
+
+          {editing && subtitle && (
+            <SubtitleEditor
+              videoId={videoId}
+              initialContent={subtitle.content}
+              onSaved={load}
+            />
+          )}
         </>
       )}
     </div>
