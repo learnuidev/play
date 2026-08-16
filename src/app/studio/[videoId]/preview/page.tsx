@@ -150,7 +150,7 @@ export default function PreviewPage() {
               </div>
             </div>
           ) : stream ? (
-            <div className="mx-auto w-full max-w-5xl overflow-hidden rounded-2xl border bg-black shadow-2xl">
+            <div className="mx-auto w-full max-w-5xl bg-transparent">
               <VideoPlayer
                 ref={playerRef}
                 src={stream.manifestUrl}

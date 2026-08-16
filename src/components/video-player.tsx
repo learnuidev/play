@@ -1,10 +1,16 @@
-'use client';
+"use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
-import '@videojs/react/video/skin.css';
-import { createPlayer, videoFeatures } from '@videojs/react';
-import { VideoSkin } from '@videojs/react/video';
-import { HlsJsVideo } from '@videojs/react/media/hlsjs-video';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from "react";
+import "@videojs/react/video/skin.css";
+import { createPlayer, videoFeatures } from "@videojs/react";
+import { VideoSkin } from "@videojs/react/video";
+import { HlsJsVideo } from "@videojs/react/media/hlsjs-video";
 
 const Player = createPlayer({ features: videoFeatures });
 
@@ -29,7 +35,14 @@ interface VideoPlayerProps {
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
   function VideoPlayer(
-    { src, signedQuery, poster, tracks = [], onTimeUpdate, onActiveTrackChange },
+    {
+      src,
+      signedQuery,
+      poster,
+      tracks = [],
+      onTimeUpdate,
+      onActiveTrackChange,
+    },
     ref,
   ) {
     // Appends the CloudFront path-scoped signature to every HLS request
@@ -39,9 +52,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       () => ({
         hlsJs: {
           xhrSetup: (xhr: XMLHttpRequest, url: string) => {
-            if (!url.includes('Policy=')) {
-              const separator = url.includes('?') ? '&' : '?';
-              xhr.open('GET', `${url}${separator}${signedQuery}`, true);
+            if (!url.includes("Policy=")) {
+              const separator = url.includes("?") ? "&" : "?";
+              xhr.open("GET", `${url}${separator}${signedQuery}`, true);
             }
           },
         },
@@ -83,8 +96,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         onTimeUpdateRef.current?.(video.currentTime * 1000);
       };
 
-      video.addEventListener('timeupdate', handleTimeUpdate);
-      return () => video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.addEventListener("timeupdate", handleTimeUpdate);
+      return () => video.removeEventListener("timeupdate", handleTimeUpdate);
     }, []);
 
     // The player's captions toggle shows *every* subtitle track at once when it
@@ -101,12 +114,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         const subtitles: TextTrack[] = [];
         for (let i = 0; i < textTracks.length; i += 1) {
           const track = textTracks[i];
-          if (track.kind === 'subtitles' || track.kind === 'captions') {
+          if (track.kind === "subtitles" || track.kind === "captions") {
             subtitles.push(track);
           }
         }
 
-        const showing = subtitles.filter((track) => track.mode === 'showing');
+        const showing = subtitles.filter((track) => track.mode === "showing");
 
         let active: TextTrack | null = null;
 
@@ -115,9 +128,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           active = showing[0];
         } else if (showing.length > 1) {
           const keep =
-            lastShowing && showing.includes(lastShowing) ? lastShowing : showing[0];
+            lastShowing && showing.includes(lastShowing)
+              ? lastShowing
+              : showing[0];
           for (const track of showing) {
-            if (track !== keep) track.mode = 'disabled';
+            if (track !== keep) track.mode = "disabled";
           }
           lastShowing = keep;
           active = keep;
@@ -127,10 +142,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       };
 
       enforceSingleSubtitle();
-      textTracks.addEventListener('change', enforceSingleSubtitle);
+      textTracks.addEventListener("change", enforceSingleSubtitle);
 
       return () => {
-        textTracks.removeEventListener('change', enforceSingleSubtitle);
+        textTracks.removeEventListener("change", enforceSingleSubtitle);
       };
     }, []);
 
@@ -152,7 +167,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                 src={track.src}
                 srcLang={track.srcLang}
                 label={track.label}
-                default={track.label === 'English'}
+                default={track.label === "English"}
               />
             ))}
           </HlsJsVideo>
