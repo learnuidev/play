@@ -19,7 +19,7 @@ function formatDate(ts: number): string {
 }
 
 export function VideoCard({ video }: { video: Video }) {
-  const thumbnailReady = video.thumbnailStatus === 'READY' && !!video.thumbnailKey;
+  const thumbnailReady = !!video.thumbnailKey;
   const { data: thumbnail } = useThumbnail(video.videoId, thumbnailReady);
 
   return (

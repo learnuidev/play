@@ -28,7 +28,7 @@ export default function PreviewPage() {
   );
   const { data: thumbnail } = useThumbnail(
     videoId,
-    isReady && video?.thumbnailStatus === "READY",
+    isReady && !!video?.thumbnailKey,
   );
 
   const tracks = (subtitle?.tracks ?? []).map((track) => ({

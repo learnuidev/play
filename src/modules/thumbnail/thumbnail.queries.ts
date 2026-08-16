@@ -14,17 +14,6 @@ export function useThumbnail(videoId: string, enabled: boolean) {
   });
 }
 
-export function useGenerateThumbnail(videoId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.generateThumbnail(videoId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: thumbnailKeys.detail(videoId) });
-      qc.invalidateQueries({ queryKey: videoKeys.detail(videoId) });
-    },
-  });
-}
-
 export function useUploadThumbnail(videoId: string) {
   const qc = useQueryClient();
   return useMutation({

@@ -34,8 +34,7 @@ export function useVideo(videoId: string) {
         !!video &&
         (video.status === 'UPLOADING' ||
           video.status === 'PROCESSING' ||
-          video.subtitleStatus === 'GENERATING' ||
-          video.thumbnailStatus === 'GENERATING');
+          video.subtitleStatus === 'GENERATING');
       return needsPoll ? POLL_INTERVAL_MS : false;
     },
   });
