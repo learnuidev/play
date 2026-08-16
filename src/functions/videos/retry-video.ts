@@ -5,6 +5,7 @@ import { getVideo, updateVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
 import { startMediaConvertJob } from '../../lib/mediaconvert';
 import { deletePrefix, listKeysUnderPrefix } from '../../lib/s3';
+import { thumbnailDestination } from '../../lib/thumbnail';
 
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const ownerId = requireOwnerId(event);
@@ -27,14 +28,16 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   // Clear any partial transcoded output from the previous attempt so the
   // new job starts clean and the completion handler picks the fresh manifest.
   await deletePrefix(`processed/${videoId}/`);
+  await deletePrefix(`thumbnails/${videoId}/`);
 
-  await updateVideo(videoId, { status: 'PROCESSING' });
+  await updateVideo(videoId, { status: 'PROCESSING', thumbnailStatus: 'GENERATING' });
 
   try {
     await startMediaConvertJob({
       videoId,
       inputUrl: `s3://${env.bucket}/${video.s3Key}`,
       outputBase: `s3://${env.bucket}/processed/${videoId}/hls/`,
+      thumbnailBase: thumbnailDestination(videoId),
     });
   } catch (err) {
     console.error(`Failed to retry processing for videoId=${videoId}`, err);

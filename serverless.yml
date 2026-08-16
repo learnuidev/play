@@ -181,6 +181,33 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  get-thumbnail:
+    handler: src/functions/videos/get-thumbnail.handler
+    events:
+      - http:
+          path: videos/{videoId}/thumbnail
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  generate-thumbnail:
+    handler: src/functions/videos/generate-thumbnail.handler
+    events:
+      - http:
+          path: videos/{videoId}/thumbnail
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  upload-thumbnail:
+    handler: src/functions/videos/upload-thumbnail.handler
+    events:
+      - http:
+          path: videos/{videoId}/thumbnail
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
@@ -410,6 +437,11 @@ resources:
                   Resource:
                     - !GetAtt VideosBucket.Arn
                     - !Sub "${VideosBucket.Arn}/processed/*"
+                - Effect: Allow
+                  Action:
+                    - s3:PutObject
+                  Resource:
+                    - !Sub "${VideosBucket.Arn}/thumbnails/*"
 
     TranscribeRole:
       Type: AWS::IAM::Role

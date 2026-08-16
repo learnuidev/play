@@ -1,5 +1,5 @@
 import { createSign } from "node:crypto";
-import type { StreamInfo, SubtitleInfo } from "../types";
+import type { StreamInfo, SubtitleInfo, ThumbnailInfo } from "../types";
 import { env } from "./config";
 
 // wip
@@ -83,4 +83,14 @@ export function buildSignedSubtitleUrl(subtitleKey: string): SubtitleInfo {
   const pathPrefix = subtitleKey.split("/").slice(0, 2).join("/"); // subtitles/{videoId}
   const { url, ...rest } = buildSignedUrl(subtitleKey, `${pathPrefix}/`);
   return { videoId: subtitleKey.split("/")[1] ?? "", subtitleUrl: url, ...rest };
+}
+
+/**
+ * Builds a CloudFront signed URL for a thumbnail image, scoped to
+ * `thumbnails/{videoId}/*`.
+ */
+export function buildSignedThumbnailUrl(thumbnailKey: string): ThumbnailInfo {
+  const pathPrefix = thumbnailKey.split("/").slice(0, 2).join("/"); // thumbnails/{videoId}
+  const { url, ...rest } = buildSignedUrl(thumbnailKey, `${pathPrefix}/`);
+  return { videoId: thumbnailKey.split("/")[1] ?? "", thumbnailUrl: url, ...rest };
 }

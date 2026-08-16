@@ -6,6 +6,7 @@ import {
 import type {
   AudioDescription,
   JobSettings,
+  OutputGroup,
   VideoDescription,
 } from '@aws-sdk/client-mediaconvert';
 import { env } from './config';
@@ -14,7 +15,7 @@ let client: MediaConvertClient | undefined;
 let endpoint: string | undefined;
 
 /** MediaConvert requires its regional API endpoint, resolved once per cold start. */
-async function getMediaConvertClient(): Promise<MediaConvertClient> {
+export async function getMediaConvertClient(): Promise<MediaConvertClient> {
   if (client) return client;
   const probe = new MediaConvertClient({});
   const { Endpoints } = await probe.send(new DescribeEndpointsCommand({}));
@@ -79,7 +80,7 @@ function videoDescription(rendition: Rendition): VideoDescription {
   };
 }
 
-function buildSettings(inputUrl: string, outputBase: string): JobSettings {
+function buildSettings(inputUrl: string, outputBase: string, thumbnailBase: string): JobSettings {
   return {
     TimecodeConfig: { Source: 'ZEROBASED' },
     Inputs: [
@@ -115,6 +116,38 @@ function buildSettings(inputUrl: string, outputBase: string): JobSettings {
           AudioDescriptions: audioDescriptions,
         })),
       },
+      thumbnailOutputGroup(thumbnailBase),
+    ],
+  };
+}
+
+/**
+ * A FILE_GROUP output that captures a handful of JPEG frames from the source.
+ * The completion handler picks one of these as the poster/thumbnail image.
+ */
+function thumbnailOutputGroup(destination: string): OutputGroup {
+  return {
+    Name: 'THUMBNAILS',
+    OutputGroupSettings: {
+      Type: 'FILE_GROUP_SETTINGS',
+      FileGroupSettings: { Destination: destination },
+    },
+    Outputs: [
+      {
+        ContainerSettings: { Container: 'RAW' },
+        VideoDescription: {
+          Width: 1280,
+          CodecSettings: {
+            Codec: 'FRAME_CAPTURE',
+            FrameCaptureSettings: {
+              FramerateNumerator: 1,
+              FramerateDenominator: 5,
+              MaxCaptures: 3,
+              Quality: 100,
+            },
+          },
+        },
+      },
     ],
   };
 }
@@ -123,16 +156,48 @@ export interface MediaConvertJob {
   videoId: string;
   inputUrl: string;
   outputBase: string;
+  thumbnailBase: string;
 }
 
-export async function startMediaConvertJob({ videoId, inputUrl, outputBase }: MediaConvertJob): Promise<void> {
+export async function startMediaConvertJob({ videoId, inputUrl, outputBase, thumbnailBase }: MediaConvertJob): Promise<void> {
   const mc = await getMediaConvertClient();
   await mc.send(
     new CreateJobCommand({
       Role: env.mediaconvertRoleArn,
       StatusUpdateInterval: 'SECONDS_60',
-      UserMetadata: { videoId, inputUrl },
-      Settings: buildSettings(inputUrl, outputBase),
+      UserMetadata: { videoId, inputUrl, type: 'encoding' },
+      Settings: buildSettings(inputUrl, outputBase, thumbnailBase),
+    }),
+  );
+}
+
+export interface ThumbnailJob {
+  videoId: string;
+  inputUrl: string;
+  outputBase: string;
+}
+
+/**
+ * Submits a standalone MediaConvert job that only captures poster frames
+ * (no HLS transcoding), used to regenerate a video's thumbnail.
+ */
+export async function startThumbnailJob({ videoId, inputUrl, outputBase }: ThumbnailJob): Promise<void> {
+  const mc = await getMediaConvertClient();
+  await mc.send(
+    new CreateJobCommand({
+      Role: env.mediaconvertRoleArn,
+      StatusUpdateInterval: 'SECONDS_60',
+      UserMetadata: { videoId, type: 'thumbnail' },
+      Settings: {
+        TimecodeConfig: { Source: 'ZEROBASED' },
+        Inputs: [
+          {
+            FileInput: inputUrl,
+            TimecodeSource: 'ZEROBASED',
+          },
+        ],
+        OutputGroups: [thumbnailOutputGroup(outputBase)],
+      },
     }),
   );
 }

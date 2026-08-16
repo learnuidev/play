@@ -3,6 +3,7 @@ import { env } from '../../lib/config';
 import { getVideo, updateVideo } from '../../lib/dynamodb';
 import { startMediaConvertJob } from '../../lib/mediaconvert';
 import { startTranscriptionJob } from '../../lib/transcribe';
+import { thumbnailDestination } from '../../lib/thumbnail';
 import type { LanguageCode } from '@aws-sdk/client-transcribe';
 
 function decodeKey(key: string): string {
@@ -37,12 +38,14 @@ export const handler = async (event: S3Event): Promise<void> => {
       await updateVideo(videoId, {
         status: 'PROCESSING',
         size: record.s3.object.size ?? video.size,
+        thumbnailStatus: 'GENERATING',
       });
 
       await startMediaConvertJob({
         videoId,
         inputUrl: `s3://${env.bucket}/${key}`,
         outputBase: `s3://${env.bucket}/processed/${videoId}/hls/`,
+        thumbnailBase: thumbnailDestination(videoId),
       });
 
       // Subtitle generation is best-effort and runs in parallel with encoding;

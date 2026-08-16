@@ -7,7 +7,7 @@ import {
   QueryCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import type { SubtitleStatus, SubtitleTranslation, Video, VideoStatus } from '../types';
+import type { SubtitleStatus, SubtitleTranslation, ThumbnailStatus, Video, VideoStatus } from '../types';
 import { env } from './config';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -38,6 +38,8 @@ export interface UpdateVideoPatch {
   subtitleLanguage?: string;
   /** Full translations map, keyed by BCP-47 code. Pass `null` to remove. */
   translations?: Record<string, SubtitleTranslation> | null;
+  thumbnailStatus?: ThumbnailStatus;
+  thumbnailKey?: string;
 }
 
 export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Promise<void> {
@@ -94,6 +96,16 @@ export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Pro
     names['#translations'] = 'translations';
     values[':translations'] = patch.translations;
     set += ', #translations = :translations';
+  }
+  if (patch.thumbnailStatus !== undefined) {
+    names['#thumbnailStatus'] = 'thumbnailStatus';
+    values[':thumbnailStatus'] = patch.thumbnailStatus;
+    set += ', #thumbnailStatus = :thumbnailStatus';
+  }
+  if (patch.thumbnailKey !== undefined) {
+    names['#thumbnailKey'] = 'thumbnailKey';
+    values[':thumbnailKey'] = patch.thumbnailKey;
+    set += ', #thumbnailKey = :thumbnailKey';
   }
 
   await client.send(

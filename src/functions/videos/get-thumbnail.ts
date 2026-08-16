@@ -1,9 +1,13 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireOwnerId } from '../../lib/auth';
-import { deleteVideoItem, getVideo } from '../../lib/dynamodb';
-import { HttpError, handle, noContent } from '../../lib/http';
-import { deletePrefix } from '../../lib/s3';
+import { getVideo } from '../../lib/dynamodb';
+import { HttpError, handle, ok } from '../../lib/http';
+import { buildThumbnailSignedUrl } from '../../lib/thumbnail';
 
+/**
+ * Returns a signed CloudFront URL for the video's current thumbnail (the
+ * auto-generated poster frame or a custom upload).
+ */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const ownerId = requireOwnerId(event);
   const videoId = event.pathParameters?.videoId;
@@ -13,17 +17,12 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const video = await getVideo(videoId);
   if (!video) throw new HttpError(404, 'Video not found');
   if (video.ownerId !== ownerId) throw new HttpError(403, 'Forbidden');
-  if (video.status === 'PROCESSING') {
-    throw new HttpError(409, 'Cannot delete a video while it is encoding');
+
+  if (!video.thumbnailKey) {
+    throw new HttpError(404, 'No thumbnail for this video');
   }
 
-  await deletePrefix(`uploads/${videoId}/`);
-  await deletePrefix(`processed/${videoId}/`);
-  await deletePrefix(`subtitles/${videoId}/`);
-  await deletePrefix(`thumbnails/${videoId}/`);
-  await deleteVideoItem(videoId);
-
-  return noContent();
+  return ok(buildThumbnailSignedUrl(video.thumbnailKey));
 }
 
 export const handler = handle(main);
