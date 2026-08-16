@@ -92,7 +92,7 @@ export function parseVtt(content: string): SubtitleCue[] {
 /** Serializes cues into a canonical WebVTT document. */
 export function serializeVtt(cues: SubtitleCue[]): string {
   const body = cues
-    .map((cue) => `${cue.start.trim()} --> ${cue.end.trim()}\n${cue.text}`)
+    .map((cue) => `${cue.start.trim()} --> ${cue.end.trim()} line:90%\n${cue.text}`)
     .join('\n\n');
   return `WEBVTT\n\n${body}\n`;
 }

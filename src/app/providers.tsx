@@ -2,7 +2,10 @@
 
 import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
+import { ThemeProvider } from 'next-themes';
 import { isAuthConfigured } from '@/lib/amplify';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from '@/components/ui/sonner';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   if (!isAuthConfigured) {
@@ -29,8 +32,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <Authenticator.Provider>
-      <Authenticator>{children}</Authenticator>
-    </Authenticator.Provider>
+    <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
+      <TooltipProvider>
+        <Authenticator.Provider>
+          <Authenticator>{children}</Authenticator>
+        </Authenticator.Provider>
+        <Toaster />
+      </TooltipProvider>
+    </ThemeProvider>
   );
 }

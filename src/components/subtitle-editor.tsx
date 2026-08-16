@@ -4,6 +4,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { formatTimestamp, parseTimestamp, parseVtt, serializeVtt } from '@/lib/vtt';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import type { SubtitleCue } from '@/types';
 
 interface SubtitleEditorProps {
@@ -167,27 +169,33 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
   }
 
   return (
-    <div className="subtitle-editor">
-      <div className="subtitle-editor-toolbar">
-        <div className="subtitle-editor-heading">
-          <h3>Subtitle editor</h3>
-          <span className="cue-count">{cues.length} cues</span>
-          {dirty && <span className="dirty-pill">Unsaved changes</span>}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <h3 className="text-sm font-semibold">Subtitle editor</h3>
+          <span className="rounded-full border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground">
+            {cues.length} cues
+          </span>
+          {dirty && (
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs text-amber-400">
+              Unsaved changes
+            </span>
+          )}
         </div>
-        <div className="subtitle-editor-actions">
-          <button className="btn" onClick={addCue}>
+        <div className="flex items-center gap-2.5">
+          <Button variant="outline" size="sm" onClick={addCue}>
             + Add cue
-          </button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          </Button>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving…' : 'Save subtitles'}
-          </button>
-          {saved && !dirty && <span className="desc saved-text">Saved</span>}
+          </Button>
+          {saved && !dirty && <span className="text-xs text-emerald-400">Saved</span>}
         </div>
       </div>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <div ref={parentRef} className="subtitle-editor-list">
+      <div ref={parentRef} className="h-[55vh] overflow-y-auto rounded-xl border bg-background p-2.5">
         <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
           {virtualizer.getVirtualItems().map((item) => {
             const cue = cues[item.index];
@@ -198,7 +206,7 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
                 key={cue.id}
                 data-index={item.index}
                 ref={virtualizer.measureElement}
-                className="subtitle-cue-slot"
+                className="pb-2.5"
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -207,25 +215,27 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
                   transform: `translateY(${item.start}px)`,
                 }}
               >
-                <div className="subtitle-cue">
-                  <div className="cue-head">
-                    <span className="cue-index">{item.index + 1}</span>
+                <div className="rounded-xl border bg-card p-3 transition-colors hover:border-ring/40">
+                  <div className="flex items-center gap-2">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
+                      {item.index + 1}
+                    </span>
                     <input
-                      className="cue-time"
+                      className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 font-mono text-xs tabular-nums outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                       value={cue.start}
                       onChange={(e) => updateCue(cue.id, { start: e.target.value })}
                       aria-label={`Cue ${item.index + 1} start time`}
                     />
-                    <span className="cue-arrow">→</span>
+                    <span className="shrink-0 text-muted-foreground">→</span>
                     <input
-                      className="cue-time"
+                      className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 font-mono text-xs tabular-nums outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                       value={cue.end}
                       onChange={(e) => updateCue(cue.id, { end: e.target.value })}
                       aria-label={`Cue ${item.index + 1} end time`}
                     />
-                    <div className="cue-actions">
+                    <div className="flex shrink-0 gap-0.5">
                       <button
-                        className="cue-action"
+                        className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         onClick={() => duplicateCue(cue.id)}
                         title="Duplicate cue"
                         aria-label={`Duplicate cue ${item.index + 1}`}
@@ -234,7 +244,7 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
                       </button>
                       {!isLast && (
                         <button
-                          className="cue-action"
+                          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                           onClick={() => mergeWithNext(cue.id)}
                           title="Merge with next cue"
                           aria-label={`Merge cue ${item.index + 1} with next`}
@@ -243,7 +253,10 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
                         </button>
                       )}
                       <button
-                        className="cue-action cue-action-danger"
+                        className={cn(
+                          'flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+                          'hover:bg-destructive/10 hover:text-destructive',
+                        )}
                         onClick={() => removeCue(cue.id)}
                         title="Delete cue"
                         aria-label={`Delete cue ${item.index + 1}`}
@@ -253,7 +266,7 @@ export function SubtitleEditor({ videoId, initialContent, onSaved }: SubtitleEdi
                     </div>
                   </div>
                   <textarea
-                    className="cue-text"
+                    className="mt-2 block w-full resize-y rounded-md border border-input bg-background px-2.5 py-2 text-sm leading-relaxed outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
                     value={cue.text}
                     onChange={(e) => updateCue(cue.id, { text: e.target.value })}
                     rows={Math.min(6, Math.max(1, cue.text.split('\n').length))}
