@@ -37,6 +37,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     subtitleStatus: 'GENERATING',
     subtitleKey: undefined,
     subtitleLanguage: languageCode,
+    translations: null,
   });
 
   try {

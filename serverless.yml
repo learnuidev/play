@@ -71,6 +71,10 @@ provider:
             - transcribe:GetTranscriptionJob
           Resource: "*"
         - Effect: Allow
+          Action:
+            - translate:TranslateText
+          Resource: "*"
+        - Effect: Allow
           Action: iam:PassRole
           Resource:
             - !GetAtt MediaConvertRole.Arn
@@ -164,6 +168,16 @@ functions:
       - http:
           path: videos/{videoId}/subtitles
           method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  generate-translations:
+    handler: src/functions/videos/generate-translations.handler
+    timeout: 300
+    events:
+      - http:
+          path: videos/{videoId}/subtitles/translations
+          method: post
           cors: true
           authorizer: ${self:custom.authorizer}
 

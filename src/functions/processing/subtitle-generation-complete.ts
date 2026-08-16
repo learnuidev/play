@@ -14,7 +14,7 @@ type TranscribeStateChangeEvent = EventBridgeEvent<'Transcribe Job State Change'
 const VIDEO_ID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 async function findSubtitleKey(videoId: string): Promise<string | undefined> {
-  const prefix = `subtitles/${videoId}/`;
+  const prefix = `subtitles/${videoId}/source/`;
   const keys = await listKeysUnderPrefix(prefix);
   return keys.find((k) => k.endsWith('.vtt'));
 }

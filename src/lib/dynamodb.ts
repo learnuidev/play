@@ -7,7 +7,7 @@ import {
   QueryCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import type { SubtitleStatus, Video, VideoStatus } from '../types';
+import type { SubtitleStatus, SubtitleTranslation, Video, VideoStatus } from '../types';
 import { env } from './config';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -36,6 +36,8 @@ export interface UpdateVideoPatch {
   subtitleStatus?: SubtitleStatus;
   subtitleKey?: string;
   subtitleLanguage?: string;
+  /** Full translations map, keyed by BCP-47 code. Pass `null` to remove. */
+  translations?: Record<string, SubtitleTranslation> | null;
 }
 
 export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Promise<void> {
@@ -84,6 +86,14 @@ export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Pro
     names['#subtitleLanguage'] = 'subtitleLanguage';
     values[':subtitleLanguage'] = patch.subtitleLanguage;
     set += ', #subtitleLanguage = :subtitleLanguage';
+  }
+  if (patch.translations === null) {
+    names['#translations'] = 'translations';
+    set += ' REMOVE #translations';
+  } else if (patch.translations !== undefined) {
+    names['#translations'] = 'translations';
+    values[':translations'] = patch.translations;
+    set += ', #translations = :translations';
   }
 
   await client.send(

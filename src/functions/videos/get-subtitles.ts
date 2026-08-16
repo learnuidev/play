@@ -4,10 +4,12 @@ import { buildSignedSubtitleUrl } from '../../lib/cloudfront';
 import { getVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
 import { getObjectText } from '../../lib/s3';
+import type { SubtitleTrackInfo } from '../../types';
 
 /**
- * Returns a signed CloudFront URL for the video's WebVTT subtitle file, along
- * with the raw VTT content for the subtitle editor.
+ * Returns the raw source VTT content (for the editor) plus signed CloudFront
+ * URLs for every available subtitle track — the source language and any
+ * generated translations.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const ownerId = requireOwnerId(event);
@@ -24,11 +26,32 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   }
 
   const content = await getObjectText(video.subtitleKey);
+  const sourceLanguage = video.subtitleLanguage ?? 'en-US';
+
+  const tracks: SubtitleTrackInfo[] = [
+    {
+      ...buildSignedSubtitleUrl(video.subtitleKey),
+      language: sourceLanguage,
+      label: sourceLanguage.toLowerCase().startsWith('en') ? 'English' : sourceLanguage,
+      isSource: true,
+    },
+  ];
+
+  for (const [language, translation] of Object.entries(video.translations ?? {})) {
+    if (translation.status !== 'READY' || !translation.key) continue;
+    tracks.push({
+      ...buildSignedSubtitleUrl(translation.key),
+      language,
+      label: translation.label,
+      isSource: false,
+    });
+  }
 
   return ok({
-    ...buildSignedSubtitleUrl(video.subtitleKey),
     videoId,
     content,
+    sourceLanguage,
+    tracks,
   });
 }
 

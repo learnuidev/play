@@ -2,7 +2,7 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireOwnerId } from '../../lib/auth';
 import { getVideo, updateVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
-import { deleteObjects, listKeysUnderPrefix, putObjectText } from '../../lib/s3';
+import { deleteObjects, deletePrefix, listKeysUnderPrefix, putObjectText } from '../../lib/s3';
 
 const MAX_SUBTITLE_BYTES = 1024 * 1024; // 1 MB
 
@@ -40,14 +40,17 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   }
 
   // Remove the previous .vtt file(s) so only the fresh one remains.
-  const prefix = `subtitles/${videoId}/`;
+  const prefix = `subtitles/${videoId}/source/`;
   const staleVtts = (await listKeysUnderPrefix(prefix)).filter((k) => k.endsWith('.vtt'));
   if (staleVtts.length) await deleteObjects(staleVtts);
 
-  const key = `subtitles/${videoId}/subtitles-${Date.now()}.vtt`;
+  const key = `subtitles/${videoId}/source/subtitles-${Date.now()}.vtt`;
   await putObjectText(key, content, 'text/vtt');
 
-  await updateVideo(videoId, { subtitleKey: key, subtitleStatus: 'READY' });
+  // Editing the source subtitle invalidates any previously generated
+  // translations, so clear them (and their files) to avoid serving stale tracks.
+  await deletePrefix(`subtitles/${videoId}/translations/`);
+  await updateVideo(videoId, { subtitleKey: key, subtitleStatus: 'READY', translations: null });
 
   const updated = await getVideo(videoId);
   return ok({ video: updated });

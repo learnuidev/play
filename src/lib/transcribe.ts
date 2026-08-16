@@ -38,7 +38,7 @@ export async function startTranscriptionJob({ videoId, inputUrl, languageCode }:
       LanguageCode: languageCode,
       Media: { MediaFileUri: inputUrl },
       OutputBucketName: env.bucket,
-      OutputKey: `subtitles/${videoId}/`,
+      OutputKey: `subtitles/${videoId}/source/`,
       Subtitles: { Formats: ['vtt'], OutputStartIndex: 1 },
       JobExecutionSettings: { DataAccessRoleArn: env.transcribeRoleArn },
     }),

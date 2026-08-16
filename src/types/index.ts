@@ -6,6 +6,17 @@ export type SubtitleStatus = 'NONE' | 'GENERATING' | 'READY' | 'FAILED';
 
 export const SUBTITLE_STATUSES: SubtitleStatus[] = ['NONE', 'GENERATING', 'READY', 'FAILED'];
 
+/** A translated subtitle track, keyed by BCP-47 language code. */
+export interface SubtitleTranslation {
+  /** BCP-47 language code, e.g. 'zh-CN'. */
+  language: string;
+  /** Human-readable label, e.g. 'Mandarin Chinese'. */
+  label: string;
+  status: SubtitleStatus;
+  /** WebVTT subtitle key: subtitles/{videoId}/translations/{language}/... */
+  key?: string;
+}
+
 export interface Video {
   videoId: string;
   ownerId: string;
@@ -21,10 +32,12 @@ export interface Video {
   manifestKey?: string;
   /** Subtitle generation state. Absent/undefined means no subtitles yet. */
   subtitleStatus?: SubtitleStatus;
-  /** WebVTT subtitle key: subtitles/{videoId}/... */
+  /** WebVTT subtitle key: subtitles/{videoId}/source/... */
   subtitleKey?: string;
   /** BCP-47 language code used for transcription, e.g. 'en-US'. */
   subtitleLanguage?: string;
+  /** Translated subtitle tracks keyed by BCP-47 language code. */
+  translations?: Record<string, SubtitleTranslation>;
   createdAt: number;
   updatedAt: number;
 }
@@ -35,6 +48,13 @@ export interface SubtitleInfo {
   baseUrl: string;
   signedQuery: string;
   expiresAt: number;
+}
+
+/** A subtitle track returned to the player/editor. */
+export interface SubtitleTrackInfo extends SubtitleInfo {
+  language: string;
+  label: string;
+  isSource: boolean;
 }
 
 export interface StreamInfo {
