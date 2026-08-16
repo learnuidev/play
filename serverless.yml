@@ -72,7 +72,9 @@ provider:
           Resource: "*"
         - Effect: Allow
           Action: iam:PassRole
-          Resource: !GetAtt MediaConvertRole.Arn
+          Resource:
+            - !GetAtt MediaConvertRole.Arn
+            - !GetAtt TranscribeRole.Arn
 
 functions:
   create-video:
