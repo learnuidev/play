@@ -7,6 +7,7 @@ import { useSaveSubtitles } from '@/modules/subtitle/subtitle.queries';
 import { formatTimestamp, parseTimestamp, parseVtt, serializeVtt } from '@/lib/vtt';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { SubtitleCue, SubtitleResponse } from '@/types';
 
 interface SubtitleEditorProps {
@@ -72,6 +73,8 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
   });
   const [dirtyLangs, setDirtyLangs] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<'cues' | 'raw'>('cues');
+  const [rawByLanguage, setRawByLanguage] = useState<Record<string, string>>({});
   const parentRef = useRef<HTMLDivElement>(null);
   const justAddedRef = useRef(false);
   const save = useSaveSubtitles(videoId);
@@ -80,6 +83,7 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
   const dirty = Boolean(dirtyLangs[selectedLanguage]);
   const selectedTrack = languages.find((l) => l.language === selectedLanguage);
   const isSource = selectedTrack?.isSource ?? true;
+  const rawText = rawByLanguage[selectedLanguage] ?? serializeVtt(cues);
 
   // Pick up language tracks that appear after a refetch (e.g. freshly
   // generated translations) without clobbering in-progress edits.
@@ -120,6 +124,39 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
 
   function markDirty() {
     setDirtyLangs((prev) => ({ ...prev, [selectedLanguage]: true }));
+  }
+
+  function switchView(next: 'cues' | 'raw') {
+    if (next === view) return;
+    if (next === 'raw') {
+      setRawByLanguage((prev) =>
+        prev[selectedLanguage] !== undefined
+          ? prev
+          : { ...prev, [selectedLanguage]: serializeVtt(cues) },
+      );
+    } else {
+      const draft = rawByLanguage[selectedLanguage];
+      if (draft !== undefined) {
+        setCuesByLanguage((prev) => ({
+          ...prev,
+          [selectedLanguage]: parseVtt(draft),
+        }));
+      }
+    }
+    setView(next);
+  }
+
+  function handleLanguageChange(nextLang: string) {
+    if (view === 'raw') {
+      const draft = rawByLanguage[selectedLanguage];
+      if (draft !== undefined) {
+        setCuesByLanguage((prev) => ({
+          ...prev,
+          [selectedLanguage]: parseVtt(draft),
+        }));
+      }
+    }
+    setSelectedLanguage(nextLang);
   }
 
   function setCues(updater: (prev: SubtitleCue[]) => SubtitleCue[]) {
@@ -181,9 +218,9 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
     });
   }
 
-  function validate(): string | null {
-    for (let i = 0; i < cues.length; i++) {
-      const cue = cues[i];
+  function validateCues(list: SubtitleCue[]): string | null {
+    for (let i = 0; i < list.length; i++) {
+      const cue = list[i];
       const start = parseTimestamp(cue.start);
       const end = parseTimestamp(cue.end);
       if (start === null) return `Cue ${i + 1}: invalid start time "${cue.start}"`;
@@ -197,24 +234,50 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
   function handleSave() {
     setError(null);
 
-    const invalid = validate();
+    const label = selectedTrack?.label ?? selectedLanguage;
+    const onSuccess = () => {
+      setDirtyLangs((prev) => ({ ...prev, [selectedLanguage]: false }));
+      toast.success(`Subtitle for ${label} saved successfully`);
+    };
+    const onError = (err: unknown) => {
+      setError(err instanceof Error ? err.message : 'Failed to save subtitles');
+    };
+
+    if (view === 'raw') {
+      if (!rawText.trim()) {
+        setError('Subtitle text is empty');
+        return;
+      }
+
+      const parsed = parseVtt(rawText);
+      if (parsed.length === 0) {
+        setError('No valid cues found in the raw subtitle text');
+        return;
+      }
+
+      const invalid = validateCues(parsed);
+      if (invalid) {
+        setError(invalid);
+        return;
+      }
+
+      setCuesByLanguage((prev) => ({ ...prev, [selectedLanguage]: parsed }));
+      save.mutate(
+        { content: rawText, language: isSource ? undefined : selectedLanguage },
+        { onSuccess, onError },
+      );
+      return;
+    }
+
+    const invalid = validateCues(cues);
     if (invalid) {
       setError(invalid);
       return;
     }
 
-    const label = selectedTrack?.label ?? selectedLanguage;
     save.mutate(
       { content: serializeVtt(cues), language: isSource ? undefined : selectedLanguage },
-      {
-        onSuccess: () => {
-          setDirtyLangs((prev) => ({ ...prev, [selectedLanguage]: false }));
-          toast.success(`Subtitle for ${label} saved successfully`);
-        },
-        onError: (err) => {
-          setError(err instanceof Error ? err.message : 'Failed to save subtitles');
-        },
-      },
+      { onSuccess, onError },
     );
   }
 
@@ -224,7 +287,7 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
         <div className="flex items-center gap-2.5">
           <select
             value={selectedLanguage}
-            onChange={(e) => setSelectedLanguage(e.target.value)}
+            onChange={(e) => handleLanguageChange(e.target.value)}
             className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
             aria-label="Subtitle language"
           >
@@ -235,6 +298,16 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
             ))}
           </select>
           <h3 className="text-sm font-semibold">Subtitle editor</h3>
+          <Tabs value={view} onValueChange={(v) => switchView(v as 'cues' | 'raw')}>
+            <TabsList className="h-8">
+              <TabsTrigger value="cues" className="h-6 px-2.5 text-xs">
+                Editor
+              </TabsTrigger>
+              <TabsTrigger value="raw" className="h-6 px-2.5 text-xs">
+                Raw
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
           <span className="rounded-full border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground">
             {cues.length} cues
           </span>
@@ -245,9 +318,11 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
           )}
         </div>
         <div className="flex items-center gap-2.5">
-          <Button variant="outline" size="sm" onClick={addCue}>
-            + Add cue
-          </Button>
+          {view === 'cues' && (
+            <Button variant="outline" size="sm" onClick={addCue}>
+              + Add cue
+            </Button>
+          )}
           <Button size="sm" onClick={handleSave} disabled={save.isPending}>
             {save.isPending ? 'Saving…' : 'Save subtitles'}
           </Button>
@@ -256,6 +331,7 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
+      {view === 'cues' ? (
       <div ref={parentRef} className="h-[55vh] overflow-y-auto rounded-xl border bg-background p-2.5">
         <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
           {virtualizer.getVirtualItems().map((item) => {
@@ -339,6 +415,17 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
           })}
         </div>
       </div>
+      ) : (
+        <textarea
+          value={rawText}
+          onChange={(e) => {
+            setRawByLanguage((prev) => ({ ...prev, [selectedLanguage]: e.target.value }));
+            markDirty();
+          }}
+          className="h-[55vh] w-full resize-y rounded-xl border bg-background p-3 font-mono text-xs leading-relaxed outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+          aria-label="Raw subtitle text"
+        />
+      )}
     </div>
   );
 }
