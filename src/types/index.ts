@@ -32,9 +32,28 @@ export interface Video {
   subtitleStatus?: SubtitleStatus;
   subtitleKey?: string;
   subtitleLanguage?: string;
+  translations?: Record<string, SubtitleTranslation>;
   createdAt: number;
   updatedAt: number;
 }
+
+export interface SubtitleTranslation {
+  language: string;
+  label: string;
+  status: SubtitleStatus;
+  key?: string;
+}
+
+export interface TranslationLanguage {
+  bcp47: string;
+  label: string;
+}
+
+export const TRANSLATION_LANGUAGES: TranslationLanguage[] = [
+  { bcp47: 'zh-CN', label: 'Mandarin Chinese' },
+  { bcp47: 'fr', label: 'French' },
+  { bcp47: 'es', label: 'Spanish' },
+];
 
 export interface CreateVideoPayload {
   title: string;
@@ -66,13 +85,18 @@ export interface StreamResponse {
   expiresAt: number;
 }
 
+export interface SubtitleTrackInfo {
+  language: string;
+  label: string;
+  isSource: boolean;
+  subtitleUrl: string;
+}
+
 export interface SubtitleResponse {
   videoId: string;
-  subtitleUrl: string;
-  baseUrl: string;
-  signedQuery: string;
-  expiresAt: number;
+  sourceLanguage: string;
   content: string;
+  tracks: SubtitleTrackInfo[];
 }
 
 export interface SubtitleCue {

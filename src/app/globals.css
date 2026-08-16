@@ -287,6 +287,53 @@ code {
   flex-wrap: wrap;
 }
 
+.translations-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.translation-options {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.translation-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.translation-option input {
+  accent-color: var(--accent);
+}
+
+.translation-status {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.translation-status.status-ready {
+  color: var(--green);
+}
+
+.translation-status.status-generating {
+  color: var(--amber);
+}
+
+.translation-status.status-failed {
+  color: var(--red);
+}
+
 .subtitle-editor {
   margin-top: 24px;
   background: var(--surface);

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { StreamResponse, SubtitleResponse, Video } from "@/types";
+import { TRANSLATION_LANGUAGES } from "@/types";
 import { StatusBadge } from "@/components/status-badge";
 import { SubtitleEditor } from "@/components/subtitle-editor";
 import { VideoPlayer } from "@/components/video-player";
@@ -21,6 +22,10 @@ export default function VideoPage() {
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(
+    TRANSLATION_LANGUAGES.map((l) => l.bcp47),
+  );
   const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
@@ -97,22 +102,41 @@ export default function VideoPage() {
     }
   }
 
+  function toggleLanguage(bcp47: string) {
+    setSelectedLanguages((prev) =>
+      prev.includes(bcp47)
+        ? prev.filter((l) => l !== bcp47)
+        : [...prev, bcp47],
+    );
+  }
+
+  async function handleGenerateTranslations() {
+    if (selectedLanguages.length === 0) return;
+    setTranslating(true);
+    setError(null);
+    try {
+      await api.generateTranslations(videoId, selectedLanguages);
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to generate translations",
+      );
+    } finally {
+      setTranslating(false);
+    }
+  }
+
   const subtitleStatus = video?.subtitleStatus ?? "NONE";
   const showSubtitleAction =
     video?.status === "READY" &&
     subtitleStatus !== "READY" &&
     subtitleStatus !== "GENERATING";
 
-  const tracks =
-    subtitle && video?.subtitleLanguage
-      ? [
-          {
-            src: subtitle.subtitleUrl,
-            srcLang: video.subtitleLanguage,
-            label: video.subtitleLanguage === "en-US" ? "English" : video.subtitleLanguage,
-          },
-        ]
-      : [];
+  const tracks = (subtitle?.tracks ?? []).map((track) => ({
+    src: track.subtitleUrl,
+    srcLang: track.language,
+    label: track.label,
+  }));
 
   return (
     <div className="player-page">
@@ -194,6 +218,50 @@ export default function VideoPage() {
                     </button>
                   )}
                 </div>
+
+                {subtitleStatus === "READY" && (
+                  <div className="translations-row">
+                    <span className="desc">Translate subtitles into:</span>
+                    <div className="translation-options">
+                      {TRANSLATION_LANGUAGES.map((lang) => {
+                        const translation = video.translations?.[lang.bcp47];
+                        const checked = selectedLanguages.includes(lang.bcp47);
+                        return (
+                          <label
+                            key={lang.bcp47}
+                            className="translation-option"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleLanguage(lang.bcp47)}
+                              disabled={translating}
+                            />
+                            <span>{lang.label}</span>
+                            {translation && (
+                              <span className={`translation-status status-${translation.status.toLowerCase()}`}>
+                                {translation.status === "READY"
+                                  ? "Ready"
+                                  : translation.status === "GENERATING"
+                                    ? "Generating…"
+                                    : translation.status === "FAILED"
+                                      ? "Failed"
+                                      : ""}
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleGenerateTranslations}
+                      disabled={translating || selectedLanguages.length === 0}
+                    >
+                      {translating ? "Translating…" : "Generate translations"}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
