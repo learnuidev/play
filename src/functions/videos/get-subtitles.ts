@@ -4,7 +4,7 @@ import { buildSignedSubtitleUrl } from '../../lib/cloudfront';
 import { getVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
 import { getObjectText } from '../../lib/s3';
-import type { SubtitleTrackInfo } from '../../types';
+import type { SubtitleLanguageContent, SubtitleTrackInfo } from '../../types';
 
 /**
  * Returns the raw source VTT content (for the editor) plus signed CloudFront
@@ -27,14 +27,19 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   const content = await getObjectText(video.subtitleKey);
   const sourceLanguage = video.subtitleLanguage ?? 'en-US';
+  const sourceLabel = sourceLanguage.toLowerCase().startsWith('en') ? 'English' : sourceLanguage;
 
   const tracks: SubtitleTrackInfo[] = [
     {
       ...buildSignedSubtitleUrl(video.subtitleKey),
       language: sourceLanguage,
-      label: sourceLanguage.toLowerCase().startsWith('en') ? 'English' : sourceLanguage,
+      label: sourceLabel,
       isSource: true,
     },
+  ];
+
+  const languages: SubtitleLanguageContent[] = [
+    { language: sourceLanguage, label: sourceLabel, isSource: true, content },
   ];
 
   for (const [language, translation] of Object.entries(video.translations ?? {})) {
@@ -45,6 +50,12 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
       label: translation.label,
       isSource: false,
     });
+    languages.push({
+      language,
+      label: translation.label,
+      isSource: false,
+      content: await getObjectText(translation.key),
+    });
   }
 
   return ok({
@@ -52,6 +63,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     content,
     sourceLanguage,
     tracks,
+    languages,
   });
 }
 

@@ -57,6 +57,14 @@ export interface SubtitleTrackInfo extends SubtitleInfo {
   isSource: boolean;
 }
 
+/** Editable subtitle content for a single language track. */
+export interface SubtitleLanguageContent {
+  language: string;
+  label: string;
+  isSource: boolean;
+  content: string;
+}
+
 export interface StreamInfo {
   manifestUrl: string;
   baseUrl: string;

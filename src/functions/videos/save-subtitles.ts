@@ -8,12 +8,15 @@ const MAX_SUBTITLE_BYTES = 1024 * 1024; // 1 MB
 
 interface SaveSubtitlesBody {
   content?: string;
+  /** BCP-47 language code of the track to edit. Omitted for the source track. */
+  language?: string;
 }
 
 /**
- * Overwrites the video's WebVTT subtitles with edited content. Writes to a
- * fresh key (so CloudFront serves the edit without cache invalidation) and
- * deletes the previous `.vtt` files.
+ * Overwrites a WebVTT subtitle track with edited content. Editing the source
+ * track writes to a fresh source key (so CloudFront serves the edit without
+ * cache invalidation) and invalidates previously generated translations.
+ * Editing a translation only rewrites that translation's track.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const ownerId = requireOwnerId(event);
@@ -37,6 +40,33 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   }
   if (Buffer.byteLength(content, 'utf8') > MAX_SUBTITLE_BYTES) {
     throw new HttpError(413, 'Subtitles are too large');
+  }
+
+  const sourceLanguage = video.subtitleLanguage ?? 'en-US';
+  const isTranslation = Boolean(body.language && body.language !== sourceLanguage);
+
+  if (isTranslation) {
+    const language = body.language as string;
+    const existing = video.translations?.[language];
+    if (!existing) {
+      throw new HttpError(404, `Translation not found for language "${language}"`);
+    }
+
+    // Replace the previous .vtt file(s) for this language so only the fresh
+    // one remains, then point the translation at the new key.
+    const prefix = `subtitles/${videoId}/translations/${language}/`;
+    const staleVtts = (await listKeysUnderPrefix(prefix)).filter((k) => k.endsWith('.vtt'));
+    if (staleVtts.length) await deleteObjects(staleVtts);
+
+    const key = `subtitles/${videoId}/translations/${language}/subtitles-${Date.now()}.vtt`;
+    await putObjectText(key, content, 'text/vtt');
+
+    const translations = { ...(video.translations ?? {}) };
+    translations[language] = { ...existing, key, status: 'READY' };
+    await updateVideo(videoId, { translations });
+
+    const updated = await getVideo(videoId);
+    return ok({ video: updated });
   }
 
   // Remove the previous .vtt file(s) so only the fresh one remains.
