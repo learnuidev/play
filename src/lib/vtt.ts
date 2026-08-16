@@ -53,10 +53,25 @@ export function parseVtt(content: string): VttCue[] {
   return cues;
 }
 
+/**
+ * Cue settings applied to every cue so captions render at a consistent
+ * vertical position (native WebVTT defaults to `line:auto`, which drifts up
+ * and down depending on cue height and the current track).
+ */
+const CUE_SETTINGS = 'line:90%';
+
 /** Serializes cues into a canonical WebVTT document. */
 export function serializeVtt(cues: VttCue[]): string {
   const body = cues
-    .map((cue) => `${cue.start.trim()} --> ${cue.end.trim()}\n${cue.text}`)
+    .map((cue) => `${cue.start.trim()} --> ${cue.end.trim()} ${CUE_SETTINGS}\n${cue.text}`)
     .join('\n\n');
   return `WEBVTT\n\n${body}\n`;
+}
+
+/**
+ * Re-parses and re-serializes a WebVTT document, applying consistent cue
+ * positioning (used to normalize Transcribe's plain output).
+ */
+export function normalizeVtt(content: string): string {
+  return serializeVtt(parseVtt(content));
 }
