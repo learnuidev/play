@@ -97,6 +97,14 @@ export interface SubtitleResponse {
   sourceLanguage: string;
   content: string;
   tracks: SubtitleTrackInfo[];
+  languages: SubtitleLanguageContent[];
+}
+
+export interface SubtitleLanguageContent {
+  language: string;
+  label: string;
+  isSource: boolean;
+  content: string;
 }
 
 export interface SubtitleCue {

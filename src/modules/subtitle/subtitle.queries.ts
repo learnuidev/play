@@ -25,7 +25,8 @@ export function useGenerateSubtitles(videoId: string) {
 export function useSaveSubtitles(videoId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (content: string) => api.saveSubtitles(videoId, content),
+    mutationFn: (input: { content: string; language?: string }) =>
+      api.saveSubtitles(videoId, input.content, input.language),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: subtitleKeys.detail(videoId) });
       qc.invalidateQueries({ queryKey: videoKeys.detail(videoId) });

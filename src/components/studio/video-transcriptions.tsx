@@ -111,7 +111,7 @@ export function VideoTranscriptions({ video }: { video: Video }) {
                 <Skeleton className="h-24 w-full" />
               </div>
             ) : subtitle ? (
-              <SubtitleEditor videoId={video.videoId} initialContent={subtitle.content} />
+              <SubtitleEditor videoId={video.videoId} subtitle={subtitle} />
             ) : (
               <p className="py-6 text-center text-sm text-muted-foreground">
                 Could not load subtitles.

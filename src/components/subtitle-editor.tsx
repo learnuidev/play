@@ -1,16 +1,17 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useSaveSubtitles } from '@/modules/subtitle/subtitle.queries';
 import { formatTimestamp, parseTimestamp, parseVtt, serializeVtt } from '@/lib/vtt';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import type { SubtitleCue } from '@/types';
+import type { SubtitleCue, SubtitleResponse } from '@/types';
 
 interface SubtitleEditorProps {
   videoId: string;
-  initialContent: string;
+  subtitle: SubtitleResponse;
 }
 
 let cueCounter = 0;
@@ -47,14 +48,61 @@ function TrashIcon() {
   );
 }
 
-export function SubtitleEditor({ videoId, initialContent }: SubtitleEditorProps) {
-  const [cues, setCues] = useState<SubtitleCue[]>(() => parseVtt(initialContent));
+export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
+  const languages = useMemo(() => {
+    const available = subtitle.languages ?? [];
+    if (available.length) return available;
+    return [
+      {
+        language: subtitle.sourceLanguage,
+        label: subtitle.sourceLanguage.toLowerCase().startsWith('en') ? 'English' : subtitle.sourceLanguage,
+        isSource: true,
+        content: subtitle.content,
+      },
+    ];
+  }, [subtitle.languages, subtitle.sourceLanguage, subtitle.content]);
+
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(
+    languages[0]?.language ?? subtitle.sourceLanguage,
+  );
+  const [cuesByLanguage, setCuesByLanguage] = useState<Record<string, SubtitleCue[]>>(() => {
+    const map: Record<string, SubtitleCue[]> = {};
+    for (const lang of languages) map[lang.language] = parseVtt(lang.content);
+    return map;
+  });
+  const [dirtyLangs, setDirtyLangs] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [dirty, setDirty] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const justAddedRef = useRef(false);
   const save = useSaveSubtitles(videoId);
+
+  const cues = cuesByLanguage[selectedLanguage] ?? [];
+  const dirty = Boolean(dirtyLangs[selectedLanguage]);
+  const selectedTrack = languages.find((l) => l.language === selectedLanguage);
+  const isSource = selectedTrack?.isSource ?? true;
+
+  // Pick up language tracks that appear after a refetch (e.g. freshly
+  // generated translations) without clobbering in-progress edits.
+  useEffect(() => {
+    setCuesByLanguage((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const lang of languages) {
+        if (!next[lang.language]) {
+          next[lang.language] = parseVtt(lang.content);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [languages]);
+
+  // Reset the selection if the current language is no longer available.
+  useEffect(() => {
+    if (!languages.some((l) => l.language === selectedLanguage)) {
+      setSelectedLanguage(languages[0]?.language ?? subtitle.sourceLanguage);
+    }
+  }, [languages, selectedLanguage, subtitle.sourceLanguage]);
 
   const virtualizer = useVirtualizer({
     count: cues.length,
@@ -71,22 +119,27 @@ export function SubtitleEditor({ videoId, initialContent }: SubtitleEditorProps)
   }, [cues.length, virtualizer]);
 
   function markDirty() {
-    setDirty(true);
-    setSaved(false);
+    setDirtyLangs((prev) => ({ ...prev, [selectedLanguage]: true }));
+    setSavedLanguage((prev) => (prev === selectedLanguage ? null : prev));
+  }
+
+  function setCues(updater: (prev: SubtitleCue[]) => SubtitleCue[]) {
+    markDirty();
+    setCuesByLanguage((prev) => ({
+      ...prev,
+      [selectedLanguage]: updater(prev[selectedLanguage] ?? []),
+    }));
   }
 
   function updateCue(id: string, patch: Partial<Omit<SubtitleCue, 'id'>>) {
-    markDirty();
     setCues((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
   function removeCue(id: string) {
-    markDirty();
     setCues((prev) => prev.filter((c) => c.id !== id));
   }
 
   function duplicateCue(id: string) {
-    markDirty();
     setCues((prev) => {
       const index = prev.findIndex((c) => c.id === id);
       if (index === -1) return prev;
@@ -98,7 +151,6 @@ export function SubtitleEditor({ videoId, initialContent }: SubtitleEditorProps)
   }
 
   function mergeWithNext(id: string) {
-    markDirty();
     setCues((prev) => {
       const index = prev.findIndex((c) => c.id === id);
       if (index === -1 || index >= prev.length - 1) return prev;
@@ -117,7 +169,6 @@ export function SubtitleEditor({ videoId, initialContent }: SubtitleEditorProps)
   }
 
   function addCue() {
-    markDirty();
     justAddedRef.current = true;
     setCues((prev) => {
       let start = '00:00:00.000';
@@ -146,7 +197,7 @@ export function SubtitleEditor({ videoId, initialContent }: SubtitleEditorProps)
 
   function handleSave() {
     setError(null);
-    setSaved(false);
+    setSavedLanguage((prev) => (prev === selectedLanguage ? null : prev));
 
     const invalid = validate();
     if (invalid) {
@@ -154,21 +205,36 @@ export function SubtitleEditor({ videoId, initialContent }: SubtitleEditorProps)
       return;
     }
 
-    save.mutate(serializeVtt(cues), {
-      onSuccess: () => {
-        setDirty(false);
-        setSaved(true);
+    save.mutate(
+      { content: serializeVtt(cues), language: isSource ? undefined : selectedLanguage },
+      {
+        onSuccess: () => {
+          setDirtyLangs((prev) => ({ ...prev, [selectedLanguage]: false }));
+          setSavedLanguage(selectedLanguage);
+        },
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : 'Failed to save subtitles');
+        },
       },
-      onError: (err) => {
-        setError(err instanceof Error ? err.message : 'Failed to save subtitles');
-      },
-    });
+    );
   }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
+          <select
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(e.target.value)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"
+            aria-label="Subtitle language"
+          >
+            {languages.map((lang) => (
+              <option key={lang.language} value={lang.language}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
           <h3 className="text-sm font-semibold">Subtitle editor</h3>
           <span className="rounded-full border bg-muted/40 px-2.5 py-0.5 text-xs text-muted-foreground">
             {cues.length} cues
