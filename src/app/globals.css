@@ -278,3 +278,11 @@ code {
   font-size: 1.25rem;
   margin: 0 0 8px;
 }
+
+.subtitle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}

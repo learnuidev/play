@@ -8,12 +8,19 @@ import { HlsJsVideo } from '@videojs/react/media/hlsjs-video';
 
 const Player = createPlayer({ features: videoFeatures });
 
+export interface SubtitleTrack {
+  src: string;
+  srcLang: string;
+  label: string;
+}
+
 interface VideoPlayerProps {
   src: string;
   signedQuery: string;
+  tracks?: SubtitleTrack[];
 }
 
-export function VideoPlayer({ src, signedQuery }: VideoPlayerProps) {
+export function VideoPlayer({ src, signedQuery, tracks = [] }: VideoPlayerProps) {
   // Appends the CloudFront path-scoped signature to every HLS request
   // (the manifest already carries it; segments are resolved relative and
   // need it re-appended).
@@ -34,7 +41,18 @@ export function VideoPlayer({ src, signedQuery }: VideoPlayerProps) {
   return (
     <Player.Provider>
       <VideoSkin className="player-video">
-        <HlsJsVideo src={src} config={config} playsInline />
+        <HlsJsVideo src={src} config={config} playsInline crossOrigin="anonymous">
+          {tracks.map((track) => (
+            <track
+              key={track.src}
+              kind="subtitles"
+              src={track.src}
+              srcLang={track.srcLang}
+              label={track.label}
+              default={track.label === 'English'}
+            />
+          ))}
+        </HlsJsVideo>
       </VideoSkin>
     </Player.Provider>
   );

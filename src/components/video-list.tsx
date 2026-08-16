@@ -24,6 +24,7 @@ export function VideoList({ status }: { status: VideoStatus | 'ALL' }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [generating, setGenerating] = useState<string | null>(null);
 
   const filter = status === 'ALL' ? undefined : status;
 
@@ -74,6 +75,19 @@ export function VideoList({ status }: { status: VideoStatus | 'ALL' }) {
     }
   }
 
+  async function handleGenerateSubtitles(videoId: string) {
+    setGenerating(videoId);
+    setError(null);
+    try {
+      await api.generateSubtitles(videoId);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate subtitles');
+    } finally {
+      setGenerating(null);
+    }
+  }
+
   if (loading) return <div className="empty-state">Loading…</div>;
   if (error) return <div className="empty-state error-text">{error}</div>;
   if (videos.length === 0) return <div className="empty-state">No videos yet. Upload one above.</div>;
@@ -102,6 +116,21 @@ export function VideoList({ status }: { status: VideoStatus | 'ALL' }) {
                 {retrying === video.videoId ? 'Retrying…' : 'Retry'}
               </button>
             )}
+            {video.status === 'READY' &&
+              video.subtitleStatus !== 'READY' &&
+              video.subtitleStatus !== 'GENERATING' && (
+                <button
+                  className="btn btn-primary"
+                  disabled={generating === video.videoId}
+                  onClick={() => handleGenerateSubtitles(video.videoId)}
+                >
+                  {generating === video.videoId
+                    ? 'Starting…'
+                    : video.subtitleStatus === 'FAILED'
+                      ? 'Regenerate subtitles'
+                      : 'Subtitles'}
+                </button>
+              )}
             <button
               className="btn btn-danger"
               onClick={() => handleDelete(video.videoId)}

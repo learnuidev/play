@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { StreamResponse, Video } from "@/types";
+import type { StreamResponse, SubtitleResponse, Video } from "@/types";
 import { StatusBadge } from "@/components/status-badge";
 import { VideoPlayer } from "@/components/video-player";
 
@@ -16,19 +16,34 @@ export default function VideoPage() {
 
   const [video, setVideo] = useState<Video | null>(null);
   const [stream, setStream] = useState<StreamResponse | null>(null);
+  const [subtitle, setSubtitle] = useState<SubtitleResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const videoRes = await api.getVideo(videoId);
       setVideo(videoRes.video);
+
       if (videoRes.video.status === "READY") {
         const streamRes = await api.getStream(videoId);
         setStream(streamRes);
       } else {
         setStream(null);
       }
+
+      if (
+        videoRes.video.status === "READY" &&
+        videoRes.video.subtitleStatus === "READY" &&
+        videoRes.video.subtitleKey
+      ) {
+        const subtitleRes = await api.getSubtitles(videoId);
+        setSubtitle(subtitleRes);
+      } else {
+        setSubtitle(null);
+      }
+
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load video");
@@ -41,7 +56,11 @@ export default function VideoPage() {
 
   useEffect(() => {
     if (!video) return;
-    if (video.status !== "UPLOADING" && video.status !== "PROCESSING") return;
+    const needsPoll =
+      video.status === "UPLOADING" ||
+      video.status === "PROCESSING" ||
+      video.subtitleStatus === "GENERATING";
+    if (!needsPoll) return;
     const timer = setInterval(load, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [video, load]);
@@ -60,6 +79,38 @@ export default function VideoPage() {
       setRetrying(false);
     }
   }
+
+  async function handleGenerateSubtitles() {
+    setGenerating(true);
+    setError(null);
+    try {
+      await api.generateSubtitles(videoId);
+      await load();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to generate subtitles",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const subtitleStatus = video?.subtitleStatus ?? "NONE";
+  const showSubtitleAction =
+    video?.status === "READY" &&
+    subtitleStatus !== "READY" &&
+    subtitleStatus !== "GENERATING";
+
+  const tracks =
+    subtitle && video?.subtitleLanguage
+      ? [
+          {
+            src: subtitle.subtitleUrl,
+            srcLang: video.subtitleLanguage,
+            label: video.subtitleLanguage === "en-US" ? "English" : video.subtitleLanguage,
+          },
+        ]
+      : [];
 
   return (
     <div className="player-page">
@@ -100,6 +151,7 @@ export default function VideoPage() {
             <VideoPlayer
               src={stream.manifestUrl}
               signedQuery={stream.signedQuery}
+              tracks={tracks}
             />
           )}
           <div className="player-info">
@@ -107,6 +159,34 @@ export default function VideoPage() {
               <>
                 <h1>{video.title}</h1>
                 <p>{video.description}</p>
+                <div className="subtitle-row">
+                  <span className="desc">
+                    Subtitles:{" "}
+                    {subtitleStatus === "READY"
+                      ? "Ready"
+                      : subtitleStatus === "GENERATING"
+                        ? "Generating…"
+                        : subtitleStatus === "FAILED"
+                          ? "Failed"
+                          : "None"}
+                  </span>
+                  {subtitleStatus === "GENERATING" && (
+                    <span className="desc">Subtitle generation in progress…</span>
+                  )}
+                  {showSubtitleAction && (
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleGenerateSubtitles}
+                      disabled={generating}
+                    >
+                      {generating
+                        ? "Starting…"
+                        : subtitleStatus === "FAILED"
+                          ? "Regenerate subtitles"
+                          : "Generate subtitles"}
+                    </button>
+                  )}
+                </div>
               </>
             )}
           </div>

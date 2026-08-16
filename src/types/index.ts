@@ -9,6 +9,15 @@ export const VIDEO_STATUS_LABELS: Record<VideoStatus, string> = {
   FAILED: 'Failed',
 };
 
+export type SubtitleStatus = 'NONE' | 'GENERATING' | 'READY' | 'FAILED';
+
+export const SUBTITLE_STATUS_LABELS: Record<SubtitleStatus, string> = {
+  NONE: 'No subtitles',
+  GENERATING: 'Generating subtitles…',
+  READY: 'Subtitles ready',
+  FAILED: 'Subtitles failed',
+};
+
 export interface Video {
   videoId: string;
   ownerId: string;
@@ -20,6 +29,9 @@ export interface Video {
   size: number;
   s3Key: string;
   manifestKey?: string;
+  subtitleStatus?: SubtitleStatus;
+  subtitleKey?: string;
+  subtitleLanguage?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -49,6 +61,14 @@ export interface ListVideosResponse {
 export interface StreamResponse {
   videoId: string;
   manifestUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
+export interface SubtitleResponse {
+  videoId: string;
+  subtitleUrl: string;
   baseUrl: string;
   signedQuery: string;
   expiresAt: number;

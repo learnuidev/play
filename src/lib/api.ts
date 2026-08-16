@@ -4,6 +4,7 @@ import type {
   CreateVideoResponse,
   ListVideosResponse,
   StreamResponse,
+  SubtitleResponse,
   Video,
   VideoStatus,
 } from '@/types';
@@ -63,4 +64,8 @@ export const api = {
   retryVideo: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}/retry`, { method: 'POST' }),
 
   getStream: (videoId: string) => request<StreamResponse>(`/videos/${videoId}/stream`),
+
+  generateSubtitles: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}/subtitles`, { method: 'POST' }),
+
+  getSubtitles: (videoId: string) => request<SubtitleResponse>(`/videos/${videoId}/subtitles`),
 };
