@@ -51,9 +51,8 @@ export async function listKeysUnderPrefix(prefix: string): Promise<string[]> {
   return keys;
 }
 
-/** Deletes every object under a prefix (handles pagination, max 1000/batch). */
-export async function deletePrefix(prefix: string): Promise<void> {
-  const keys = await listKeysUnderPrefix(prefix);
+/** Deletes the given object keys (batches of 1000). */
+export async function deleteObjects(keys: string[]): Promise<void> {
   for (let i = 0; i < keys.length; i += 1000) {
     const batch = keys.slice(i, i + 1000);
     await s3.send(
@@ -63,6 +62,24 @@ export async function deletePrefix(prefix: string): Promise<void> {
       }),
     );
   }
+}
+
+/** Deletes every object under a prefix (handles pagination, max 1000/batch). */
+export async function deletePrefix(prefix: string): Promise<void> {
+  const keys = await listKeysUnderPrefix(prefix);
+  await deleteObjects(keys);
+}
+
+/** Writes a UTF-8 string as an object. */
+export async function putObjectText(key: string, text: string, contentType = 'text/plain'): Promise<void> {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: env.bucket,
+      Key: key,
+      Body: text,
+      ContentType: contentType,
+    }),
+  );
 }
 
 /** Reads an object body as a UTF-8 string. */

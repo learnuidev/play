@@ -3,9 +3,11 @@ import { requireOwnerId } from '../../lib/auth';
 import { buildSignedSubtitleUrl } from '../../lib/cloudfront';
 import { getVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
+import { getObjectText } from '../../lib/s3';
 
 /**
- * Returns a signed CloudFront URL for the video's WebVTT subtitle file.
+ * Returns a signed CloudFront URL for the video's WebVTT subtitle file, along
+ * with the raw VTT content for the subtitle editor.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const ownerId = requireOwnerId(event);
@@ -21,7 +23,13 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     throw new HttpError(409, `Subtitles are not ready (status: ${video.subtitleStatus ?? 'NONE'})`);
   }
 
-  return ok({ ...buildSignedSubtitleUrl(video.subtitleKey), videoId });
+  const content = await getObjectText(video.subtitleKey);
+
+  return ok({
+    ...buildSignedSubtitleUrl(video.subtitleKey),
+    videoId,
+    content,
+  });
 }
 
 export const handler = handle(main);

@@ -158,6 +158,15 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  save-subtitles:
+    handler: src/functions/videos/save-subtitles.handler
+    events:
+      - http:
+          path: videos/{videoId}/subtitles
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
