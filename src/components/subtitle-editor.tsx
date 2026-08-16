@@ -120,7 +120,6 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
 
   function markDirty() {
     setDirtyLangs((prev) => ({ ...prev, [selectedLanguage]: true }));
-    setSavedLanguage((prev) => (prev === selectedLanguage ? null : prev));
   }
 
   function setCues(updater: (prev: SubtitleCue[]) => SubtitleCue[]) {
@@ -197,7 +196,6 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
 
   function handleSave() {
     setError(null);
-    setSavedLanguage((prev) => (prev === selectedLanguage ? null : prev));
 
     const invalid = validate();
     if (invalid) {
@@ -205,12 +203,13 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
       return;
     }
 
+    const label = selectedTrack?.label ?? selectedLanguage;
     save.mutate(
       { content: serializeVtt(cues), language: isSource ? undefined : selectedLanguage },
       {
         onSuccess: () => {
           setDirtyLangs((prev) => ({ ...prev, [selectedLanguage]: false }));
-          setSavedLanguage(selectedLanguage);
+          toast.success(`Subtitle for ${label} saved successfully`);
         },
         onError: (err) => {
           setError(err instanceof Error ? err.message : 'Failed to save subtitles');
@@ -252,7 +251,6 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
           <Button size="sm" onClick={handleSave} disabled={save.isPending}>
             {save.isPending ? 'Saving…' : 'Save subtitles'}
           </Button>
-          {saved && !dirty && <span className="text-xs text-emerald-400">Saved</span>}
         </div>
       </div>
 
