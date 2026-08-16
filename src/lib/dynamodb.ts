@@ -7,7 +7,7 @@ import {
   QueryCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import type { Video, VideoStatus } from '../types';
+import type { SubtitleStatus, Video, VideoStatus } from '../types';
 import { env } from './config';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -33,6 +33,9 @@ export interface UpdateVideoPatch {
   description?: string;
   size?: number;
   manifestKey?: string;
+  subtitleStatus?: SubtitleStatus;
+  subtitleKey?: string;
+  subtitleLanguage?: string;
 }
 
 export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Promise<void> {
@@ -66,6 +69,21 @@ export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Pro
     names['#manifestKey'] = 'manifestKey';
     values[':manifestKey'] = patch.manifestKey;
     set += ', #manifestKey = :manifestKey';
+  }
+  if (patch.subtitleStatus !== undefined) {
+    names['#subtitleStatus'] = 'subtitleStatus';
+    values[':subtitleStatus'] = patch.subtitleStatus;
+    set += ', #subtitleStatus = :subtitleStatus';
+  }
+  if (patch.subtitleKey !== undefined) {
+    names['#subtitleKey'] = 'subtitleKey';
+    values[':subtitleKey'] = patch.subtitleKey;
+    set += ', #subtitleKey = :subtitleKey';
+  }
+  if (patch.subtitleLanguage !== undefined) {
+    names['#subtitleLanguage'] = 'subtitleLanguage';
+    values[':subtitleLanguage'] = patch.subtitleLanguage;
+    set += ', #subtitleLanguage = :subtitleLanguage';
   }
 
   await client.send(

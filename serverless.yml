@@ -32,6 +32,8 @@ provider:
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
     CLOUDFRONT_PRIVATE_KEY: ${ssm:/play/cloudfront/private-key}
     MEDIACONVERT_ROLE_ARN: !GetAtt MediaConvertRole.Arn
+    TRANSCRIBE_ROLE_ARN: !GetAtt TranscribeRole.Arn
+    SUBTITLE_LANGUAGE: en-US
     STREAM_URL_TTL_SECONDS: 900
     AWS_SDK_JS_NODE_VERSION_SUPPORT_WARNING_DISABLED: "true"
 
@@ -62,6 +64,11 @@ provider:
             - mediaconvert:CreateJob
             - mediaconvert:GetJob
             - mediaconvert:DescribeEndpoints
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - transcribe:StartTranscriptionJob
+            - transcribe:GetTranscriptionJob
           Resource: "*"
         - Effect: Allow
           Action: iam:PassRole
@@ -131,6 +138,24 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  generate-subtitles:
+    handler: src/functions/videos/generate-subtitles.handler
+    events:
+      - http:
+          path: videos/{videoId}/subtitles
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-subtitles:
+    handler: src/functions/videos/get-subtitles.handler
+    events:
+      - http:
+          path: videos/{videoId}/subtitles
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
@@ -157,6 +182,21 @@ functions:
                 - COMPLETE
                 - ERROR
                 - CANCELED
+
+  subtitle-generation-complete:
+    handler: src/functions/processing/subtitle-generation-complete.handler
+    timeout: 60
+    events:
+      - cloudwatchEvent:
+          event:
+            source:
+              - aws.transcribe
+            detail-type:
+              - Transcribe Job State Change
+            detail:
+              TranscriptionJobStatus:
+                - COMPLETED
+                - FAILED
 
 resources:
   Resources:
@@ -345,6 +385,34 @@ resources:
                   Resource:
                     - !GetAtt VideosBucket.Arn
                     - !Sub "${VideosBucket.Arn}/processed/*"
+
+    TranscribeRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: transcribe.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: TranscribeS3Access
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:ListBucket
+                  Resource:
+                    - !GetAtt VideosBucket.Arn
+                    - !Sub "${VideosBucket.Arn}/uploads/*"
+                - Effect: Allow
+                  Action:
+                    - s3:PutObject
+                  Resource:
+                    - !Sub "${VideosBucket.Arn}/subtitles/*"
 
     CognitoUserPool:
       Type: AWS::Cognito::UserPool

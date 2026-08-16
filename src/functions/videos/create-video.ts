@@ -53,6 +53,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     contentType,
     size: size ?? 0,
     s3Key,
+    subtitleStatus: 'NONE',
     createdAt: now,
     updatedAt: now,
   };

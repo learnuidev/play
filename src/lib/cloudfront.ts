@@ -1,5 +1,5 @@
 import { createSign } from "node:crypto";
-import type { StreamInfo } from "../types";
+import type { StreamInfo, SubtitleInfo } from "../types";
 import { env } from "./config";
 
 // wip
@@ -21,21 +21,24 @@ function signPolicy(policyJson: string, privateKeyPem: string): Buffer {
   return signer.sign(privateKeyPem);
 }
 
+interface SignedUrl {
+  url: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
 /**
- * Builds a CloudFront signed URL for the HLS master playlist using a
- * path-based custom policy that covers every file under
- * `https://{domain}/processed/{videoId}/hls/*`.
- *
- * Because the policy is path-scoped (rather than signed against a single
- * URL), the SAME `Policy`/`Signature`/`Key-Pair-Id` query string is valid
- * for every HLS segment under the video's processed prefix. The frontend
- * appends this query string to each segment request.
+ * Signs a single object URL using a path-scoped custom policy that covers
+ * every file under `wildcardPrefix`. Because the policy is path-scoped
+ * (rather than signed against a single URL), the SAME query string is valid
+ * for every file under that prefix — so the frontend can append it to each
+ * segment/subtitle request.
  */
-export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
-  const pathPrefix = manifestKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/hls
-  const baseUrl = `https://${env.cloudfrontDomain}/${manifestKey}`;
+function buildSignedUrl(objectKey: string, wildcardPrefix: string): SignedUrl {
+  const baseUrl = `https://${env.cloudfrontDomain}/${objectKey}`;
   const expiresAt = Math.floor(Date.now() / 1000) + env.streamTtlSeconds;
-  const resource = `https://${env.cloudfrontDomain}/${pathPrefix}/*`;
+  const resource = `https://${env.cloudfrontDomain}/${wildcardPrefix}*`;
 
   const policyJson = JSON.stringify({
     Statement: [
@@ -55,9 +58,29 @@ export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
   const signedQuery = `Policy=${policy}&Signature=${signature}&Key-Pair-Id=${env.cloudfrontKeyPairId}`;
 
   return {
-    manifestUrl: `${baseUrl}?${signedQuery}`,
+    url: `${baseUrl}?${signedQuery}`,
     baseUrl,
     signedQuery,
     expiresAt,
   };
+}
+
+/**
+ * Builds a CloudFront signed URL for the HLS master playlist, scoped to
+ * `processed/{videoId}/hls/*`.
+ */
+export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
+  const pathPrefix = manifestKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/hls
+  const { url, ...rest } = buildSignedUrl(manifestKey, `${pathPrefix}/`);
+  return { manifestUrl: url, ...rest };
+}
+
+/**
+ * Builds a CloudFront signed URL for a WebVTT subtitle file, scoped to
+ * `subtitles/{videoId}/*`.
+ */
+export function buildSignedSubtitleUrl(subtitleKey: string): SubtitleInfo {
+  const pathPrefix = subtitleKey.split("/").slice(0, 2).join("/"); // subtitles/{videoId}
+  const { url, ...rest } = buildSignedUrl(subtitleKey, `${pathPrefix}/`);
+  return { videoId: subtitleKey.split("/")[1] ?? "", subtitleUrl: url, ...rest };
 }
