@@ -1,6 +1,4 @@
 import { buildSignedThumbnailUrl } from './cloudfront';
-import { env } from './config';
-import { startThumbnailJob } from './mediaconvert';
 import {
   createPresignedUploadUrl,
   deleteObjects,
@@ -16,44 +14,9 @@ export function thumbnailPrefix(videoId: string): string {
   return `${THUMBNAIL_PREFIX}/${videoId}/`;
 }
 
-/** MediaConvert FILE_GROUP destination (S3 URI) for a video's poster frames. */
-export function thumbnailDestination(videoId: string): string {
-  return `s3://${env.bucket}/${THUMBNAIL_PREFIX}/${videoId}/thumb`;
-}
-
-const IMAGE_EXTENSION = /\.(jpe?g|png|webp)$/i;
-
-/**
- * Finds the best poster frame produced by MediaConvert. Frame captures are
- * written as `thumb.NNNNNNN.jpg` (one per 5s). The middle frame is preferred
- * so the first (often black/blank) frame is skipped when possible.
- */
-export async function findThumbnailKey(videoId: string): Promise<string | undefined> {
-  const keys = (await listKeysUnderPrefix(thumbnailPrefix(videoId))).filter((k) =>
-    IMAGE_EXTENSION.test(k),
-  );
-  if (keys.length === 0) return undefined;
-  keys.sort();
-  return keys[Math.floor((keys.length - 1) / 2)];
-}
-
 /** Builds a signed CloudFront URL for the given thumbnail key. */
 export function buildThumbnailSignedUrl(thumbnailKey: string): ThumbnailInfo {
   return buildSignedThumbnailUrl(thumbnailKey);
-}
-
-/**
- * Regenerates a video's thumbnail: clears any prior poster frames and submits
- * a standalone MediaConvert frame-capture job. Completion is handled by the
- * MediaConvert state-change listener.
- */
-export async function startThumbnailGeneration(videoId: string, inputUrl: string): Promise<void> {
-  await deletePrefix(thumbnailPrefix(videoId));
-  await startThumbnailJob({
-    videoId,
-    inputUrl,
-    outputBase: thumbnailDestination(videoId),
-  });
 }
 
 /** Deletes every thumbnail object for a video. */
@@ -86,7 +49,7 @@ export async function createCustomThumbnailUploadUrl(params: {
   return { key, url };
 }
 
-/** Removes previously uploaded custom thumbnails, keeping auto frames. */
+/** Removes previously uploaded custom thumbnails. */
 export async function deleteCustomThumbnails(videoId: string): Promise<void> {
   const keys = (await listKeysUnderPrefix(thumbnailPrefix(videoId))).filter((k) =>
     k.includes('/custom-'),

@@ -190,15 +190,6 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
-  generate-thumbnail:
-    handler: src/functions/videos/generate-thumbnail.handler
-    events:
-      - http:
-          path: videos/{videoId}/thumbnail
-          method: post
-          cors: true
-          authorizer: ${self:custom.authorizer}
-
   upload-thumbnail:
     handler: src/functions/videos/upload-thumbnail.handler
     events:
@@ -437,11 +428,6 @@ resources:
                   Resource:
                     - !GetAtt VideosBucket.Arn
                     - !Sub "${VideosBucket.Arn}/processed/*"
-                - Effect: Allow
-                  Action:
-                    - s3:PutObject
-                  Resource:
-                    - !Sub "${VideosBucket.Arn}/thumbnails/*"
 
     TranscribeRole:
       Type: AWS::IAM::Role

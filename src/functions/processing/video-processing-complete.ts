@@ -1,7 +1,6 @@
 import type { EventBridgeEvent } from 'aws-lambda';
 import { updateVideo } from '../../lib/dynamodb';
 import { getObjectText, listKeysUnderPrefix } from '../../lib/s3';
-import { findThumbnailKey } from '../../lib/thumbnail';
 
 interface MediaConvertDetail {
   status: 'COMPLETE' | 'ERROR' | 'CANCELED' | string;
@@ -28,32 +27,17 @@ async function findMasterPlaylistKey(videoId: string): Promise<string | undefine
 }
 
 async function handleEncodingComplete(videoId: string): Promise<void> {
-  const [manifestKey, thumbnailKey] = await Promise.all([
-    findMasterPlaylistKey(videoId),
-    findThumbnailKey(videoId),
-  ]);
+  const manifestKey = await findMasterPlaylistKey(videoId);
   await updateVideo(videoId, {
     status: 'READY',
     ...(manifestKey ? { manifestKey } : {}),
-    ...(thumbnailKey ? { thumbnailKey, thumbnailStatus: 'READY' } : {}),
   });
-  console.info(
-    `Video ${videoId} is READY (manifest: ${manifestKey ?? 'unknown'}, thumbnail: ${thumbnailKey ?? 'unknown'})`,
-  );
-}
-
-async function handleThumbnailComplete(videoId: string): Promise<void> {
-  const thumbnailKey = await findThumbnailKey(videoId);
-  await updateVideo(videoId, {
-    ...(thumbnailKey ? { thumbnailKey, thumbnailStatus: 'READY' } : { thumbnailStatus: 'FAILED' }),
-  });
-  console.info(`Thumbnail ${thumbnailKey ?? 'missing'} for video ${videoId}`);
+  console.info(`Video ${videoId} is READY (manifest: ${manifestKey ?? 'unknown'})`);
 }
 
 /**
- * Triggered by CloudWatch Events on MediaConvert job state change. Handles
- * both the main encoding job (marks the video READY/FAILED and stores the
- * manifest + thumbnail keys) and standalone thumbnail jobs.
+ * Triggered by CloudWatch Events on MediaConvert job state change. Marks the
+ * video READY/FAILED and stores the HLS manifest key.
  */
 export const handler = async (event: MediaConvertStateChangeEvent): Promise<void> => {
   const { status, userMetadata } = event.detail ?? {};
@@ -64,22 +48,10 @@ export const handler = async (event: MediaConvertStateChangeEvent): Promise<void
     return;
   }
 
-  const isThumbnailJob = userMetadata?.type === 'thumbnail';
-
-  if (isThumbnailJob) {
-    if (status === 'COMPLETE') {
-      await handleThumbnailComplete(videoId);
-    } else {
-      await updateVideo(videoId, { thumbnailStatus: 'FAILED' });
-      console.warn(`Thumbnail generation for video ${videoId} ${status}`);
-    }
-    return;
-  }
-
   if (status === 'COMPLETE') {
     await handleEncodingComplete(videoId);
   } else {
-    await updateVideo(videoId, { status: 'FAILED', thumbnailStatus: 'FAILED' });
+    await updateVideo(videoId, { status: 'FAILED' });
     console.warn(`Video ${videoId} processing ${status}`);
   }
 };

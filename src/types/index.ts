@@ -6,10 +6,6 @@ export type SubtitleStatus = 'NONE' | 'GENERATING' | 'READY' | 'FAILED';
 
 export const SUBTITLE_STATUSES: SubtitleStatus[] = ['NONE', 'GENERATING', 'READY', 'FAILED'];
 
-export type ThumbnailStatus = 'NONE' | 'GENERATING' | 'READY' | 'FAILED';
-
-export const THUMBNAIL_STATUSES: ThumbnailStatus[] = ['NONE', 'GENERATING', 'READY', 'FAILED'];
-
 /** A translated subtitle track, keyed by BCP-47 language code. */
 export interface SubtitleTranslation {
   /** BCP-47 language code, e.g. 'zh-CN'. */
@@ -42,8 +38,6 @@ export interface Video {
   subtitleLanguage?: string;
   /** Translated subtitle tracks keyed by BCP-47 language code. */
   translations?: Record<string, SubtitleTranslation>;
-  /** Thumbnail generation state. Absent/undefined means no thumbnail yet. */
-  thumbnailStatus?: ThumbnailStatus;
   /** Poster/thumbnail image key: thumbnails/{videoId}/... */
   thumbnailKey?: string;
   createdAt: number;

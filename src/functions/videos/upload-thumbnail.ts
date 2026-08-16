@@ -44,7 +44,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     ...(size !== undefined ? { size } : {}),
   });
 
-  await updateVideo(videoId, { thumbnailKey: key, thumbnailStatus: 'READY' });
+  await updateVideo(videoId, { thumbnailKey: key });
 
   const updated = await getVideo(videoId);
   return ok({
