@@ -32,6 +32,11 @@ export interface UpdateVideoPatch {
   title?: string;
   description?: string;
   size?: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  aspectRatio?: string;
+  resolutionTier?: string;
   manifestKey?: string;
   subtitleStatus?: SubtitleStatus;
   subtitleKey?: string;
@@ -67,6 +72,31 @@ export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Pro
     names['#size'] = 'size';
     values[':size'] = patch.size;
     set += ', #size = :size';
+  }
+  if (patch.width !== undefined) {
+    names['#width'] = 'width';
+    values[':width'] = patch.width;
+    set += ', #width = :width';
+  }
+  if (patch.height !== undefined) {
+    names['#height'] = 'height';
+    values[':height'] = patch.height;
+    set += ', #height = :height';
+  }
+  if (patch.duration !== undefined) {
+    names['#duration'] = 'duration';
+    values[':duration'] = patch.duration;
+    set += ', #duration = :duration';
+  }
+  if (patch.aspectRatio !== undefined) {
+    names['#aspectRatio'] = 'aspectRatio';
+    values[':aspectRatio'] = patch.aspectRatio;
+    set += ', #aspectRatio = :aspectRatio';
+  }
+  if (patch.resolutionTier !== undefined) {
+    names['#resolutionTier'] = 'resolutionTier';
+    values[':resolutionTier'] = patch.resolutionTier;
+    set += ', #resolutionTier = :resolutionTier';
   }
   if (patch.manifestKey !== undefined) {
     names['#manifestKey'] = 'manifestKey';

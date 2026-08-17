@@ -9,6 +9,7 @@ import type {
   VideoDescription,
 } from '@aws-sdk/client-mediaconvert';
 import { env } from './config';
+import { shortSide } from './video-meta';
 
 let client: MediaConvertClient | undefined;
 let endpoint: string | undefined;
@@ -25,19 +26,68 @@ export async function getMediaConvertClient(): Promise<MediaConvertClient> {
 
 interface Rendition {
   name: string;
-  width: number;
   height: number;
   maxBitrate: number;
 }
 
+/**
+ * Standard ABR ladder. `height` is the target short-side resolution (the "p"
+ * tier); the matching width is derived from the source aspect ratio at build
+ * time. Sorted largest first.
+ */
 const RENDITIONS: Rendition[] = [
-  { name: '1080p', width: 1920, height: 1080, maxBitrate: 4_500_000 },
-  { name: '720p', width: 1280, height: 720, maxBitrate: 2_800_000 },
-  { name: '480p', width: 854, height: 480, maxBitrate: 1_400_000 },
-  { name: '360p', width: 640, height: 360, maxBitrate: 800_000 },
-  { name: '240p', width: 426, height: 240, maxBitrate: 500_000 },
-  { name: '144p', width: 256, height: 144, maxBitrate: 300_000 },
+  { name: '2160p', height: 2160, maxBitrate: 16_000_000 },
+  { name: '1440p', height: 1440, maxBitrate: 9_000_000 },
+  { name: '1080p', height: 1080, maxBitrate: 4_500_000 },
+  { name: '720p', height: 720, maxBitrate: 2_800_000 },
+  { name: '480p', height: 480, maxBitrate: 1_400_000 },
+  { name: '360p', height: 360, maxBitrate: 800_000 },
+  { name: '240p', height: 240, maxBitrate: 500_000 },
+  { name: '144p', height: 144, maxBitrate: 300_000 },
 ];
+
+/** Fallback used when the source resolution is unknown at job time. */
+const DEFAULT_SOURCE_WIDTH = 1920;
+const DEFAULT_SOURCE_HEIGHT = 1080;
+
+/** Largest even dimension (H.264 requires even width/height). */
+function even(n: number): number {
+  return Math.max(2, Math.round(n / 2) * 2);
+}
+
+/** Bitrate ceiling for the original-resolution rendition, scaled by pixel count. */
+function originalMaxBitrate(width: number, height: number): number {
+  const base = 4_500_000;
+  const scaled = base * ((width * height) / (1920 * 1080));
+  return Math.min(Math.round(scaled), 80_000_000);
+}
+
+/**
+ * Builds the rendition list for a source, capped so we never upscale past the
+ * original resolution. When the source exceeds 1080p but doesn't line up with a
+ * standard tier, an explicit "Original" rendition at the source resolution is
+ * prepended so the original quality is always available.
+ */
+function buildRenditions(sourceWidth: number, sourceHeight: number): Rendition[] {
+  const sourceShort = shortSide(sourceWidth, sourceHeight);
+  const standard = RENDITIONS.filter((r) => r.height <= sourceShort);
+
+  if (standard.length === 0) {
+    return [{ name: 'Original', height: sourceShort, maxBitrate: originalMaxBitrate(sourceWidth, sourceHeight) }];
+  }
+
+  const top = standard[0];
+  const matchesStandard = Math.abs(top.height - sourceShort) <= 2;
+
+  if (sourceShort > 1080 && !matchesStandard) {
+    return [
+      { name: 'Original', height: sourceShort, maxBitrate: originalMaxBitrate(sourceWidth, sourceHeight) },
+      ...standard,
+    ];
+  }
+
+  return standard;
+}
 
 const audioDescriptions: AudioDescription[] = [
   {
@@ -53,10 +103,29 @@ const audioDescriptions: AudioDescription[] = [
   },
 ];
 
-function videoDescription(rendition: Rendition): VideoDescription {
+/**
+ * Scales the rendition to the source's aspect ratio: for landscape the tier is
+ * the height, for portrait the tier is the width. Dimensions are evened out.
+ */
+function videoDescription(
+  rendition: Rendition,
+  sourceWidth: number,
+  sourceHeight: number,
+): VideoDescription {
+  let width: number;
+  let height: number;
+
+  if (sourceWidth >= sourceHeight) {
+    height = rendition.height;
+    width = Math.round((sourceWidth / sourceHeight) * height);
+  } else {
+    width = rendition.height;
+    height = Math.round((sourceHeight / sourceWidth) * width);
+  }
+
   return {
-    Width: rendition.width,
-    Height: rendition.height,
+    Width: even(width),
+    Height: even(height),
     CodecSettings: {
       Codec: 'H_264',
       H264Settings: {
@@ -79,7 +148,12 @@ function videoDescription(rendition: Rendition): VideoDescription {
   };
 }
 
-function buildSettings(inputUrl: string, outputBase: string): JobSettings {
+function buildSettings(
+  inputUrl: string,
+  outputBase: string,
+  sourceWidth: number,
+  sourceHeight: number,
+): JobSettings {
   return {
     TimecodeConfig: { Source: 'ZEROBASED' },
     Inputs: [
@@ -108,10 +182,10 @@ function buildSettings(inputUrl: string, outputBase: string): JobSettings {
             TimedMetadataId3Period: 10,
           },
         },
-        Outputs: RENDITIONS.map((rendition) => ({
+        Outputs: buildRenditions(sourceWidth, sourceHeight).map((rendition) => ({
           NameModifier: rendition.name,
           ContainerSettings: { Container: 'M3U8' },
-          VideoDescription: videoDescription(rendition),
+          VideoDescription: videoDescription(rendition, sourceWidth, sourceHeight),
           AudioDescriptions: audioDescriptions,
         })),
       },
@@ -123,16 +197,26 @@ export interface MediaConvertJob {
   videoId: string;
   inputUrl: string;
   outputBase: string;
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
-export async function startMediaConvertJob({ videoId, inputUrl, outputBase }: MediaConvertJob): Promise<void> {
+export async function startMediaConvertJob({
+  videoId,
+  inputUrl,
+  outputBase,
+  sourceWidth,
+  sourceHeight,
+}: MediaConvertJob): Promise<void> {
   const mc = await getMediaConvertClient();
+  const width = sourceWidth && sourceHeight ? sourceWidth : DEFAULT_SOURCE_WIDTH;
+  const height = sourceWidth && sourceHeight ? sourceHeight : DEFAULT_SOURCE_HEIGHT;
   await mc.send(
     new CreateJobCommand({
       Role: env.mediaconvertRoleArn,
       StatusUpdateInterval: 'SECONDS_60',
       UserMetadata: { videoId, inputUrl, type: 'encoding' },
-      Settings: buildSettings(inputUrl, outputBase),
+      Settings: buildSettings(inputUrl, outputBase, width, height),
     }),
   );
 }

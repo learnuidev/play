@@ -35,6 +35,8 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
       videoId,
       inputUrl: `s3://${env.bucket}/${video.s3Key}`,
       outputBase: `s3://${env.bucket}/processed/${videoId}/hls/`,
+      sourceWidth: video.width,
+      sourceHeight: video.height,
     });
   } catch (err) {
     console.error(`Failed to retry processing for videoId=${videoId}`, err);

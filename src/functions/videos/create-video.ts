@@ -4,6 +4,7 @@ import { requireOwnerId } from '../../lib/auth';
 import { putVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
 import { createPresignedUploadUrl } from '../../lib/s3';
+import { computeAspectRatio, resolutionTierFor } from '../../lib/video-meta';
 import type { Video } from '../../types';
 
 const MAX_TITLE_LENGTH = 200;
@@ -20,6 +21,25 @@ interface CreateVideoBody {
   fileName?: string;
   contentType?: string;
   size?: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  aspectRatio?: string;
+  resolutionTier?: string;
+}
+
+function toPositiveInt(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return undefined;
+  return Math.round(n);
+}
+
+function toPositiveNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  const n = typeof value === 'string' ? Number(value) : value;
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return undefined;
+  return n;
 }
 
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
@@ -31,6 +51,12 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const contentType = body.contentType ?? 'application/octet-stream';
   const size = typeof body.size === 'number' ? body.size : undefined;
   const description = (body.description ?? '').trim();
+
+  const width = toPositiveInt(body.width);
+  const height = toPositiveInt(body.height);
+  const duration = toPositiveNumber(body.duration);
+  const aspectRatio = width && height ? computeAspectRatio(width, height) : undefined;
+  const resolutionTier = width && height ? resolutionTierFor(width, height) : undefined;
 
   if (!title) throw new HttpError(400, 'title is required');
   if (title.length > MAX_TITLE_LENGTH) throw new HttpError(400, `title must be <= ${MAX_TITLE_LENGTH} characters`);
@@ -52,6 +78,11 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     fileName,
     contentType,
     size: size ?? 0,
+    ...(width !== undefined ? { width } : {}),
+    ...(height !== undefined ? { height } : {}),
+    ...(duration !== undefined ? { duration } : {}),
+    ...(aspectRatio !== undefined ? { aspectRatio } : {}),
+    ...(resolutionTier !== undefined ? { resolutionTier } : {}),
     s3Key,
     subtitleStatus: 'NONE',
     createdAt: now,

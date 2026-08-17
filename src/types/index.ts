@@ -28,6 +28,16 @@ export interface Video {
   size: number;
   /** Raw upload key: uploads/{videoId}/{fileName} */
   s3Key: string;
+  /** Original source width in pixels, captured at upload. */
+  width?: number;
+  /** Original source height in pixels, captured at upload. */
+  height?: number;
+  /** Original duration in seconds, captured at upload. */
+  duration?: number;
+  /** Display aspect ratio, e.g. '16:9'. */
+  aspectRatio?: string;
+  /** Original resolution tier, e.g. '1080p', '1440p', '2160p'. */
+  resolutionTier?: string;
   /** Processed HLS master playlist key: processed/{videoId}/hls/... */
   manifestKey?: string;
   /** Subtitle generation state. Absent/undefined means no subtitles yet. */

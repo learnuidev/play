@@ -43,6 +43,8 @@ export const handler = async (event: S3Event): Promise<void> => {
         videoId,
         inputUrl: `s3://${env.bucket}/${key}`,
         outputBase: `s3://${env.bucket}/processed/${videoId}/hls/`,
+        sourceWidth: video.width,
+        sourceHeight: video.height,
       });
 
       // Subtitle generation is best-effort and runs in parallel with encoding;
