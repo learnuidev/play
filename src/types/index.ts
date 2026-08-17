@@ -34,6 +34,7 @@ export interface Video {
   aspectRatio?: string;
   resolutionTier?: string;
   manifestKey?: string;
+  audioKey?: string;
   subtitleStatus?: SubtitleStatus;
   subtitleKey?: string;
   subtitleLanguage?: string;
@@ -91,6 +92,14 @@ export interface ListVideosResponse {
 export interface StreamResponse {
   videoId: string;
   manifestUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
+export interface AudioResponse {
+  videoId: string;
+  audioUrl: string;
   baseUrl: string;
   signedQuery: string;
   expiresAt: number;

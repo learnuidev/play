@@ -1,5 +1,6 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
+  AudioResponse,
   CreateVideoPayload,
   CreateVideoResponse,
   ListVideosResponse,
@@ -66,6 +67,8 @@ export const api = {
   retryVideo: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}/retry`, { method: 'POST' }),
 
   getStream: (videoId: string) => request<StreamResponse>(`/videos/${videoId}/stream`),
+
+  getAudio: (videoId: string) => request<AudioResponse>(`/videos/${videoId}/audio`),
 
   generateSubtitles: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}/subtitles`, { method: 'POST' }),
 

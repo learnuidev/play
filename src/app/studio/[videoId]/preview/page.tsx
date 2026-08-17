@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeftIcon, FilmIcon } from "lucide-react";
+import { ArrowLeftIcon, FilmIcon, MusicIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useStream, useVideo } from "@/modules/video/video.queries";
+import { useAudio, useStream, useVideo } from "@/modules/video/video.queries";
 import { useSubtitles } from "@/modules/subtitle/subtitle.queries";
 import { useThumbnail } from "@/modules/thumbnail/thumbnail.queries";
 import { parseVtt } from "@/lib/vtt";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StudioPageHeader } from "@/components/studio/page-header";
 import { VideoStatusBadge } from "@/components/studio/status-badge";
+import { AudioPlayer } from "@/components/audio-player";
 import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
 import { SubtitleTranscript } from "@/components/subtitle-transcript";
 
@@ -30,6 +31,10 @@ export default function PreviewPage() {
     videoId,
     isReady && !!video?.thumbnailKey,
   );
+
+  const [audioOnly, setAudioOnly] = useState(false);
+  const hasAudio = isReady && !!video?.audioKey;
+  const { data: audio } = useAudio(videoId, audioOnly && hasAudio);
 
   const tracks = (subtitle?.tracks ?? []).map((track) => ({
     src: track.subtitleUrl,
@@ -149,20 +154,57 @@ export default function PreviewPage() {
                 </p>
               </div>
             </div>
-          ) : stream ? (
-            <div className="mx-auto w-full max-w-5xl bg-transparent">
-              <VideoPlayer
-                ref={playerRef}
-                src={stream.manifestUrl}
-                signedQuery={stream.signedQuery}
-                poster={thumbnail?.thumbnailUrl}
-                tracks={tracks}
-                onTimeUpdate={handleTimeUpdate}
-                onActiveTrackChange={handleActiveTrackChange}
-              />
-            </div>
           ) : (
-            <Skeleton className="mx-auto aspect-video w-full max-w-5xl rounded-2xl" />
+            <div className="mx-auto w-full max-w-5xl">
+              {video.audioKey && (
+                <div className="mb-3 flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={audioOnly ? "outline" : "default"}
+                    onClick={() => setAudioOnly(false)}
+                  >
+                    <FilmIcon />
+                    Video
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={audioOnly ? "default" : "outline"}
+                    onClick={() => setAudioOnly(true)}
+                  >
+                    <MusicIcon />
+                    Audio only
+                  </Button>
+                </div>
+              )}
+
+              {audioOnly ? (
+                audio ? (
+                  <div className="rounded-2xl border bg-card p-6">
+                    <AudioPlayer
+                      ref={playerRef}
+                      src={audio.audioUrl}
+                      onTimeUpdate={handleTimeUpdate}
+                    />
+                  </div>
+                ) : (
+                  <Skeleton className="h-16 w-full rounded-2xl" />
+                )
+              ) : stream ? (
+                <div className="bg-transparent">
+                  <VideoPlayer
+                    ref={playerRef}
+                    src={stream.manifestUrl}
+                    signedQuery={stream.signedQuery}
+                    poster={thumbnail?.thumbnailUrl}
+                    tracks={tracks}
+                    onTimeUpdate={handleTimeUpdate}
+                    onActiveTrackChange={handleActiveTrackChange}
+                  />
+                </div>
+              ) : (
+                <Skeleton className="mx-auto aspect-video w-full rounded-2xl" />
+              )}
+            </div>
           )}
         </div>
 

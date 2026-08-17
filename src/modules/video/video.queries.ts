@@ -7,6 +7,7 @@ export const videoKeys = {
   list: (status: VideoStatus | 'ALL' = 'ALL') => ['videos', status] as const,
   detail: (videoId: string) => ['video', videoId] as const,
   stream: (videoId: string) => ['stream', videoId] as const,
+  audio: (videoId: string) => ['audio', videoId] as const,
 };
 
 const POLL_INTERVAL_MS = 5000;
@@ -44,6 +45,14 @@ export function useStream(videoId: string, enabled: boolean) {
   return useQuery({
     queryKey: videoKeys.stream(videoId),
     queryFn: () => api.getStream(videoId),
+    enabled,
+  });
+}
+
+export function useAudio(videoId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: videoKeys.audio(videoId),
+    queryFn: () => api.getAudio(videoId),
     enabled,
   });
 }
