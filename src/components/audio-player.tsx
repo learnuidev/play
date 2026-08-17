@@ -8,11 +8,13 @@ export interface AudioPlayerHandle {
 
 interface AudioPlayerProps {
   src: string;
+  /** Position (ms) to start playback from on mount. */
+  initialTimeMs?: number;
   onTimeUpdate?: (timeMs: number) => void;
 }
 
 export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
-  function AudioPlayer({ src, onTimeUpdate }, ref) {
+  function AudioPlayer({ src, initialTimeMs, onTimeUpdate }, ref) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
     useImperativeHandle(
@@ -32,6 +34,24 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
     useEffect(() => {
       onTimeUpdateRef.current = onTimeUpdate;
     }, [onTimeUpdate]);
+
+    // Resume from the requested position once the metadata is available.
+    // Captured at mount so subsequent prop changes don't re-seek playback.
+    const initialTimeMsRef = useRef(initialTimeMs);
+    useEffect(() => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      const start = initialTimeMsRef.current;
+      if (!start) return;
+
+      const seek = () => {
+        if (audio.readyState >= 1) audio.currentTime = start / 1000;
+      };
+
+      seek();
+      audio.addEventListener("loadedmetadata", seek);
+      return () => audio.removeEventListener("loadedmetadata", seek);
+    }, []);
 
     // Report playback time so the transcript can highlight the active cue.
     useEffect(() => {

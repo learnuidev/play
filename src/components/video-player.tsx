@@ -29,6 +29,8 @@ interface VideoPlayerProps {
   signedQuery: string;
   poster?: string;
   tracks?: SubtitleTrack[];
+  /** Position (ms) to start playback from on mount. */
+  initialTimeMs?: number;
   onTimeUpdate?: (timeMs: number) => void;
   onActiveTrackChange?: (language: string | null) => void;
 }
@@ -40,6 +42,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       signedQuery,
       poster,
       tracks = [],
+      initialTimeMs,
       onTimeUpdate,
       onActiveTrackChange,
     },
@@ -86,6 +89,24 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     useEffect(() => {
       onActiveTrackChangeRef.current = onActiveTrackChange;
     }, [onActiveTrackChange]);
+
+    // Resume from the requested position once the media is ready. Captured at
+    // mount so subsequent prop changes (e.g. the transcript time) don't re-seek.
+    const initialTimeMsRef = useRef(initialTimeMs);
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      const start = initialTimeMsRef.current;
+      if (!start) return;
+
+      const seek = () => {
+        if (video.readyState >= 1) video.currentTime = start / 1000;
+      };
+
+      seek();
+      video.addEventListener("loadedmetadata", seek);
+      return () => video.removeEventListener("loadedmetadata", seek);
+    }, []);
 
     // Report playback time so the transcript can highlight the active cue.
     useEffect(() => {

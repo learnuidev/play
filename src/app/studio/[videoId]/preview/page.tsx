@@ -215,6 +215,7 @@ export default function PreviewPage() {
                     <AudioPlayer
                       ref={playerRef}
                       src={audio.audioUrl}
+                      initialTimeMs={currentTimeMs}
                       onTimeUpdate={handleTimeUpdate}
                     />
                   </div>
@@ -228,6 +229,7 @@ export default function PreviewPage() {
                     src={stream.manifestUrl}
                     signedQuery={stream.signedQuery}
                     poster={thumbnail?.thumbnailUrl}
+                    initialTimeMs={currentTimeMs}
                     tracks={tracks}
                     onTimeUpdate={handleTimeUpdate}
                     onActiveTrackChange={handleActiveTrackChange}
