@@ -39,14 +39,26 @@ async function handleEncodingComplete(videoId: string): Promise<void> {
   await updateVideo(videoId, {
     status: 'READY',
     ...(manifestKey ? { manifestKey } : {}),
+    audioStatus: audioKey ? 'READY' : 'FAILED',
     ...(audioKey ? { audioKey } : {}),
   });
   console.info(`Video ${videoId} is READY (manifest: ${manifestKey ?? 'unknown'}, audio: ${audioKey ?? 'unknown'})`);
 }
 
+/** Handles completion of an audio-only extraction job (type === 'audio'). */
+async function handleAudioComplete(videoId: string): Promise<void> {
+  const audioKey = await findAudioKey(videoId);
+  await updateVideo(videoId, {
+    audioStatus: audioKey ? 'READY' : 'FAILED',
+    ...(audioKey ? { audioKey } : {}),
+  });
+  console.info(`Audio extraction for ${videoId} completed (audio: ${audioKey ?? 'unknown'})`);
+}
+
 /**
  * Triggered by CloudWatch Events on MediaConvert job state change. Marks the
- * video READY/FAILED and stores the HLS manifest key.
+ * video READY/FAILED and stores the HLS manifest key, or (for audio-only
+ * extraction jobs) just stores the extracted audio key.
  */
 export const handler = async (event: MediaConvertStateChangeEvent): Promise<void> => {
   const { status, userMetadata } = event.detail ?? {};
@@ -54,6 +66,16 @@ export const handler = async (event: MediaConvertStateChangeEvent): Promise<void
 
   if (!videoId) {
     console.info('Ignoring MediaConvert event without a videoId');
+    return;
+  }
+
+  if (userMetadata?.type === 'audio') {
+    if (status === 'COMPLETE') {
+      await handleAudioComplete(videoId);
+    } else {
+      await updateVideo(videoId, { audioStatus: 'FAILED' });
+      console.warn(`Audio extraction for ${videoId} ${status}`);
+    }
     return;
   }
 

@@ -85,6 +85,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     ...(resolutionTier !== undefined ? { resolutionTier } : {}),
     s3Key,
     subtitleStatus: 'NONE',
+    audioStatus: 'NONE',
     createdAt: now,
     updatedAt: now,
   };

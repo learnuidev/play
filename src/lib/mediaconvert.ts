@@ -6,6 +6,7 @@ import {
 import type {
   AudioDescription,
   JobSettings,
+  OutputGroup,
   VideoDescription,
 } from '@aws-sdk/client-mediaconvert';
 import { env } from './config';
@@ -148,6 +149,37 @@ function videoDescription(
   };
 }
 
+/**
+ * Audio-only File output group. Produces a standalone AAC track in an MP4
+ * container under `processed/{videoId}/audio/` (or any provided prefix) so it
+ * can be streamed independently of the video.
+ */
+function audioFileOutputGroup(audioOutputBase: string): OutputGroup {
+  return {
+    Name: 'Audio',
+    OutputGroupSettings: {
+      Type: 'FILE_GROUP_SETTINGS',
+      FileGroupSettings: {
+        Destination: audioOutputBase,
+      },
+    },
+    Outputs: [
+      {
+        NameModifier: 'audio',
+        ContainerSettings: {
+          Container: 'MP4',
+          Mp4Settings: {
+            CslgAtom: 'INCLUDE',
+            FreeSpaceBox: 'EXCLUDE',
+            MoovPlacement: 'PROGRESSIVE_DOWNLOAD',
+          },
+        },
+        AudioDescriptions: audioDescriptions,
+      },
+    ],
+  };
+}
+
 function buildSettings(
   inputUrl: string,
   outputBase: string,
@@ -194,29 +226,7 @@ function buildSettings(
           AudioDescriptions: audioDescriptions,
         })),
       },
-      {
-        Name: 'Audio',
-        OutputGroupSettings: {
-          Type: 'FILE_GROUP_SETTINGS',
-          FileGroupSettings: {
-            Destination: audioOutputBase,
-          },
-        },
-        Outputs: [
-          {
-            NameModifier: 'audio',
-            ContainerSettings: {
-              Container: 'MP4',
-              Mp4Settings: {
-                CslgAtom: 'INCLUDE',
-                FreeSpaceBox: 'EXCLUDE',
-                MoovPlacement: 'PROGRESSIVE_DOWNLOAD',
-              },
-            },
-            AudioDescriptions: audioDescriptions,
-          },
-        ],
-      },
+      audioFileOutputGroup(audioOutputBase),
     ],
   };
 }
@@ -245,6 +255,45 @@ export async function startMediaConvertJob({
       StatusUpdateInterval: 'SECONDS_60',
       UserMetadata: { videoId, inputUrl, type: 'encoding' },
       Settings: buildSettings(inputUrl, outputBase, width, height),
+    }),
+  );
+}
+
+export interface AudioExtractionJob {
+  videoId: string;
+  inputUrl: string;
+  outputBase: string;
+}
+
+/**
+ * Submits a MediaConvert job that only extracts the audio track (no video
+ * ladder) from an existing raw upload. Used to (re)generate audio for videos
+ * that predate audio extraction.
+ */
+export async function startAudioExtractionJob({
+  videoId,
+  inputUrl,
+  outputBase,
+}: AudioExtractionJob): Promise<void> {
+  const mc = await getMediaConvertClient();
+  await mc.send(
+    new CreateJobCommand({
+      Role: env.mediaconvertRoleArn,
+      StatusUpdateInterval: 'SECONDS_60',
+      UserMetadata: { videoId, inputUrl, type: 'audio' },
+      Settings: {
+        TimecodeConfig: { Source: 'ZEROBASED' },
+        Inputs: [
+          {
+            FileInput: inputUrl,
+            TimecodeSource: 'ZEROBASED',
+            AudioSelectors: {
+              'Audio Selector 1': { DefaultSelection: 'DEFAULT' },
+            },
+          },
+        ],
+        OutputGroups: [audioFileOutputGroup(outputBase)],
+      },
     }),
   );
 }

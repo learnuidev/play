@@ -6,6 +6,10 @@ export type SubtitleStatus = 'NONE' | 'GENERATING' | 'READY' | 'FAILED';
 
 export const SUBTITLE_STATUSES: SubtitleStatus[] = ['NONE', 'GENERATING', 'READY', 'FAILED'];
 
+export type AudioStatus = 'NONE' | 'GENERATING' | 'READY' | 'FAILED';
+
+export const AUDIO_STATUSES: AudioStatus[] = ['NONE', 'GENERATING', 'READY', 'FAILED'];
+
 /** A translated subtitle track, keyed by BCP-47 language code. */
 export interface SubtitleTranslation {
   /** BCP-47 language code, e.g. 'zh-CN'. */
@@ -42,6 +46,8 @@ export interface Video {
   manifestKey?: string;
   /** Extracted audio track key: processed/{videoId}/audio/... */
   audioKey?: string;
+  /** Audio extraction state. Absent/undefined means no audio yet. */
+  audioStatus?: AudioStatus;
   /** Subtitle generation state. Absent/undefined means no subtitles yet. */
   subtitleStatus?: SubtitleStatus;
   /** WebVTT subtitle key: subtitles/{videoId}/source/... */

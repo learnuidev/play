@@ -7,7 +7,7 @@ import {
   QueryCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
-import type { SubtitleStatus, SubtitleTranslation, Video, VideoStatus } from '../types';
+import type { AudioStatus, SubtitleStatus, SubtitleTranslation, Video, VideoStatus } from '../types';
 import { env } from './config';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -39,6 +39,7 @@ export interface UpdateVideoPatch {
   resolutionTier?: string;
   manifestKey?: string;
   audioKey?: string;
+  audioStatus?: AudioStatus;
   subtitleStatus?: SubtitleStatus;
   subtitleKey?: string;
   subtitleLanguage?: string;
@@ -108,6 +109,11 @@ export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Pro
     names['#audioKey'] = 'audioKey';
     values[':audioKey'] = patch.audioKey;
     set += ', #audioKey = :audioKey';
+  }
+  if (patch.audioStatus !== undefined) {
+    names['#audioStatus'] = 'audioStatus';
+    values[':audioStatus'] = patch.audioStatus;
+    set += ', #audioStatus = :audioStatus';
   }
   if (patch.subtitleStatus !== undefined) {
     names['#subtitleStatus'] = 'subtitleStatus';
