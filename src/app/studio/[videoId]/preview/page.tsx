@@ -89,10 +89,14 @@ export default function PreviewPage() {
   }, [languages, selectedLanguage]);
 
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
   const handleTimeUpdate = useCallback((timeMs: number) => {
     setCurrentTimeMs(timeMs);
   }, []);
+
+  const handlePlay = useCallback(() => setPlaying(true), []);
+  const handlePause = useCallback(() => setPlaying(false), []);
 
   const handleSeek = useCallback((timeMs: number) => {
     playerRef.current?.seekTo(timeMs);
@@ -216,6 +220,9 @@ export default function PreviewPage() {
                       ref={playerRef}
                       src={audio.audioUrl}
                       initialTimeMs={currentTimeMs}
+                      autoPlay={playing}
+                      onPlay={handlePlay}
+                      onPause={handlePause}
                       onTimeUpdate={handleTimeUpdate}
                     />
                   </div>
@@ -230,6 +237,9 @@ export default function PreviewPage() {
                     signedQuery={stream.signedQuery}
                     poster={thumbnail?.thumbnailUrl}
                     initialTimeMs={currentTimeMs}
+                    autoPlay={playing}
+                    onPlay={handlePlay}
+                    onPause={handlePause}
                     tracks={tracks}
                     onTimeUpdate={handleTimeUpdate}
                     onActiveTrackChange={handleActiveTrackChange}

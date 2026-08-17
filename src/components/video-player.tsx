@@ -31,6 +31,10 @@ interface VideoPlayerProps {
   tracks?: SubtitleTrack[];
   /** Position (ms) to start playback from on mount. */
   initialTimeMs?: number;
+  /** Resume playing automatically on mount (used when switching formats). */
+  autoPlay?: boolean;
+  onPlay?: () => void;
+  onPause?: () => void;
   onTimeUpdate?: (timeMs: number) => void;
   onActiveTrackChange?: (language: string | null) => void;
 }
@@ -43,6 +47,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       poster,
       tracks = [],
       initialTimeMs,
+      autoPlay,
+      onPlay,
+      onPause,
       onTimeUpdate,
       onActiveTrackChange,
     },
@@ -90,22 +97,56 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       onActiveTrackChangeRef.current = onActiveTrackChange;
     }, [onActiveTrackChange]);
 
-    // Resume from the requested position once the media is ready. Captured at
-    // mount so subsequent prop changes (e.g. the transcript time) don't re-seek.
-    const initialTimeMsRef = useRef(initialTimeMs);
+    const onPlayRef = useRef(onPlay);
+    useEffect(() => {
+      onPlayRef.current = onPlay;
+    }, [onPlay]);
+
+    const onPauseRef = useRef(onPause);
+    useEffect(() => {
+      onPauseRef.current = onPause;
+    }, [onPause]);
+
+    // Report play/pause so the parent can carry the state across format switches.
     useEffect(() => {
       const video = videoRef.current;
       if (!video) return;
-      const start = initialTimeMsRef.current;
-      if (!start) return;
 
-      const seek = () => {
-        if (video.readyState >= 1) video.currentTime = start / 1000;
+      const handlePlay = () => onPlayRef.current?.();
+      const handlePause = () => onPauseRef.current?.();
+
+      video.addEventListener("play", handlePlay);
+      video.addEventListener("pause", handlePause);
+      return () => {
+        video.removeEventListener("play", handlePlay);
+        video.removeEventListener("pause", handlePause);
+      };
+    }, []);
+
+    // Resume from the requested position and, if requested, keep playing.
+    // Captured at mount so subsequent prop changes (e.g. the transcript time)
+    // don't re-seek playback.
+    const initialTimeMsRef = useRef(initialTimeMs);
+    const autoPlayRef = useRef(autoPlay);
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const resume = () => {
+        const start = initialTimeMsRef.current;
+        if (start && video.readyState >= 1) video.currentTime = start / 1000;
+        if (autoPlayRef.current) {
+          const p = video.play();
+          if (p && typeof p.catch === "function") p.catch(() => {});
+        }
       };
 
-      seek();
-      video.addEventListener("loadedmetadata", seek);
-      return () => video.removeEventListener("loadedmetadata", seek);
+      if (video.readyState >= 1) {
+        resume();
+      } else {
+        video.addEventListener("loadedmetadata", resume, { once: true });
+      }
+      return () => video.removeEventListener("loadedmetadata", resume);
     }, []);
 
     // Report playback time so the transcript can highlight the active cue.

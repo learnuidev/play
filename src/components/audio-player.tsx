@@ -10,11 +10,15 @@ interface AudioPlayerProps {
   src: string;
   /** Position (ms) to start playback from on mount. */
   initialTimeMs?: number;
+  /** Resume playing automatically on mount (used when switching formats). */
+  autoPlay?: boolean;
+  onPlay?: () => void;
+  onPause?: () => void;
   onTimeUpdate?: (timeMs: number) => void;
 }
 
 export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
-  function AudioPlayer({ src, initialTimeMs, onTimeUpdate }, ref) {
+  function AudioPlayer({ src, initialTimeMs, autoPlay, onPlay, onPause, onTimeUpdate }, ref) {
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
     useImperativeHandle(
@@ -35,22 +39,55 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(
       onTimeUpdateRef.current = onTimeUpdate;
     }, [onTimeUpdate]);
 
-    // Resume from the requested position once the metadata is available.
-    // Captured at mount so subsequent prop changes don't re-seek playback.
-    const initialTimeMsRef = useRef(initialTimeMs);
+    const onPlayRef = useRef(onPlay);
+    useEffect(() => {
+      onPlayRef.current = onPlay;
+    }, [onPlay]);
+
+    const onPauseRef = useRef(onPause);
+    useEffect(() => {
+      onPauseRef.current = onPause;
+    }, [onPause]);
+
+    // Report play/pause so the parent can carry the state across format switches.
     useEffect(() => {
       const audio = audioRef.current;
       if (!audio) return;
-      const start = initialTimeMsRef.current;
-      if (!start) return;
 
-      const seek = () => {
-        if (audio.readyState >= 1) audio.currentTime = start / 1000;
+      const handlePlay = () => onPlayRef.current?.();
+      const handlePause = () => onPauseRef.current?.();
+
+      audio.addEventListener("play", handlePlay);
+      audio.addEventListener("pause", handlePause);
+      return () => {
+        audio.removeEventListener("play", handlePlay);
+        audio.removeEventListener("pause", handlePause);
+      };
+    }, []);
+
+    // Resume from the requested position and, if requested, keep playing.
+    // Captured at mount so subsequent prop changes don't re-seek playback.
+    const initialTimeMsRef = useRef(initialTimeMs);
+    const autoPlayRef = useRef(autoPlay);
+    useEffect(() => {
+      const audio = audioRef.current;
+      if (!audio) return;
+
+      const resume = () => {
+        const start = initialTimeMsRef.current;
+        if (start && audio.readyState >= 1) audio.currentTime = start / 1000;
+        if (autoPlayRef.current) {
+          const p = audio.play();
+          if (p && typeof p.catch === "function") p.catch(() => {});
+        }
       };
 
-      seek();
-      audio.addEventListener("loadedmetadata", seek);
-      return () => audio.removeEventListener("loadedmetadata", seek);
+      if (audio.readyState >= 1) {
+        resume();
+      } else {
+        audio.addEventListener("loadedmetadata", resume, { once: true });
+      }
+      return () => audio.removeEventListener("loadedmetadata", resume);
     }, []);
 
     // Report playback time so the transcript can highlight the active cue.
