@@ -235,9 +235,10 @@ export default function PreviewPage() {
                     ref={playerRef}
                     src={stream.manifestUrl}
                     signedQuery={stream.signedQuery}
-                    poster={thumbnail?.thumbnailUrl}
+                    poster={playing ? undefined : thumbnail?.thumbnailUrl}
                     initialTimeMs={currentTimeMs}
                     autoPlay={playing}
+                    initialTrackLanguage={selectedLanguage}
                     onPlay={handlePlay}
                     onPause={handlePause}
                     tracks={tracks}

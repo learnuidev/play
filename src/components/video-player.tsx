@@ -33,6 +33,8 @@ interface VideoPlayerProps {
   initialTimeMs?: number;
   /** Resume playing automatically on mount (used when switching formats). */
   autoPlay?: boolean;
+  /** BCP-47 language of the subtitle track to enable on mount. */
+  initialTrackLanguage?: string;
   onPlay?: () => void;
   onPause?: () => void;
   onTimeUpdate?: (timeMs: number) => void;
@@ -48,6 +50,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       tracks = [],
       initialTimeMs,
       autoPlay,
+      initialTrackLanguage,
       onPlay,
       onPause,
       onTimeUpdate,
@@ -165,6 +168,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     // The player's captions toggle shows *every* subtitle track at once when it
     // re-enables them. Enforce a single active track: keep the last explicitly
     // shown track (falling back to the first) and disable the rest.
+    // Also re-applies the previously selected track on mount so switching
+    // formats (which remounts the player) keeps the chosen subtitle language.
+    const initialTrackLanguageRef = useRef(initialTrackLanguage);
     useEffect(() => {
       const video = videoRef.current;
       if (!video) return;
@@ -172,7 +178,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       const textTracks = video.textTracks;
       let lastShowing: TextTrack | null = null;
 
-      const enforceSingleSubtitle = () => {
+      const collectSubtitles = () => {
         const subtitles: TextTrack[] = [];
         for (let i = 0; i < textTracks.length; i += 1) {
           const track = textTracks[i];
@@ -180,7 +186,27 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             subtitles.push(track);
           }
         }
+        return subtitles;
+      };
 
+      const applyInitialTrack = () => {
+        const target = initialTrackLanguageRef.current;
+        if (!target) return;
+        const subtitles = collectSubtitles();
+        const match = subtitles.find(
+          (track) => track.language.toLowerCase() === target.toLowerCase(),
+        );
+        if (match) {
+          for (const track of subtitles) {
+            if (track !== match) track.mode = "disabled";
+          }
+          if (match.mode !== "showing") match.mode = "showing";
+          lastShowing = match;
+        }
+      };
+
+      const enforceSingleSubtitle = () => {
+        const subtitles = collectSubtitles();
         const showing = subtitles.filter((track) => track.mode === "showing");
 
         let active: TextTrack | null = null;
@@ -203,11 +229,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         onActiveTrackChangeRef.current?.(active?.language ?? null);
       };
 
+      applyInitialTrack();
       enforceSingleSubtitle();
       textTracks.addEventListener("change", enforceSingleSubtitle);
+      textTracks.addEventListener("addtrack", applyInitialTrack);
 
       return () => {
         textTracks.removeEventListener("change", enforceSingleSubtitle);
+        textTracks.removeEventListener("addtrack", applyInitialTrack);
       };
     }, []);
 
