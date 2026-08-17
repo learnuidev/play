@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StudioPageHeader } from '@/components/studio/page-header';
 import { VideoStatusBadge } from '@/components/studio/status-badge';
+import { VideoGeneralInfo } from '@/components/studio/video-general-info';
 import { VideoGeneralForm } from '@/components/studio/video-general-form';
 import { VideoThumbnail } from '@/components/studio/video-thumbnail';
 import { VideoTranscriptions } from '@/components/studio/video-transcriptions';
@@ -59,7 +60,10 @@ export default function VideoPage() {
                 <TabsTrigger value="transcriptions">Transcriptions</TabsTrigger>
               </TabsList>
               <TabsContent value="general">
-                <VideoGeneralForm video={video} />
+                <div className="grid gap-6">
+                  <VideoGeneralInfo video={video} />
+                  <VideoGeneralForm video={video} />
+                </div>
               </TabsContent>
               <TabsContent value="thumbnail">
                 <VideoThumbnail video={video} />

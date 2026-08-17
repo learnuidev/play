@@ -54,6 +54,7 @@ export function VideoCard({ video }: { video: Video }) {
           {video.description || 'No description'}
         </p>
         <p className="mt-auto text-[11px] text-muted-foreground">
+          {video.resolutionTier ? `${video.resolutionTier} · ` : ''}
           {formatBytes(video.size)} · {formatDate(video.createdAt)}
         </p>
 

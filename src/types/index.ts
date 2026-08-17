@@ -28,6 +28,11 @@ export interface Video {
   contentType: string;
   size: number;
   s3Key: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  aspectRatio?: string;
+  resolutionTier?: string;
   manifestKey?: string;
   subtitleStatus?: SubtitleStatus;
   subtitleKey?: string;
@@ -62,6 +67,11 @@ export interface CreateVideoPayload {
   fileName: string;
   contentType: string;
   size: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  aspectRatio?: string;
+  resolutionTier?: string;
 }
 
 export interface CreateVideoResponse {

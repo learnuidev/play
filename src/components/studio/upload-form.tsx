@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { FilmIcon, Loader2Icon, UploadIcon } from 'lucide-react';
 import { useCreateVideo } from '@/modules/video/video.queries';
-import { cn } from '@/lib/utils';
+import { cn, computeAspectRatio, resolutionTierFor } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,11 +17,58 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
+interface VideoMeta {
+  width: number;
+  height: number;
+  duration: number;
+}
+
+/** Reads resolution + duration from the browser before upload. */
+function probeVideo(file: File): Promise<VideoMeta | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+
+    const cleanup = () => {
+      video.removeAttribute('src');
+      URL.revokeObjectURL(url);
+    };
+
+    const timer = window.setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, 10_000);
+
+    video.onloadedmetadata = () => {
+      window.clearTimeout(timer);
+      const meta: VideoMeta = {
+        width: video.videoWidth,
+        height: video.videoHeight,
+        duration: video.duration,
+      };
+      cleanup();
+      resolve(meta.width && meta.height ? meta : null);
+    };
+
+    video.onerror = () => {
+      window.clearTimeout(timer);
+      cleanup();
+      resolve(null);
+    };
+
+    video.src = url;
+  });
+}
+
 export function UploadForm() {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [meta, setMeta] = useState<VideoMeta | null>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -32,7 +79,9 @@ export function UploadForm() {
   function pickFile(f: File | undefined | null) {
     if (!f) return;
     setFile(f);
+    setMeta(null);
     if (!title) setTitle(f.name.replace(/\.[^.]+$/, ''));
+    probeVideo(f).then(setMeta);
   }
 
   async function handleUpload() {
@@ -55,6 +104,15 @@ export function UploadForm() {
         fileName: file.name,
         contentType: file.type || 'application/octet-stream',
         size: file.size,
+        ...(meta
+          ? {
+              width: meta.width,
+              height: meta.height,
+              duration: meta.duration,
+              aspectRatio: computeAspectRatio(meta.width, meta.height),
+              resolutionTier: resolutionTierFor(meta.width, meta.height),
+            }
+          : {}),
       });
 
       await new Promise<void>((resolve, reject) => {
