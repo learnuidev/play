@@ -35,7 +35,8 @@ export function useVideo(videoId: string) {
         !!video &&
         (video.status === 'UPLOADING' ||
           video.status === 'PROCESSING' ||
-          video.subtitleStatus === 'GENERATING');
+          video.subtitleStatus === 'GENERATING' ||
+          video.audioStatus === 'GENERATING');
       return needsPoll ? POLL_INTERVAL_MS : false;
     },
   });
@@ -54,6 +55,17 @@ export function useAudio(videoId: string, enabled: boolean) {
     queryKey: videoKeys.audio(videoId),
     queryFn: () => api.getAudio(videoId),
     enabled,
+  });
+}
+
+export function useGenerateAudio(videoId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.generateAudio(videoId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: videoKeys.detail(videoId) });
+      qc.invalidateQueries({ queryKey: videoKeys.all });
+    },
   });
 }
 

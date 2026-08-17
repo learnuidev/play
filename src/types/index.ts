@@ -18,6 +18,15 @@ export const SUBTITLE_STATUS_LABELS: Record<SubtitleStatus, string> = {
   FAILED: 'Subtitles failed',
 };
 
+export type AudioStatus = 'NONE' | 'GENERATING' | 'READY' | 'FAILED';
+
+export const AUDIO_STATUS_LABELS: Record<AudioStatus, string> = {
+  NONE: 'No audio',
+  GENERATING: 'Generating audio…',
+  READY: 'Audio ready',
+  FAILED: 'Audio failed',
+};
+
 export interface Video {
   videoId: string;
   ownerId: string;
@@ -35,6 +44,7 @@ export interface Video {
   resolutionTier?: string;
   manifestKey?: string;
   audioKey?: string;
+  audioStatus?: AudioStatus;
   subtitleStatus?: SubtitleStatus;
   subtitleKey?: string;
   subtitleLanguage?: string;

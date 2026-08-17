@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeftIcon, FilmIcon, MusicIcon } from "lucide-react";
+import { ArrowLeftIcon, FilmIcon, Loader2Icon, MusicIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAudio, useStream, useVideo } from "@/modules/video/video.queries";
+import { toast } from "sonner";
+import { useAudio, useGenerateAudio, useStream, useVideo } from "@/modules/video/video.queries";
 import { useSubtitles } from "@/modules/subtitle/subtitle.queries";
 import { useThumbnail } from "@/modules/thumbnail/thumbnail.queries";
 import { parseVtt } from "@/lib/vtt";
@@ -35,6 +36,15 @@ export default function PreviewPage() {
   const [audioOnly, setAudioOnly] = useState(false);
   const hasAudio = isReady && !!video?.audioKey;
   const { data: audio } = useAudio(videoId, audioOnly && hasAudio);
+  const generateAudio = useGenerateAudio(videoId);
+
+  function handleGenerateAudio() {
+    generateAudio.mutate(undefined, {
+      onSuccess: () => toast.success('Audio extraction started'),
+      onError: (err) =>
+        toast.error(err instanceof Error ? err.message : 'Failed to generate audio'),
+    });
+  }
 
   const tracks = (subtitle?.tracks ?? []).map((track) => ({
     src: track.subtitleUrl,
@@ -156,7 +166,7 @@ export default function PreviewPage() {
             </div>
           ) : (
             <div className="mx-auto w-full max-w-5xl">
-              {video.audioKey && (
+              {video.audioKey ? (
                 <div className="mb-3 flex items-center gap-2">
                   <Button
                     size="sm"
@@ -173,6 +183,28 @@ export default function PreviewPage() {
                   >
                     <MusicIcon />
                     Audio only
+                  </Button>
+                </div>
+              ) : (
+                <div className="mb-3 flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleGenerateAudio}
+                    disabled={
+                      video.audioStatus === "GENERATING" || generateAudio.isPending
+                    }
+                  >
+                    {video.audioStatus === "GENERATING" || generateAudio.isPending ? (
+                      <Loader2Icon className="animate-spin" />
+                    ) : (
+                      <MusicIcon />
+                    )}
+                    {video.audioStatus === "GENERATING"
+                      ? "Generating audio…"
+                      : video.audioStatus === "FAILED"
+                        ? "Regenerate audio"
+                        : "Generate audio"}
                   </Button>
                 </div>
               )}

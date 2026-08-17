@@ -70,6 +70,8 @@ export const api = {
 
   getAudio: (videoId: string) => request<AudioResponse>(`/videos/${videoId}/audio`),
 
+  generateAudio: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}/audio`, { method: 'POST' }),
+
   generateSubtitles: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}/subtitles`, { method: 'POST' }),
 
   generateTranslations: (videoId: string, languages?: string[]) =>
