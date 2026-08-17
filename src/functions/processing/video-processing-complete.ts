@@ -26,13 +26,22 @@ async function findMasterPlaylistKey(videoId: string): Promise<string | undefine
   return keys[0];
 }
 
+/** Finds the standalone audio track produced by the audio-only output group. */
+async function findAudioKey(videoId: string): Promise<string | undefined> {
+  const prefix = `processed/${videoId}/audio/`;
+  const keys = await listKeysUnderPrefix(prefix);
+  return keys.find((k) => /\.(mp4|m4a)$/i.test(k)) ?? keys[0];
+}
+
 async function handleEncodingComplete(videoId: string): Promise<void> {
   const manifestKey = await findMasterPlaylistKey(videoId);
+  const audioKey = await findAudioKey(videoId);
   await updateVideo(videoId, {
     status: 'READY',
     ...(manifestKey ? { manifestKey } : {}),
+    ...(audioKey ? { audioKey } : {}),
   });
-  console.info(`Video ${videoId} is READY (manifest: ${manifestKey ?? 'unknown'})`);
+  console.info(`Video ${videoId} is READY (manifest: ${manifestKey ?? 'unknown'}, audio: ${audioKey ?? 'unknown'})`);
 }
 
 /**

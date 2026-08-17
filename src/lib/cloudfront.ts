@@ -1,5 +1,5 @@
 import { createSign } from "node:crypto";
-import type { StreamInfo, SubtitleInfo, ThumbnailInfo } from "../types";
+import type { AudioInfo, StreamInfo, SubtitleInfo, ThumbnailInfo } from "../types";
 import { env } from "./config";
 
 // wip
@@ -73,6 +73,16 @@ export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
   const pathPrefix = manifestKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/hls
   const { url, ...rest } = buildSignedUrl(manifestKey, `${pathPrefix}/`);
   return { manifestUrl: url, ...rest };
+}
+
+/**
+ * Builds a CloudFront signed URL for the extracted audio track, scoped to
+ * `processed/{videoId}/audio/*`.
+ */
+export function buildSignedAudioUrl(audioKey: string): AudioInfo {
+  const pathPrefix = audioKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/audio
+  const { url, ...rest } = buildSignedUrl(audioKey, `${pathPrefix}/`);
+  return { videoId: audioKey.split("/")[1] ?? "", audioUrl: url, ...rest };
 }
 
 /**

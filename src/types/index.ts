@@ -40,6 +40,8 @@ export interface Video {
   resolutionTier?: string;
   /** Processed HLS master playlist key: processed/{videoId}/hls/... */
   manifestKey?: string;
+  /** Extracted audio track key: processed/{videoId}/audio/... */
+  audioKey?: string;
   /** Subtitle generation state. Absent/undefined means no subtitles yet. */
   subtitleStatus?: SubtitleStatus;
   /** WebVTT subtitle key: subtitles/{videoId}/source/... */
@@ -87,6 +89,14 @@ export interface SubtitleLanguageContent {
 
 export interface StreamInfo {
   manifestUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
+export interface AudioInfo {
+  videoId: string;
+  audioUrl: string;
   baseUrl: string;
   signedQuery: string;
   expiresAt: number;

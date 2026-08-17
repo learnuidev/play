@@ -154,6 +154,11 @@ function buildSettings(
   sourceWidth: number,
   sourceHeight: number,
 ): JobSettings {
+  // The audio-only track lives alongside the HLS ladder under
+  // `processed/{videoId}/audio/`, produced as a standalone MP4 (AAC) file so
+  // it can be streamed independently of the video.
+  const audioOutputBase = outputBase.replace(/hls\/?$/, 'audio/');
+
   return {
     TimecodeConfig: { Source: 'ZEROBASED' },
     Inputs: [
@@ -188,6 +193,29 @@ function buildSettings(
           VideoDescription: videoDescription(rendition, sourceWidth, sourceHeight),
           AudioDescriptions: audioDescriptions,
         })),
+      },
+      {
+        Name: 'Audio',
+        OutputGroupSettings: {
+          Type: 'FILE_GROUP_SETTINGS',
+          FileGroupSettings: {
+            Destination: audioOutputBase,
+          },
+        },
+        Outputs: [
+          {
+            NameModifier: 'audio',
+            ContainerSettings: {
+              Container: 'MP4',
+              Mp4Settings: {
+                CslgAtom: 'INCLUDE',
+                FreeSpaceBox: 'EXCLUDE',
+                MoovPlacement: 'PROGRESSIVE_DOWNLOAD',
+              },
+            },
+            AudioDescriptions: audioDescriptions,
+          },
+        ],
       },
     ],
   };

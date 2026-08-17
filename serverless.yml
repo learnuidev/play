@@ -135,6 +135,15 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  get-audio:
+    handler: src/functions/videos/get-audio.handler
+    events:
+      - http:
+          path: videos/{videoId}/audio
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   retry-video:
     handler: src/functions/videos/retry-video.handler
     events:

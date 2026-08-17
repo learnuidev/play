@@ -38,6 +38,7 @@ export interface UpdateVideoPatch {
   aspectRatio?: string;
   resolutionTier?: string;
   manifestKey?: string;
+  audioKey?: string;
   subtitleStatus?: SubtitleStatus;
   subtitleKey?: string;
   subtitleLanguage?: string;
@@ -102,6 +103,11 @@ export async function updateVideo(videoId: string, patch: UpdateVideoPatch): Pro
     names['#manifestKey'] = 'manifestKey';
     values[':manifestKey'] = patch.manifestKey;
     set += ', #manifestKey = :manifestKey';
+  }
+  if (patch.audioKey !== undefined) {
+    names['#audioKey'] = 'audioKey';
+    values[':audioKey'] = patch.audioKey;
+    set += ', #audioKey = :audioKey';
   }
   if (patch.subtitleStatus !== undefined) {
     names['#subtitleStatus'] = 'subtitleStatus';
