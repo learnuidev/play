@@ -90,6 +90,9 @@ export const api = {
 
   getThumbnail: (videoId: string) => request<ThumbnailResponse>(`/videos/${videoId}/thumbnail`),
 
+  generateThumbnail: (videoId: string) =>
+    request<{ video: Video }>(`/videos/${videoId}/thumbnail/frame`, { method: 'POST' }),
+
   uploadThumbnail: (videoId: string, payload: { contentType: string; size?: number }) =>
     request<UploadThumbnailResponse>(`/videos/${videoId}/thumbnail`, {
       method: 'PUT',

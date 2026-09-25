@@ -1,22 +1,77 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { ImageIcon, Loader2Icon, UploadIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { FilmIcon, ImageIcon, Loader2Icon, UploadIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { Video } from '@/types';
-import { useThumbnail, useUploadThumbnail } from '@/modules/thumbnail/thumbnail.queries';
+import {
+  isCustomThumbnail,
+  thumbnailKeys,
+  useGenerateThumbnail,
+  useThumbnail,
+  useThumbnailCapture,
+  useUploadThumbnail,
+} from '@/modules/thumbnail/thumbnail.queries';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+/** How long to keep polling for a captured frame before giving up. */
+const CAPTURE_TIMEOUT_MS = 120_000;
 
 export function VideoThumbnail({ video }: { video: Video }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [capturing, setCapturing] = useState(false);
 
-  const thumbnailReady = !!video.thumbnailKey;
+  // Poll the video record while the first frame is being captured, so the
+  // poster appears on its own once MediaConvert finishes.
+  const { data: polled } = useThumbnailCapture(video.videoId, capturing);
+  const current = polled?.video ?? video;
+  const thumbnailKey = current.thumbnailKey;
+  const custom = isCustomThumbnail(thumbnailKey);
 
-  const { data: thumbnail } = useThumbnail(video.videoId, thumbnailReady);
+  const { data: thumbnail } = useThumbnail(video.videoId, !!thumbnailKey);
   const upload = useUploadThumbnail(video.videoId);
+  const generate = useGenerateThumbnail(video.videoId);
+  const qc = useQueryClient();
+
+  // The key in place when the capture started. A recapture has to wait for a
+  // *different* key: the old first frame is still the current thumbnail until
+  // the new one lands.
+  const capturedFromRef = useRef<string | undefined>(undefined);
+
+  // The capture landed: stop polling, re-sign the new thumbnail key and let the
+  // user know.
+  useEffect(() => {
+    if (!capturing) return;
+    if (!thumbnailKey || thumbnailKey === capturedFromRef.current) return;
+    setCapturing(false);
+    qc.invalidateQueries({ queryKey: thumbnailKeys.detail(video.videoId) });
+    toast.success('Thumbnail created from the video’s first frame');
+  }, [capturing, thumbnailKey, qc, video.videoId]);
+
+  useEffect(() => {
+    if (!capturing) return;
+    const timer = setTimeout(() => {
+      setCapturing(false);
+      toast.error('Thumbnail capture is taking longer than expected');
+    }, CAPTURE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [capturing]);
+
+  async function handleCapture() {
+    try {
+      capturedFromRef.current = thumbnailKey;
+      setCapturing(true);
+      await generate.mutateAsync();
+      toast.success('Capturing the first frame…');
+    } catch (err) {
+      setCapturing(false);
+      toast.error(err instanceof Error ? err.message : 'Failed to capture a thumbnail');
+    }
+  }
 
   async function handleUpload(file: File | undefined | null) {
     if (!file) return;
@@ -53,6 +108,14 @@ export function VideoThumbnail({ video }: { video: Video }) {
     }
   }
 
+  const statusLabel = custom
+    ? 'Custom'
+    : thumbnailKey
+      ? 'First frame'
+      : capturing
+        ? 'Capturing…'
+        : 'None';
+
   return (
     <Card className="rounded-2xl">
       <CardHeader>
@@ -64,14 +127,15 @@ export function VideoThumbnail({ video }: { video: Video }) {
           <span
             className={cn(
               'text-xs font-medium',
-              thumbnailReady ? 'text-emerald-400' : 'text-muted-foreground',
+              thumbnailKey ? 'text-emerald-400' : 'text-muted-foreground',
             )}
           >
-            {thumbnailReady ? 'Ready' : 'None'}
+            {statusLabel}
           </span>
         </div>
         <CardDescription>
-          The poster image shown for this video. Upload your own image.
+          The poster image shown for this video. Every video falls back to its own
+          first frame; upload an image to replace it.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-5">
@@ -83,6 +147,11 @@ export function VideoThumbnail({ video }: { video: Video }) {
               alt={video.title}
               className="absolute inset-0 size-full object-cover"
             />
+          ) : capturing ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+              <Loader2Icon className="size-6 animate-spin" />
+              <span className="text-xs">Capturing first frame…</span>
+            </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
               <ImageIcon className="size-10" />
@@ -99,6 +168,17 @@ export function VideoThumbnail({ video }: { video: Video }) {
             {uploading ? <Loader2Icon className="animate-spin" /> : <UploadIcon />}
             {uploading ? 'Uploading…' : 'Upload image'}
           </Button>
+
+          {video.status === 'READY' && !custom && (
+            <Button variant="outline" onClick={handleCapture} disabled={capturing}>
+              {capturing ? <Loader2Icon className="animate-spin" /> : <FilmIcon />}
+              {capturing
+                ? 'Capturing…'
+                : thumbnailKey
+                  ? 'Recapture first frame'
+                  : 'Use first frame'}
+            </Button>
+          )}
 
           <input
             ref={fileRef}

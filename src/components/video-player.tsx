@@ -11,7 +11,12 @@ import "@videojs/react/video/skin.css";
 import { createPlayer, videoFeatures } from "@videojs/react";
 import { VideoSkin } from "@videojs/react/video";
 import { HlsJsVideo } from "@videojs/react/media/hlsjs-video";
-import { CUE_BOTTOM_PERCENT, wrapCueText } from "@/lib/vtt";
+import {
+  captionCharsPerLine,
+  cueLineCount,
+  cueLinePercent,
+  wrapCueText,
+} from "@/lib/vtt";
 
 const Player = createPlayer({ features: videoFeatures });
 
@@ -241,34 +246,47 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       };
     }, []);
 
-    // A cue box is anchored by its *top* edge at the cue's `line` setting, so a
-    // caption that wrapped onto a second (or third) line ran past the bottom of
-    // the frame and got cut off — the longer the line, the more of it was lost.
-    // Re-anchor every cue by its *bottom* edge and wrap over-long lines onto the
-    // next line ourselves, so extra lines grow upward and stay inside the video.
-    // Doing it here (not only in the VTT writers) also fixes subtitle files
-    // generated before the writers pinned the bottom edge.
+    // A cue's `line` percentage positions the box by its *top* edge and the box
+    // grows downward, so a caption that wrapped onto a second (or third) line
+    // ran past the bottom of the frame and got cut off — the longer the cue, the
+    // more of it was lost. Chrome also ignores the `end` line alignment, so the
+    // box cannot just be bottom-anchored.
+    //
+    // Instead: wrap the text onto as many lines as it needs (up to what fits at
+    // this video size) and lift the anchor by one line per extra line, which
+    // keeps the block's bottom edge where a single line would have been. Doing
+    // it here also fixes subtitle files generated before the writers knew about
+    // wrapping, and adapts to the size/aspect of the video being played.
     useEffect(() => {
       const video = videoRef.current;
       if (!video) return;
 
+      const laidOut: TextTrack[] = [];
+
       const layoutCues = (track: TextTrack) => {
         const cues = track.cues;
         if (!cues) return;
+        if (!laidOut.includes(track)) laidOut.push(track);
 
+        const maxChars = captionCharsPerLine(video.videoWidth, video.videoHeight);
         for (let i = 0; i < cues.length; i += 1) {
           const cue = cues[i] as VTTCue;
           try {
+            const text = wrapCueText(cue.text, maxChars);
             cue.snapToLines = false;
-            cue.line = CUE_BOTTOM_PERCENT;
-            cue.lineAlign = "end";
-            const wrapped = wrapCueText(cue.text);
-            if (wrapped !== cue.text) cue.text = wrapped;
+            cue.line = cueLinePercent(cueLineCount(text));
+            if (text !== cue.text) cue.text = text;
           } catch {
             // Some browsers expose cue settings as read-only; the cue settings
             // written into the VTT file still apply.
           }
         }
+      };
+
+      // Re-lays out with the real video dimensions, in case a track finished
+      // loading before the media metadata (and so its aspect ratio) was known.
+      const relayout = () => {
+        for (let i = 0; i < laidOut.length; i += 1) layoutCues(laidOut[i]);
       };
 
       const attached = new WeakSet<HTMLTrackElement>();
@@ -286,10 +304,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       // Tracks rendered after mount are picked up by the `addtrack` listener
       // below, so this effect never needs to re-run (and re-attach listeners).
       attachTrackElements();
+      video.addEventListener("loadedmetadata", relayout);
       const textTracks = video.textTracks;
       textTracks.addEventListener("addtrack", attachTrackElements);
-      return () =>
+      return () => {
+        video.removeEventListener("loadedmetadata", relayout);
         textTracks.removeEventListener("addtrack", attachTrackElements);
+      };
     }, []);
 
     return (

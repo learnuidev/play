@@ -90,23 +90,74 @@ export function parseVtt(content: string): SubtitleCue[] {
 }
 
 /**
- * Vertical anchor for every caption block, as a percentage of the video
- * height. The cue box is anchored by its *bottom* edge (`line:90%,end`) so a
- * caption that wraps onto extra lines grows upward into the frame instead of
- * running past the bottom edge and being cut off.
+ * Where a *single-line* caption is anchored, as a percentage of the video
+ * height.
+ *
+ * A cue's `line` percentage positions the cue box by its **top** edge, and the
+ * box then grows downward. That is why a long cue used to get cut off: the
+ * first line landed at 90% and every line after it fell past the bottom of the
+ * frame. Chrome also ignores the `end` line alignment (`line:90%,end` renders
+ * exactly like `line:90%`), so the box cannot simply be bottom-anchored.
+ *
+ * The fix is to lift the anchor one line per extra line, so the *last* line of
+ * the block stays where a single line would have been; see
+ * `cueLinePercent`.
  */
-export const CUE_BOTTOM_PERCENT = 90;
+export const CUE_BASE_LINE_PERCENT = 90;
+
+/**
+ * Height of one caption line, as a percentage of the video height. Chrome
+ * renders cue text at 5% of the video height with the usual 1.2 line height,
+ * which measures at ~6% per line.
+ */
+export const CUE_LINE_PITCH_PERCENT = 6;
 
 /** Longest caption line we emit before wrapping the rest onto the next line. */
 export const MAX_CUE_LINE_CHARS = 42;
 
-/** Serializes cues into a canonical WebVTT document. */
+/** Number of rendered lines in a (already wrapped) cue text. */
+export function cueLineCount(text: string): number {
+  return text.split('\n').length;
+}
+
+/**
+ * The `line` percentage that keeps a caption's bottom edge in the same place
+ * no matter how many lines it wraps onto: 90% for one line, 84% for two, 78%
+ * for three, and so on. Extra lines therefore grow *upward* into the frame
+ * instead of being cut off at the bottom.
+ */
+export function cueLinePercent(lineCount: number): number {
+  return CUE_BASE_LINE_PERCENT - CUE_LINE_PITCH_PERCENT * Math.max(0, lineCount - 1);
+}
+
+/**
+ * How many characters fit on one caption line at this video size. Chrome lays
+ * cue text out at 5% of the video height, so a 16:9 player fits ~75 characters.
+ * Stay under that (and under the broadcast limit) so a line we wrap ourselves
+ * is never wrapped *again* by the renderer, which would break the line count
+ * the anchor is derived from.
+ */
+export function captionCharsPerLine(
+  videoWidth: number,
+  videoHeight: number,
+  maxChars = MAX_CUE_LINE_CHARS,
+): number {
+  if (!videoWidth || !videoHeight) return maxChars;
+  const fits = Math.floor(36 * (videoWidth / videoHeight));
+  return Math.max(16, Math.min(maxChars, fits));
+}
+
+/**
+ * Serializes cues into a canonical WebVTT document, wrapping over-long text
+ * onto the next line and anchoring each cue so the whole block stays inside
+ * the video frame.
+ */
 export function serializeVtt(cues: SubtitleCue[]): string {
   const body = cues
-    .map(
-      (cue) =>
-        `${cue.start.trim()} --> ${cue.end.trim()} line:${CUE_BOTTOM_PERCENT}%,end\n${cue.text}`,
-    )
+    .map((cue) => {
+      const text = wrapCueText(cue.text);
+      return `${cue.start.trim()} --> ${cue.end.trim()} line:${cueLinePercent(cueLineCount(text))}%\n${text}`;
+    })
     .join('\n\n');
   return `WEBVTT\n\n${body}\n`;
 }
