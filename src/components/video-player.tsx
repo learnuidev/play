@@ -315,7 +315,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
     return (
       <Player.Provider>
-        <VideoSkin className="player-video">
+        {/* The skin fills its parent (width/height: 100%), so without an
+            explicit aspect ratio it collapses to the video element's default
+            150px until the stream's metadata arrives — the box then jumps to
+            16:9 and shoves the page below it. Pinning 16:9 keeps the player the
+            same size as the placeholder it replaces, before and after loading. */}
+        <VideoSkin className="player-video aspect-video">
           <HlsJsVideo
             ref={videoRef}
             src={src}
