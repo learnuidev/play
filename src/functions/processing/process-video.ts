@@ -1,7 +1,7 @@
 import type { S3Event } from 'aws-lambda';
 import { env } from '../../lib/config';
 import { getVideo, updateVideo } from '../../lib/dynamodb';
-import { startMediaConvertJob } from '../../lib/mediaconvert';
+import { startFrameCaptureJob, startMediaConvertJob } from '../../lib/mediaconvert';
 import { startTranscriptionJob } from '../../lib/transcribe';
 import type { LanguageCode } from '@aws-sdk/client-transcribe';
 
@@ -13,7 +13,8 @@ function decodeKey(key: string): string {
  * Triggered by S3 `s3:ObjectCreated:*` on the `uploads/` prefix.
  * Marks the video as PROCESSING, submits an AWS Elemental MediaConvert
  * job that transcodes the raw upload into an HLS adaptive-bitrate ladder,
- * and kicks off AWS Transcribe subtitle generation in parallel.
+ * captures the first frame as the default thumbnail, and kicks off AWS
+ * Transcribe subtitle generation in parallel.
  */
 export const handler = async (event: S3Event): Promise<void> => {
   for (const record of event.Records ?? []) {
@@ -46,6 +47,20 @@ export const handler = async (event: S3Event): Promise<void> => {
         sourceWidth: video.width,
         sourceHeight: video.height,
       });
+
+      // The default thumbnail (the video's first frame) is captured by its own
+      // job so a thumbnail failure never affects the encode. Best-effort: the
+      // completion handler stores the frame only if no custom image was
+      // uploaded, and `POST /videos/{id}/thumbnail/frame` can re-run it.
+      try {
+        await startFrameCaptureJob({
+          videoId,
+          inputUrl: `s3://${env.bucket}/${key}`,
+          outputBase: `s3://${env.bucket}/thumbnails/${videoId}/`,
+        });
+      } catch (thumbnailErr) {
+        console.error(`Failed to start thumbnail capture for videoId=${videoId}`, thumbnailErr);
+      }
 
       // Subtitle generation is best-effort and runs in parallel with encoding;
       // a transcription failure never fails the video itself.

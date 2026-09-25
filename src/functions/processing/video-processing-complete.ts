@@ -1,6 +1,7 @@
 import type { EventBridgeEvent } from 'aws-lambda';
-import { updateVideo } from '../../lib/dynamodb';
+import { getVideo, updateVideo } from '../../lib/dynamodb';
 import { getObjectText, listKeysUnderPrefix } from '../../lib/s3';
+import { findCapturedThumbnail, isCustomThumbnail } from '../../lib/thumbnail';
 
 interface MediaConvertDetail {
   status: 'COMPLETE' | 'ERROR' | 'CANCELED' | string;
@@ -56,6 +57,32 @@ async function handleAudioComplete(videoId: string): Promise<void> {
 }
 
 /**
+ * Handles completion of a first-frame thumbnail job (type === 'frame').
+ * Stores the captured frame as the video's default thumbnail, unless the user
+ * has uploaded a custom image in the meantime — a custom thumbnail always wins.
+ */
+async function handleThumbnailComplete(videoId: string): Promise<void> {
+  const video = await getVideo(videoId);
+  if (!video) {
+    console.warn(`No metadata record for videoId=${videoId}, skipping thumbnail`);
+    return;
+  }
+  if (isCustomThumbnail(video.thumbnailKey)) {
+    console.info(`Video ${videoId} has a custom thumbnail, keeping it`);
+    return;
+  }
+
+  const thumbnailKey = await findCapturedThumbnail(videoId);
+  if (!thumbnailKey) {
+    console.warn(`No captured frame found for videoId=${videoId}`);
+    return;
+  }
+
+  await updateVideo(videoId, { thumbnailKey });
+  console.info(`Default thumbnail for ${videoId} set from first frame (${thumbnailKey})`);
+}
+
+/**
  * Triggered by CloudWatch Events on MediaConvert job state change. Marks the
  * video READY/FAILED and stores the HLS manifest key, or (for audio-only
  * extraction jobs) just stores the extracted audio key.
@@ -75,6 +102,16 @@ export const handler = async (event: MediaConvertStateChangeEvent): Promise<void
     } else {
       await updateVideo(videoId, { audioStatus: 'FAILED' });
       console.warn(`Audio extraction for ${videoId} ${status}`);
+    }
+    return;
+  }
+
+  if (userMetadata?.type === 'frame') {
+    if (status === 'COMPLETE') {
+      await handleThumbnailComplete(videoId);
+    } else {
+      // The video itself is unaffected; it just keeps its placeholder thumbnail.
+      console.warn(`First-frame thumbnail for ${videoId} ${status}`);
     }
     return;
   }

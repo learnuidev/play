@@ -18,6 +18,28 @@ export function buildThumbnailSignedUrl(thumbnailKey: string): ThumbnailInfo {
   return buildSignedThumbnailUrl(thumbnailKey);
 }
 
+/**
+ * Whether a thumbnail key came from a user upload rather than from the
+ * first-frame capture MediaConvert writes. Custom uploads win: the capture
+ * completion handler never overwrites one.
+ */
+export function isCustomThumbnail(thumbnailKey: string | undefined): boolean {
+  return !!thumbnailKey && thumbnailKey.includes('/custom-');
+}
+
+/**
+ * Finds the most recent first-frame capture for a video, ignoring custom
+ * uploads. Frames are named `frame-{timestamp}.jpg`, so the last key is the
+ * newest one.
+ */
+export async function findCapturedThumbnail(videoId: string): Promise<string | undefined> {
+  const keys = (await listKeysUnderPrefix(thumbnailPrefix(videoId))).filter(
+    (key) => !isCustomThumbnail(key) && /\.(jpe?g|png)$/i.test(key),
+  );
+  keys.sort();
+  return keys[keys.length - 1];
+}
+
 export interface CustomThumbnailUpload {
   key: string;
   url: string;

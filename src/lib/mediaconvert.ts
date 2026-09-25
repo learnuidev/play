@@ -266,6 +266,74 @@ export interface AudioExtractionJob {
 }
 
 /**
+ * Frame-capture output group: one JPEG of the video's first frame, written to
+ * `outputBase` + `NameModifier`. Used as the video's default thumbnail when no
+ * custom one has been uploaded.
+ */
+function frameCaptureOutputGroup(outputBase: string, nameModifier: string): OutputGroup {
+  return {
+    Name: 'Thumbnail',
+    OutputGroupSettings: {
+      Type: 'FILE_GROUP_SETTINGS',
+      FileGroupSettings: {
+        Destination: outputBase,
+      },
+    },
+    Outputs: [
+      {
+        NameModifier: nameModifier,
+        ContainerSettings: { Container: 'RAW' },
+        VideoDescription: {
+          CodecSettings: {
+            Codec: 'FRAME_CAPTURE',
+            FrameCaptureSettings: {
+              FramerateNumerator: 1,
+              FramerateDenominator: 1,
+              MaxCaptures: 1,
+              Quality: 80,
+            },
+          },
+        },
+      },
+    ],
+  };
+}
+
+export interface FrameCaptureJob {
+  videoId: string;
+  inputUrl: string;
+  /** Prefix the JPEG lands in, e.g. `s3://bucket/thumbnails/{videoId}/`. */
+  outputBase: string;
+}
+
+/**
+ * Submits a MediaConvert job that captures only the first frame of the source
+ * upload as a JPEG. This is deliberately a separate job from the encode: a bad
+ * frame-capture setting can fail the thumbnail without touching the video
+ * ladder, and it can be re-run for videos that were processed before default
+ * thumbnails existed.
+ */
+export async function startFrameCaptureJob({
+  videoId,
+  inputUrl,
+  outputBase,
+}: FrameCaptureJob): Promise<void> {
+  const mc = await getMediaConvertClient();
+  await mc.send(
+    new CreateJobCommand({
+      Role: env.mediaconvertRoleArn,
+      StatusUpdateInterval: 'SECONDS_60',
+      UserMetadata: { videoId, inputUrl, type: 'frame' },
+      Settings: {
+        TimecodeConfig: { Source: 'ZEROBASED' },
+        Inputs: [{ FileInput: inputUrl, TimecodeSource: 'ZEROBASED' }],
+        OutputGroups: [frameCaptureOutputGroup(outputBase, `frame-${Date.now()}`)],
+      },
+    }),
+  );
+}
+
+/**
  * Submits a MediaConvert job that only extracts the audio track (no video
  * ladder) from an existing raw upload. Used to (re)generate audio for videos
  * that predate audio extraction.

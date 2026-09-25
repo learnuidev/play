@@ -3,7 +3,7 @@ import { requireOwnerId } from '../../lib/auth';
 import { env } from '../../lib/config';
 import { getVideo, updateVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
-import { startMediaConvertJob } from '../../lib/mediaconvert';
+import { startFrameCaptureJob, startMediaConvertJob } from '../../lib/mediaconvert';
 import { deletePrefix, listKeysUnderPrefix } from '../../lib/s3';
 
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
@@ -38,6 +38,20 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
       sourceWidth: video.width,
       sourceHeight: video.height,
     });
+
+    // A retried video has no thumbnail yet, so capture its first frame again
+    // (best-effort — the encode is what matters here).
+    if (!video.thumbnailKey) {
+      try {
+        await startFrameCaptureJob({
+          videoId,
+          inputUrl: `s3://${env.bucket}/${video.s3Key}`,
+          outputBase: `s3://${env.bucket}/thumbnails/${videoId}/`,
+        });
+      } catch (thumbnailErr) {
+        console.error(`Failed to start thumbnail capture for videoId=${videoId}`, thumbnailErr);
+      }
+    }
   } catch (err) {
     console.error(`Failed to retry processing for videoId=${videoId}`, err);
     await updateVideo(videoId, { status: 'FAILED' });

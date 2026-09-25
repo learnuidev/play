@@ -217,6 +217,15 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  generate-thumbnail:
+    handler: src/functions/videos/generate-thumbnail.handler
+    events:
+      - http:
+          path: videos/{videoId}/thumbnail/frame
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
@@ -446,6 +455,13 @@ resources:
                   Resource:
                     - !GetAtt VideosBucket.Arn
                     - !Sub "${VideosBucket.Arn}/processed/*"
+                # The frame-capture job writes the default thumbnail (the
+                # video's first frame) here.
+                - Effect: Allow
+                  Action:
+                    - s3:PutObject
+                  Resource:
+                    - !Sub "${VideosBucket.Arn}/thumbnails/*"
 
     TranscribeRole:
       Type: AWS::IAM::Role
