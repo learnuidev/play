@@ -57,8 +57,12 @@ export function parseVtt(content: string): VttCue[] {
  * Cue settings applied to every cue so captions render at a consistent
  * vertical position (native WebVTT defaults to `line:auto`, which drifts up
  * and down depending on cue height and the current track).
+ *
+ * The `end` line alignment anchors the cue box by its *bottom* edge: a caption
+ * that wraps onto extra lines grows upward into the frame, instead of a
+ * top-anchored box running past the bottom edge with the extra lines cut off.
  */
-const CUE_SETTINGS = 'line:90%';
+const CUE_SETTINGS = 'line:90%,end';
 
 /** Serializes cues into a canonical WebVTT document. */
 export function serializeVtt(cues: VttCue[]): string {
