@@ -89,10 +89,80 @@ export function parseVtt(content: string): SubtitleCue[] {
   return cues;
 }
 
+/**
+ * Vertical anchor for every caption block, as a percentage of the video
+ * height. The cue box is anchored by its *bottom* edge (`line:90%,end`) so a
+ * caption that wraps onto extra lines grows upward into the frame instead of
+ * running past the bottom edge and being cut off.
+ */
+export const CUE_BOTTOM_PERCENT = 90;
+
+/** Longest caption line we emit before wrapping the rest onto the next line. */
+export const MAX_CUE_LINE_CHARS = 42;
+
 /** Serializes cues into a canonical WebVTT document. */
 export function serializeVtt(cues: SubtitleCue[]): string {
   const body = cues
-    .map((cue) => `${cue.start.trim()} --> ${cue.end.trim()} line:90%\n${cue.text}`)
+    .map(
+      (cue) =>
+        `${cue.start.trim()} --> ${cue.end.trim()} line:${CUE_BOTTOM_PERCENT}%,end\n${cue.text}`,
+    )
     .join('\n\n');
   return `WEBVTT\n\n${body}\n`;
+}
+
+/**
+ * Splits `line` into the fewest lines that each fit within `maxChars`, then
+ * nudges words down so the wrap doesn't end on a stub tail line (e.g.
+ * "The quick brown fox jumps over the / lazy dog and runs away" instead of
+ * "...the lazy dog / and runs away").
+ *
+ * A single token longer than `maxChars` (a long URL, or languages written
+ * without spaces) is left intact and left to the renderer — breaking it mid
+ * word would be worse than letting the browser wrap it.
+ */
+function wrapLine(line: string, maxChars: number): string[] {
+  if (line.length <= maxChars) return [line];
+
+  const words = line.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return [line];
+
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) current = word;
+    else if (current.length + 1 + word.length <= maxChars) current += ` ${word}`;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  lines.push(current);
+
+  // Move words from the second-to-last line down while the tail line is still
+  // under half a line, keeping every line within `maxChars` and never emptying
+  // the line we're borrowing from.
+  let tail = lines.length - 1;
+  while (tail > 0 && lines[tail].length * 2 < maxChars) {
+    const previous = lines[tail - 1].split(' ');
+    if (previous.length < 2) break;
+    const moved = previous[previous.length - 1];
+    if (lines[tail].length + 1 + moved.length > maxChars) break;
+    lines[tail - 1] = previous.slice(0, -1).join(' ');
+    lines[tail] = `${moved} ${lines[tail]}`;
+  }
+
+  return lines;
+}
+
+/**
+ * Wraps a cue's text so no line runs past the video frame. Breaks the author
+ * (or Transcribe) already put in the cue are kept; only lines that are too
+ * long are split, which makes this idempotent.
+ */
+export function wrapCueText(text: string, maxChars = MAX_CUE_LINE_CHARS): string {
+  return text
+    .split('\n')
+    .flatMap((line) => wrapLine(line.trim(), maxChars))
+    .join('\n');
 }

@@ -11,6 +11,7 @@ import "@videojs/react/video/skin.css";
 import { createPlayer, videoFeatures } from "@videojs/react";
 import { VideoSkin } from "@videojs/react/video";
 import { HlsJsVideo } from "@videojs/react/media/hlsjs-video";
+import { CUE_BOTTOM_PERCENT, wrapCueText } from "@/lib/vtt";
 
 const Player = createPlayer({ features: videoFeatures });
 
@@ -238,6 +239,57 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         textTracks.removeEventListener("change", enforceSingleSubtitle);
         textTracks.removeEventListener("addtrack", applyInitialTrack);
       };
+    }, []);
+
+    // A cue box is anchored by its *top* edge at the cue's `line` setting, so a
+    // caption that wrapped onto a second (or third) line ran past the bottom of
+    // the frame and got cut off — the longer the line, the more of it was lost.
+    // Re-anchor every cue by its *bottom* edge and wrap over-long lines onto the
+    // next line ourselves, so extra lines grow upward and stay inside the video.
+    // Doing it here (not only in the VTT writers) also fixes subtitle files
+    // generated before the writers pinned the bottom edge.
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const layoutCues = (track: TextTrack) => {
+        const cues = track.cues;
+        if (!cues) return;
+
+        for (let i = 0; i < cues.length; i += 1) {
+          const cue = cues[i] as VTTCue;
+          try {
+            cue.snapToLines = false;
+            cue.line = CUE_BOTTOM_PERCENT;
+            cue.lineAlign = "end";
+            const wrapped = wrapCueText(cue.text);
+            if (wrapped !== cue.text) cue.text = wrapped;
+          } catch {
+            // Some browsers expose cue settings as read-only; the cue settings
+            // written into the VTT file still apply.
+          }
+        }
+      };
+
+      const attached = new WeakSet<HTMLTrackElement>();
+      const attachTrackElements = () => {
+        const elements = video.querySelectorAll("track");
+        for (let i = 0; i < elements.length; i += 1) {
+          const element = elements[i];
+          if (attached.has(element)) continue;
+          attached.add(element);
+          element.addEventListener("load", () => layoutCues(element.track));
+          layoutCues(element.track); // already loaded, e.g. the default track
+        }
+      };
+
+      // Tracks rendered after mount are picked up by the `addtrack` listener
+      // below, so this effect never needs to re-run (and re-attach listeners).
+      attachTrackElements();
+      const textTracks = video.textTracks;
+      textTracks.addEventListener("addtrack", attachTrackElements);
+      return () =>
+        textTracks.removeEventListener("addtrack", attachTrackElements);
     }, []);
 
     return (
