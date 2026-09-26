@@ -1,5 +1,5 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import type { Comment, CommentThread } from '../types';
+import type { ApiComment, Comment, CommentThread } from '../types';
 import { documentClient as client, isConditionalCheckFailed } from './dynamodb';
 import { env } from './config';
 
@@ -176,6 +176,17 @@ export async function listComments(contentId: string): Promise<{ comments: Comme
 }
 
 /**
+ * The storage row as the API's shape.
+ *
+ * A comment is keyed by its content and itself, and both are already part of
+ * what a comment *is* — what this adds is the caller's own favourite, which the
+ * stored row must not carry because it is a different learner's answer.
+ */
+export function toApiComment(comment: Comment, favourited: boolean): ApiComment {
+  return { ...comment, favourited };
+}
+
+/**
  * Groups a content's comments into two-level threads.
  *
  * A reply never nests further: it carries the top-level comment's id as
@@ -183,7 +194,7 @@ export async function listComments(contentId: string): Promise<{ comments: Comme
  * discussion. A reply whose parent is missing (a comment hard-deleted before it
  * had answers) is dropped rather than shown orphaned.
  */
-export function assembleThreads(comments: Comment[]): CommentThread[] {
+export function assembleThreads(comments: ApiComment[]): CommentThread[] {
   const threads = new Map<string, CommentThread>();
 
   for (const comment of comments) {

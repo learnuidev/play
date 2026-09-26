@@ -438,10 +438,22 @@ export interface Comment {
   updatedAt: number;
 }
 
+/**
+ * A comment as the API hands it out: the row, plus what the caller has done
+ * with it.
+ *
+ * The favourite travels with the comment rather than being asked about per row,
+ * so a discussion can be drawn with its hearts in the right state from the one
+ * request that read it — the same reason a loop carries `likedByMe`.
+ */
+export interface ApiComment extends Comment {
+  favourited: boolean;
+}
+
 /** A top-level comment and its replies, in the order they were written. */
 export interface CommentThread {
-  comment: Comment;
-  replies: Comment[];
+  comment: ApiComment;
+  replies: ApiComment[];
 }
 
 /** What the caller themselves has done with a piece of content. */
