@@ -121,6 +121,24 @@ if (missing.length > 0) {
   );
 }
 
+// Optional: present only when the backend was deployed with Google OAuth
+// credentials (see play-backend/scripts/set-google-oauth.sh). Without them the
+// app falls back to email/password sign-in only.
+const optionalEnv = {
+  NEXT_PUBLIC_COGNITO_DOMAIN: outputs.CognitoDomain,
+  NEXT_PUBLIC_GOOGLE_AUTH_ENABLED: outputs.GoogleAuthEnabled,
+};
+
+for (const [key, value] of Object.entries(optionalEnv)) {
+  if (value) env[key] = value;
+}
+
+if (!optionalEnv.NEXT_PUBLIC_COGNITO_DOMAIN) {
+  console.log(
+    "\nGoogle sign-in is not configured on this stack — skipping NEXT_PUBLIC_COGNITO_DOMAIN.",
+  );
+}
+
 const content = `${Object.entries(env)
   .map(([key, value]) => `${key}=${value}`)
   .join("\n")}\n`;

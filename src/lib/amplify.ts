@@ -1,9 +1,52 @@
+// Registers the OAuth listener so that a redirect back from the Cognito Hosted
+// UI (e.g. Google) completes the sign-in. Must be imported on every page that
+// can be a redirect target — importing it here (via `providers.tsx`) covers the
+// whole app. Safe on the server: the module no-ops outside the browser.
+import 'aws-amplify/auth/enable-oauth-listener';
+
 import { Amplify } from 'aws-amplify';
 
 const userPoolId = process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID;
 const userPoolClientId = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
+const oauthDomain = process.env.NEXT_PUBLIC_COGNITO_DOMAIN;
+
+/** Where the app runs when no explicit origin is configured (local dev). */
+const DEFAULT_APP_ORIGIN = 'http://localhost:3000';
+
+/** Path the backend registers as a Cognito callback URL. */
+export const oauthCallbackPath = '/auth/callback';
+
+/**
+ * Cognito only accepts redirect URLs it knows about, so these defaults mirror
+ * the backend's `custom.auth.callbackUrls` / `logoutUrls` defaults. Comma-separate
+ * to support several origins (e.g. localhost + a deployed domain).
+ */
+function parseUrlList(value: string | undefined, fallback: string): string[] {
+  const urls = (value ?? '')
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
+
+  return urls.length > 0 ? urls : [fallback];
+}
 
 export const isAuthConfigured = Boolean(userPoolId && userPoolClientId);
+
+/** True when the Cognito Hosted UI domain is configured (enables OAuth sign-in). */
+export const isOAuthConfigured = isAuthConfigured && Boolean(oauthDomain);
+
+/** True when the backend reports that a Google identity provider exists. */
+export const isGoogleSignInEnabled =
+  isOAuthConfigured && process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === 'true';
+
+const oauthRedirectSignIn = parseUrlList(
+  process.env.NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_IN,
+  `${DEFAULT_APP_ORIGIN}${oauthCallbackPath}`,
+);
+const oauthRedirectSignOut = parseUrlList(
+  process.env.NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_OUT,
+  DEFAULT_APP_ORIGIN,
+);
 
 if (isAuthConfigured) {
   Amplify.configure({
@@ -11,6 +54,17 @@ if (isAuthConfigured) {
       Cognito: {
         userPoolId: userPoolId!,
         userPoolClientId: userPoolClientId!,
+        ...(isOAuthConfigured && {
+          loginWith: {
+            oauth: {
+              domain: oauthDomain!,
+              scopes: ['email', 'openid', 'profile'],
+              redirectSignIn: oauthRedirectSignIn,
+              redirectSignOut: oauthRedirectSignOut,
+              responseType: 'code',
+            },
+          },
+        }),
       },
     },
   });
