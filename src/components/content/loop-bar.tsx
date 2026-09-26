@@ -72,7 +72,7 @@ export function LoopBar({
   /** The loop being moved, when the picker was opened on an existing one. */
   editingName,
   previewing,
-  onToggleLooping,
+  onTogglePreview,
   onSave,
   onCancel,
 }: {
@@ -85,10 +85,10 @@ export function LoopBar({
   selectedLines?: number;
   selectedText?: string;
   editingName?: string;
-  /** True while the passage is being played round and round. */
+  /** True while the passage is being heard, round and round. */
   previewing: boolean;
-  /** Stops or restarts that, to hear what lies either side of the passage. */
-  onToggleLooping: () => void;
+  /** Starts or stops hearing it. */
+  onTogglePreview: () => void;
   onSave: (range: LoopRange, name: string) => void;
   onCancel: () => void;
 }) {
@@ -269,14 +269,14 @@ export function LoopBar({
             type="button"
             title={
               previewing
-                ? 'Stop playing just this passage, to hear either side of it'
-                : 'Play just this passage, round and round'
+                ? 'Stop hearing the passage, to play straight through'
+                : 'Hear the passage, round and round'
             }
-            onClick={onToggleLooping}
+            onClick={onTogglePreview}
             className={PILL}
           >
             {previewing ? <PauseIcon className="size-3" /> : <PlayIcon className="size-3" />}
-            {previewing ? 'Pause loop' : 'Loop range'}
+            {previewing ? 'Pause' : 'Preview'}
           </button>
 
           {naming ? (

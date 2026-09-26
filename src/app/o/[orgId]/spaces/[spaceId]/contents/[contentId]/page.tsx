@@ -355,13 +355,8 @@ export default function ContentPage() {
    */
   const [draft, setDraft] = useState<LoopRange | null>(null);
   const [editingLoop, setEditingLoop] = useState<ContentLoop | null>(null);
-  /**
-   * Whether the picker is auditioning the passage it is choosing.
-   *
-   * On whenever the picker opens: a range selector that leaves the video running
-   * past its own end is not selecting a range, it is guessing at one.
-   */
-  const [loopingDraft, setLoopingDraft] = useState(true);
+  /** Whether the passage being chosen is being heard, once asked for. */
+  const [previewing, setPreviewing] = useState(false);
 
   // The lesson before this one sends `?play=1`, which is how an automatic
   // advance carries on playing instead of landing on a paused page.
@@ -383,6 +378,7 @@ export default function ContentPage() {
     () => playerRef.current?.getDurationMs() ?? 0,
     [],
   );
+  const playVideo = useCallback(() => playerRef.current?.play(), []);
 
   const handleSeek = useCallback((timeMs: number) => {
     playerRef.current?.seekTo(timeMs);
@@ -407,12 +403,12 @@ export default function ContentPage() {
     );
   }, [next, orgId, router, spaceId]);
 
-  // One loop at a time, and while a passage is being chosen it is that passage:
-  // the video plays the range the picker is drawing and nothing either side of
-  // it, which is the only way to choose the end of a range by ear. A reader
-  // cannot be inside two loops at once, so the saved loop steps aside until the
-  // picker is closed.
-  const playingLoop = draft ? (loopingDraft ? draft : null) : activeLoop;
+  // One loop at a time, whether it is a saved one being played or a draft being
+  // previewed — a reader cannot be inside two loops at once, and pretending
+  // otherwise would only make the playhead argue with itself. Opening the picker
+  // does not start one on its own: the video plays straight through until the
+  // reader asks to hear the passage.
+  const playingLoop = previewing && draft ? draft : activeLoop;
 
   useLoopPlayback({
     loop: playingLoop,
@@ -427,7 +423,7 @@ export default function ContentPage() {
       // ending: its own boundaries, and its own name.
       if (loop) {
         setEditingLoop(loop);
-        setLoopingDraft(true);
+        setPreviewing(false);
         setDraft({ startMs: loop.startMs, endMs: loop.endMs });
         return;
       }
@@ -451,7 +447,7 @@ export default function ContentPage() {
       }
 
       setEditingLoop(null);
-      setLoopingDraft(true);
+      setPreviewing(false);
       // Widened to the sentences it falls in: a passage starts at the beginning
       // of one, and boundaries set from a playhead land mid-word as often as not.
       setDraft(snapRangeToLines(lines, now, endMs));
@@ -462,19 +458,22 @@ export default function ContentPage() {
   const closePicker = useCallback(() => {
     setDraft(null);
     setEditingLoop(null);
-    setLoopingDraft(true);
+    setPreviewing(false);
   }, []);
 
-  /** Stops or restarts the auditioning, to hear what lies either side of it. */
-  const toggleLoopingDraft = useCallback(() => {
-    const next = !loopingDraft;
-    setLoopingDraft(next);
+  /** Hears the passage, or stops hearing it, to check what either side holds. */
+  const togglePreview = useCallback(() => {
+    if (previewing) {
+      setPreviewing(false);
+      return;
+    }
 
-    if (next && draft) {
+    if (draft) {
       handleSeek(draft.startMs);
       playVideo();
     }
-  }, [draft, handleSeek, loopingDraft, playVideo]);
+    setPreviewing(true);
+  }, [draft, handleSeek, playVideo, previewing]);
 
   /**
    * Taps a line to grow the passage around it — mandarino's gesture, and the
@@ -707,8 +706,8 @@ export default function ContentPage() {
                     selectedLines={linesInRange(lines, draft.startMs, draft.endMs).length}
                     selectedText={transcriptTextFor(lines, draft.startMs, draft.endMs)}
                     editingName={editingLoop?.name}
-                    previewing={loopingDraft}
-                    onToggleLooping={toggleLoopingDraft}
+                    previewing={previewing}
+                    onTogglePreview={togglePreview}
                     onSave={saveLoop}
                     onCancel={closePicker}
                   />
@@ -809,12 +808,19 @@ export default function ContentPage() {
               lines={lines}
               activeLoopId={activeLoop?.loopId ?? null}
               onActivate={(loop) => {
-                setLoopingDraft(true);
+                setPreviewing(false);
                 setActiveLoop(loop);
               }}
               onDeactivate={() => setActiveLoop(null)}
               onStartSelection={() => openPicker()}
               onMoveRange={(loop) => openPicker(loop)}
+              onSeek={(timeMs) => {
+                // Straight to the words, and playing: a tap on a passage is a
+                // request to hear it, not to put the playhead somewhere and
+                // leave it there.
+                handleSeek(timeMs);
+                playVideo();
+              }}
               canEdit={canEdit}
             />
           </TabsContent>

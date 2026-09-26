@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   Loader2Icon,
   MoreHorizontalIcon,
@@ -12,7 +12,7 @@ import {
 import { toast } from 'sonner';
 import { cn, formatDuration } from '@/lib/utils';
 import { loopColor } from '@/lib/loop-color';
-import { transcriptTextFor, type TranscriptLine } from '@/lib/transcript';
+import { linesInRange, type TranscriptLine } from '@/lib/transcript';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -47,7 +47,8 @@ function LoopRow({
   loop,
   index,
   active,
-  said,
+  covered,
+  onSeek,
   onToggle,
   onRename,
   onMoveRange,
@@ -57,8 +58,10 @@ function LoopRow({
   loop: ContentLoop;
   index: number;
   active: boolean;
-  /** What the loop covers, from the transcript. Empty when there is none. */
-  said: string;
+  /** The transcript lines the loop covers, in order. Empty when there is none. */
+  covered: TranscriptLine[];
+  /** Takes the video to a line — the way back into the audio from the text. */
+  onSeek: (timeMs: number) => void;
   onToggle: () => void;
   onRename: (name: string) => void;
   onMoveRange: () => void;
@@ -153,9 +156,38 @@ function LoopRow({
       </div>
 
       {/* What the loop actually says — the whole passage, as it reads in the
-          transcript, across the panel's full width. */}
-      {said && (
-        <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{said}</p>
+          transcript, across the panel's full width.
+
+          Each sentence is a way back into the audio: the passage is the reason a
+          loop was kept, and reading it is how you find the bit you wanted, so
+          the text is not merely a label for the timestamps — it is the control. */}
+      {covered.length > 0 && (
+        <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+          {covered.map((line, lineIndex) => (
+            <Fragment key={line.key}>
+              {lineIndex > 0 && ' '}
+              {/* A span rather than a button: the passage is a paragraph, and it
+                  should go on reading as one. A button brings its own styling
+                  and an underline on hover, which turns a page of prose into a
+                  row of controls — the words are the way in, not a label for
+                  one. Only the cursor and the tooltip say so. */}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={() => onSeek(line.start)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  onSeek(line.start);
+                }}
+                title={`Play from ${stamp(line.start)}`}
+                className="cursor-pointer"
+              >
+                {line.text}
+              </span>
+            </Fragment>
+          ))}
+        </p>
       )}
 
       <span className="sr-only">{index + 1}</span>
@@ -171,6 +203,7 @@ export function ContentLoops({
   onDeactivate,
   onStartSelection,
   onMoveRange,
+  onSeek,
   canEdit,
 }: {
   contentId: string;
@@ -183,6 +216,8 @@ export function ContentLoops({
   onStartSelection: () => void;
   /** Opens the loop bar on this loop's boundaries, to move them. */
   onMoveRange: (loop: ContentLoop) => void;
+  /** Takes the video to a moment in the transcript. */
+  onSeek: (timeMs: number) => void;
   canEdit: boolean;
 }) {
   const { data, isLoading } = useLoops(contentId);
@@ -269,7 +304,8 @@ export function ContentLoops({
                 loop={loop}
                 index={index}
                 active={activeLoopId === loop.loopId}
-                said={transcriptTextFor(lines, loop.startMs, loop.endMs)}
+                covered={linesInRange(lines, loop.startMs, loop.endMs)}
+                onSeek={onSeek}
                 busy={remove.isPending && remove.variables === loop.loopId}
                 onToggle={() => (activeLoopId === loop.loopId ? onDeactivate() : onActivate(loop))}
                 onRename={(name) => rename(loop, name)}
