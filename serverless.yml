@@ -280,6 +280,17 @@ functions:
                 - COMPLETED
                 - FAILED
 
+  # Pre sign-up trigger: gives a first-time Google sign-in the same account as an
+  # existing password account with the same verified email. Wired to the user pool
+  # below (see LambdaConfig) and given its own role, because the pool references
+  # this function and a shared role that referenced the pool back would form a
+  # CloudFormation dependency cycle.
+  link-federated-user:
+    handler: src/functions/auth/link-federated-user.handler
+    description: Links a federated sign-in to the existing account with the same verified email
+    timeout: 10
+    role: !GetAtt LinkFederatedUserRole.Arn
+
 resources:
   # Google sign-in is only wired up when credentials are present, so an existing
   # email/password-only deployment keeps working unchanged.
@@ -510,6 +521,42 @@ resources:
                   Resource:
                     - !Sub "${VideosBucket.Arn}/subtitles/*"
 
+    # Execution role for the pre sign-up linking trigger. Deliberately NOT the
+    # shared lambda role: AdminLinkProviderForUser can attach an external
+    # identity to any local account, so the only function that needs it is the
+    # one whose entire job is to do it safely.
+    #
+    # The cognito-idp resource is an ARN pattern rather than
+    # !GetAtt CognitoUserPool.Arn on purpose — the pool's LambdaConfig points at
+    # the function, so a role that pointed back at the pool would close a
+    # CloudFormation dependency cycle. Scoping to `userpool/*` in this account
+    # is the closest cycle-free equivalent; the handler only touches the pool id
+    # from its trigger event. The role is not conditional because the function is
+    # not, and the trigger is simply left unwired when Google is disabled.
+    LinkFederatedUserRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: lambda.amazonaws.com
+              Action: sts:AssumeRole
+        # Standard Lambda logging permissions.
+        ManagedPolicyArns:
+          - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        Policies:
+          - PolicyName: LinkFederatedUser
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - cognito-idp:AdminLinkProviderForUser
+                    - cognito-idp:ListUsers
+                  Resource: !Sub "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*"
+
     CognitoUserPool:
       Type: AWS::Cognito::UserPool
       Properties:
@@ -521,6 +568,16 @@ resources:
         UsernameAttributes:
           - email
         MfaConfiguration: "OFF"
+        # Runs on a federated user's first sign-in to link them to an existing
+        # password account with the same email (see link-federated-user above).
+        # Only attached when Google sign-in is configured.
+        # `LinkDashfederatedDashuserLambdaFunction` is Serverless's logical ID for
+        # the `link-federated-user` function (hyphens become "Dash").
+        LambdaConfig:
+          PreSignUp: !If
+            - GoogleSignInEnabled
+            - !GetAtt LinkDashfederatedDashuserLambdaFunction.Arn
+            - !Ref "AWS::NoValue"
         Policies:
           PasswordPolicy:
             MinimumLength: 8
@@ -609,6 +666,18 @@ resources:
         SupportedIdentityProviders:
           - COGNITO
           - !If [GoogleSignInEnabled, !Ref GoogleIdentityProvider, !Ref "AWS::NoValue"]
+
+    # Lets Cognito call the pre sign-up trigger. Needed because the pool is wired
+    # to the function through a raw LambdaConfig property; a Serverless function
+    # event would have created this automatically.
+    LinkFederatedUserInvokePermission:
+      Type: AWS::Lambda::Permission
+      Condition: GoogleSignInEnabled
+      Properties:
+        Action: lambda:InvokeFunction
+        FunctionName: !Ref LinkDashfederatedDashuserLambdaFunction
+        Principal: cognito-idp.amazonaws.com
+        SourceArn: !GetAtt CognitoUserPool.Arn
 
   Outputs:
     ApiUrl:
