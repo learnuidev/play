@@ -29,6 +29,18 @@ custom:
     callbackUrls: ${ssm:/play/auth/callback-urls, 'http://localhost:3000/auth/callback,http://localhost:3000'}
     logoutUrls: ${ssm:/play/auth/logout-urls, 'http://localhost:3000'}
 
+# Every function is packaged on its own.
+#
+# Without this, `serverless-esbuild` produces one artifact for the whole service
+# — every handler *and every handler's sourcemap* in a single zip — and every
+# function is deployed from that same zip. Lambda caps an unzipped deployment
+# package at 250 MB, and at 62 functions the service crossed it: 271 MB, of which
+# 159 MB was sourcemaps. One artifact per function is ~4 MB, keeps the sourcemaps
+# that make a CloudWatch stack trace readable, and means the next twenty
+# functions do not bring this back.
+package:
+  individually: true
+
 provider:
   name: aws
   runtime: nodejs22.x
