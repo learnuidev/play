@@ -35,6 +35,13 @@ import { findActiveLine, groupIntoParagraphs, type TranscriptLine } from '@/lib/
  * spoken, and stays dark once it has been — so the transcript reads as one
  * continuously written page rather than a caption being swapped under the video.
  *
+ * What has been said then recedes (`.tt-past` in `globals.css`): the lines above
+ * the playhead soften and blur, which leaves exactly one line in focus — the one
+ * being said — and lets the page read as a page being *read* rather than one
+ * being written over and over. Nothing is lost by it: the words are still there,
+ * and a scroll back up or a seek restores them sharp the moment the playhead is
+ * over them again.
+ *
  * Three things never go through React, because all three would cost more than
  * the illusion is worth:
  *
@@ -203,7 +210,11 @@ const TranscriptSentence = memo(function TranscriptSentence({
               tokenRefs.current[tokenIndex] = el;
             }}
             data-t-start={token.start}
-            className="tt-token whitespace-pre"
+            // On the tokens rather than on the sentence: they are the
+            // inline-blocks a filter can be relied on to paint, and a line on
+            // screen is a couple of dozen of them, so the blur costs what the
+            // visible lines cost and nothing for the rest of the sheet.
+            className={cn('tt-token whitespace-pre', isPast && 'tt-past')}
           >
             {token.text}
           </span>

@@ -196,6 +196,31 @@
        said, so a resting word costs nothing to paint. */
     text-shadow: 0 0 calc(12px * var(--pop))
       color-mix(in oklab, var(--foreground) 28%, transparent);
+    /* Only ever a transition, never a filter: a word at rest declares no filter
+       at all, so the hundreds of them that are not past stay plain paint. */
+    transition: filter 320ms ease, opacity 320ms ease;
+  }
+
+  /**
+   * What has been said, out of focus.
+   *
+   * The fill says where the playhead is; this says where the reader is, and the
+   * two are the same place only while the sheet is following. Softening the
+   * words the playhead has already crossed leaves one line sharp — the one being
+   * said — so the page reads as a page being read rather than a wall of
+   * finished text with a moving edge in the middle of it.
+   *
+   * Blur and not a fade alone, because the transcript's own ink arrives as a
+   * fill: a quarter-tone grey would read as "not yet said" at a glance, which is
+   * the opposite of the truth. Blur cannot be mistaken for either state, and it
+   * cleans up to sharp the moment a seek puts the playhead back over the line.
+   *
+   * Kept to a pixel and a half and half opacity: enough that the eye drops it,
+   * not so much that scrolling up to re-read something is a squint.
+   */
+  .tt-token.tt-past {
+    filter: blur(1.5px);
+    opacity: 0.5;
   }
 
   /* The sheet moves itself; the browser's scroll anchoring would fight it. */

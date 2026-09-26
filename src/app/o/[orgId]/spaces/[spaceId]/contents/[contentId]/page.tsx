@@ -8,6 +8,7 @@ import {
   CheckIcon,
   ChevronLeftIcon,
   HeartIcon,
+  ListTreeIcon,
   Loader2Icon,
   MessageSquareIcon,
   MoreHorizontalIcon,
@@ -26,6 +27,8 @@ import {
   transcriptTextFor,
 } from "@/lib/transcript";
 import { useLoopPlayback } from "@/hooks/use-loop-playback";
+import { useLessonTab } from "@/hooks/use-lesson-tab";
+import { useRememberedScroll } from "@/hooks/use-remembered-scroll";
 import { useViewerId } from "@/hooks/use-viewer";
 import { usePlayingNext } from "@/hooks/use-playing-next";
 import { useTranscriptLines } from "@/hooks/use-transcript-lines";
@@ -45,9 +48,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AnimatedTranscript } from "@/components/content/animated-transcript";
+import { ContentComments } from "@/components/content/content-comments";
 import { ContentDetailsDialog } from "@/components/content/content-details-dialog";
 import { ContentFiles } from "@/components/content/content-files";
 import { ContentLoops } from "@/components/content/content-loops";
+import { CourseContents } from "@/components/content/course-contents";
 import {
   DEFAULT_LOOP_SECONDS,
   LoopBar,
@@ -90,7 +95,7 @@ import type { Content, ContentLoop, NotesDocument, Video } from "@/types";
 /**
  * Quiet tabs: an underline, not pills, on a page whose subject is the video.
  *
- * The icons are sized here rather than at each call site so the five of them
+ * The icons are sized here rather than at each call site so the six of them
  * cannot drift apart, and at 20px rather than Lucide's 24px default, which reads
  * as a row of buttons in a panel this narrow.
  *
@@ -102,7 +107,7 @@ const QUIET_TAB =
   "shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none [&_svg]:size-5";
 
 /**
- * The tab strip: five icons, spread evenly across the panel.
+ * The tab strip: six icons, spread evenly across the panel.
  *
  * `justify-evenly` rather than a fixed gap, because the panel is a different
  * width on every screen: a row of icons bunched at one end with a gap between
@@ -147,11 +152,12 @@ function Meta({ content }: { content: Content }) {
 /**
  * One tab: an icon, and what it holds when you point at it.
  *
- * The labels went because five of them do not fit a panel that is 30% of the
- * page, and a tab strip that scrolls sideways is a tab strip nobody finishes
- * reading. The name has not gone anywhere — it is the accessible name, and the
- * tooltip — and the tooltip says what is *inside* rather than only repeating the
- * name, which is the question an icon-only strip actually raises.
+ * The labels went because six of them over a video read as a row of words
+ * competing with the picture. The name has not gone anywhere — it is the
+ * accessible name, and the tooltip — and the tooltip says what is *inside*
+ * rather than only repeating the name, which is the question an icon-only strip
+ * actually raises. The course is the widest of the six to name, so it asks for
+ * the tooltip most.
  */
 function LessonTab({
   value,
@@ -422,6 +428,14 @@ export default function ContentPage() {
   const sharedLoopId = search.get("loop");
 
   const viewerId = useViewerId();
+
+  /**
+   * Which tab the panel is on, and where the course list is scrolled to — both
+   * remembered across lessons, because picking the next lesson out of the Course
+   * tab used to throw the reader back to the transcript at the top of the list.
+   */
+  const [panelTab, choosePanelTab] = useLessonTab();
+  const courseListRef = useRememberedScroll<HTMLDivElement>("course");
   const { data: orgData } = useOrganization(orgId);
   const canEdit = orgData ? orgData.organization.role !== "VIEWER" : false;
 
@@ -448,8 +462,8 @@ export default function ContentPage() {
   // is choosing a passage, and by the loop list to show what each loop covers.
   const { lines, video } = useTranscriptLines(content?.videoId);
 
-  // The course, in order, to know what comes next. The same query the sidebar
-  // beside this page already asked for, so it costs nothing.
+  // The course, in order, to know what comes next. The same query the Course
+  // tab asks for, so it costs nothing extra.
   const { data: outline } = useSections(spaceId);
   const next = useMemo(
     () => (outline ? findNextWatchable(outline.sections, contentId) : null),
@@ -803,17 +817,17 @@ export default function ContentPage() {
         )}
       </header>
 
-      {/* Half the width each: the video on the left, everything filed under it on
-          the right. Below `lg` the two stack and the page scrolls normally,
-          because a phone has no second half to give.
+      {/* The video on the left, everything filed under it on the right. The
+          video is what the lesson is, so it takes the larger share — but only
+          just, because the panel is where the reading happens: the transcript
+          follows the playhead, the notes are read, and the course it belongs to
+          now lives in there too. Below `lg` the two stack and the page scrolls
+          normally, because a phone has no second half to give.
 
           The title sits above both rather than inside the left half, which is
           what lets the video and the panel start on the same line — a heading in
           the video's own column would push it down by its own height and leave
           the two columns visibly out of step. */}
-      {/* Seven to three: the video is what the lesson is, and the panel beside
-          it is read at a glance. The panel keeps a floor, because a third of a
-          narrow window is not enough to read a sentence in. */}
       {/* Fixed to the corner of the page, not of the video: see the card. */}
       {next && upNext.seconds !== null && (
         <PlayingNext
@@ -825,7 +839,11 @@ export default function ContentPage() {
         />
       )}
 
-      <div className="grid min-h-0 gap-6 lg:mt-2 lg:grid-cols-[minmax(0,7fr)_minmax(18rem,3fr)]">
+      {/* Six to four, as a ratio rather than a floor: the two tracks grow with
+          the window, so the panel is a comfortable column of prose on a wide
+          screen and still one on a laptop. The video keeps its own aspect
+          ratio, so the smaller share costs it height rather than shape. */}
+      <div className="grid min-h-0 gap-6 lg:mt-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div>
           {content.videoId ? (
             <LessonVideo
@@ -885,11 +903,20 @@ export default function ContentPage() {
           )}
         </div>
 
+        {/* Controlled rather than defaulted: the tab is a place the reader is
+            in, and it has to outlive the lesson they are in it on. */}
         <Tabs
-          defaultValue="transcript"
+          value={panelTab}
+          onValueChange={choosePanelTab}
           className="flex min-h-0 flex-col lg:rounded-2xl lg:border lg:bg-card lg:p-5"
         >
           <TabsList className={TAB_STRIP}>
+            <LessonTab
+              value="course"
+              icon={<ListTreeIcon />}
+              label="Course"
+              hint="Every lesson in this course, in order — the one you are reading is marked."
+            />
             <LessonTab
               value="transcript"
               icon={<CaptionsIcon />}
@@ -929,6 +956,24 @@ export default function ContentPage() {
               }
             />
           </TabsList>
+
+          {/* The course leads the strip, and the transcript stays what the panel
+              opens on. The order is a claim about the panel, not about the
+              lesson: what you reach for while watching is the transcript, and
+              what you reach for while wondering where this fits is the course —
+              which used to be a column that was always in the way and is now the
+              first thing on the bar. */}
+          <TabsContent
+            value="course"
+            ref={courseListRef}
+            className="mt-4 min-h-0 flex-1 overflow-y-auto"
+          >
+            <CourseContents
+              orgId={orgId}
+              spaceId={spaceId}
+              contentId={contentId}
+            />
+          </TabsContent>
 
           {/* The transcript owns its own scroll — the sheet follows the playhead
               itself — so the panel must not scroll it a second time. Everything
@@ -996,10 +1041,11 @@ export default function ContentPage() {
             value="comments"
             className="mt-4 min-h-0 flex-1 overflow-y-auto"
           >
-            <EmptyNote>
-              The discussion opens here with the classroom — comments, replies
-              and favourites are already built behind it.
-            </EmptyNote>
+            <ContentComments
+              contentId={content.contentId}
+              viewerId={viewerId}
+              canModerate={canEdit}
+            />
           </TabsContent>
         </Tabs>
       </div>

@@ -5,7 +5,6 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 import { lessonRoute } from '@/lib/routes';
 import { CommunitySidebar } from './community-sidebar';
-import { CourseSidebar } from './course-sidebar';
 import { OrgRail } from './org-rail';
 import { OrgTabs } from './org-tabs';
 
@@ -18,12 +17,11 @@ import { OrgTabs } from './org-tabs';
  * are laid out as ordinary flex columns rather than a collapsible sidebar,
  * because both are always visible in this layout.
  *
- * A lesson swaps the middle column for the course it belongs to — sections and
- * the lessons in them — and takes the community's other chrome with it: no tab
- * bar, and no organization rail. A classroom is read rather than browsed, and
- * the one thing worth having beside a lesson is the rest of the course. The
- * course's own header leads back to the space, and the community is waiting
- * there.
+ * A lesson keeps only the main area: no tab bar, no organization rail, and no
+ * column beside it. A classroom is watched rather than browsed, and a column of
+ * navigation costs the video its width for as long as the page is open — the
+ * course it belongs to is one of the lesson's own tabs now, and the link back
+ * to the space sits at the top of the page.
  */
 export function AppShell({ orgId, children }: { orgId: string; children: React.ReactNode }) {
   const pathname = usePathname();
@@ -33,11 +31,7 @@ export function AppShell({ orgId, children }: { orgId: string; children: React.R
     <SidebarProvider>
       <div className="flex h-svh w-full overflow-hidden">
         {!lesson && <OrgRail activeOrgId={orgId} />}
-        {lesson ? (
-          <CourseSidebar orgId={orgId} spaceId={lesson.spaceId} contentId={lesson.contentId} />
-        ) : (
-          <CommunitySidebar orgId={orgId} />
-        )}
+        {!lesson && <CommunitySidebar orgId={orgId} />}
         <SidebarInset className="min-w-0 bg-muted/30">
           <OrgTabs orgId={orgId} />
           <div className="min-h-0 flex-1 overflow-y-auto">

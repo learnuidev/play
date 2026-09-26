@@ -557,9 +557,19 @@ export interface Comment {
   updatedAt: number;
 }
 
+/**
+ * A comment as a read returns it: the comment, plus what the caller has done
+ * with it. The favourite comes with the thread rather than being asked about
+ * per row, so a discussion is drawn with its hearts in the right state from the
+ * one request that read it.
+ */
+export interface ApiComment extends Comment {
+  favourited: boolean;
+}
+
 export interface CommentThread {
-  comment: Comment;
-  replies: Comment[];
+  comment: ApiComment;
+  replies: ApiComment[];
 }
 
 export interface CreateCommentPayload {
