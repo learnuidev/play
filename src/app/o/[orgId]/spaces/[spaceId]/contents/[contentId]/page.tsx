@@ -409,7 +409,10 @@ export default function ContentPage() {
           what lets the video and the panel start on the same line — a heading in
           the video's own column would push it down by its own height and leave
           the two columns visibly out of step. */}
-      <div className="grid min-h-0 gap-6 lg:mt-2 lg:grid-cols-2">
+      {/* Seven to three: the video is what the lesson is, and the panel beside
+          it is read at a glance. The panel keeps a floor, because a third of a
+          narrow window is not enough to read a sentence in. */}
+      <div className="grid min-h-0 gap-6 lg:mt-2 lg:grid-cols-[minmax(0,7fr)_minmax(18rem,3fr)]">
         <div>
           {content.videoId ? (
             <LessonVideo videoId={content.videoId} playerRef={playerRef} />

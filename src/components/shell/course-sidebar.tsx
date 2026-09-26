@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeftIcon } from 'lucide-react';
+import { ChevronLeftIcon, PanelLeftCloseIcon, PanelLeftOpenIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSections } from '@/modules/section/section.queries';
 import { useSpace } from '@/modules/space/space.queries';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SpaceAvatar } from '@/components/space/space-avatar';
 
@@ -15,6 +17,11 @@ import { SpaceAvatar } from '@/components/space/space-avatar';
  * you is the sections and the lessons in them, with where you are marked — not
  * a video library and a settings link. The header goes back to the course page,
  * which is where the community navigation is waiting.
+ *
+ * It folds away to a strip. A lesson is watched, and everything the menu holds
+ * can be had from the course page; what it costs to keep open is a column of the
+ * video's width. Collapsed it leaves the toggle exactly where the menu was, so
+ * the way back is where you last saw it.
  */
 export function CourseSidebar({
   orgId,
@@ -26,21 +33,43 @@ export function CourseSidebar({
   /** The lesson being read, marked in the list. */
   contentId: string;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+
   const { data: spaceData } = useSpace(spaceId);
   const space = spaceData?.space;
 
   const { data: outline, isLoading } = useSections(spaceId);
   const sections = outline?.sections ?? [];
 
+  if (collapsed) {
+    return (
+      <aside
+        aria-label="Course contents"
+        className="hidden w-12 shrink-0 flex-col items-center border-r bg-sidebar py-3 md:flex"
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-muted-foreground transition-colors hover:text-foreground"
+          onClick={() => setCollapsed(false)}
+          aria-label="Show course contents"
+          title="Show course contents"
+        >
+          <PanelLeftOpenIcon />
+        </Button>
+      </aside>
+    );
+  }
+
   return (
     <aside
       aria-label="Course contents"
       className="hidden w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex"
     >
-      <div className="p-3">
+      <div className="flex items-center gap-1 p-3">
         <Link
           href={`/o/${orgId}/spaces/${spaceId}`}
-          className="flex items-center gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <ChevronLeftIcon className="size-4 shrink-0 text-muted-foreground" />
           {space ? (
@@ -52,6 +81,17 @@ export function CourseSidebar({
             {space?.title ?? 'Course'}
           </span>
         </Link>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+          onClick={() => setCollapsed(true)}
+          aria-label="Hide course contents"
+          title="Hide course contents"
+        >
+          <PanelLeftCloseIcon />
+        </Button>
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
