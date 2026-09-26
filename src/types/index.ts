@@ -213,3 +213,360 @@ export interface ListOrganizationsResponse {
   organizations: OrganizationSummary[];
   nextToken?: string;
 }
+
+/**
+ * How a space (course) unfolds for the people taking it.
+ *
+ * - `SELF_PACED` — the clock starts when a member enrolls: everything is
+ *   available immediately.
+ * - `SCHEDULED`  — the space starts on a date and its sections unlock relative
+ *   to that date, not to each member's enrollment.
+ */
+export type SpaceType = 'SELF_PACED' | 'SCHEDULED';
+
+export const SPACE_TYPES: SpaceType[] = ['SELF_PACED', 'SCHEDULED'];
+
+export const SPACE_TYPE_LABELS: Record<SpaceType, string> = {
+  SELF_PACED: 'Self-paced',
+  SCHEDULED: 'Scheduled',
+};
+
+export const SPACE_TYPE_DESCRIPTIONS: Record<SpaceType, string> = {
+  SELF_PACED: 'Course starts when a member enrolls. All content is available immediately.',
+  SCHEDULED: 'Course starts on a specific date. Sections are dripped relative to that date.',
+};
+
+/** Days between section unlocks in a scheduled space that does not set its own. */
+export const DEFAULT_DRIP_INTERVAL_DAYS = 7;
+
+/**
+ * Accent colours a space can be given, and the pool a space without one picks
+ * from — so every space is visually distinct without anyone having to choose.
+ * Mid-tones only: each one carries white text in the avatar.
+ */
+export const SPACE_COLORS: string[] = [
+  '#6366f1',
+  '#8b5cf6',
+  '#d946ef',
+  '#ec4899',
+  '#f43f5e',
+  '#f97316',
+  '#f59e0b',
+  '#10b981',
+  '#14b8a6',
+  '#0ea5e9',
+];
+
+/**
+ * A space (course) inside an organization: the container its videos and courses
+ * are grouped and sequenced in.
+ */
+export interface Space {
+  spaceId: string;
+  organizationId: string;
+  title: string;
+  description: string;
+  type: SpaceType;
+  /** Custom accent colour, `#rrggbb`. Absent means the UI derives one. */
+  color?: string;
+  /** Start of a scheduled space, epoch ms. Absent on self-paced spaces. */
+  startAt?: number;
+  /** Days between section unlocks. Only meaningful on scheduled spaces. */
+  dripIntervalDays?: number;
+  thumbnailKey?: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateSpacePayload {
+  title: string;
+  description?: string;
+  type: SpaceType;
+  color?: string;
+  /**
+   * Start of a scheduled space. An ISO date (`2025-01-15`) or epoch ms; the API
+   * pins a date-only value to UTC midnight so the start day is the same
+   * wherever it is read.
+   */
+  startAt?: number | string;
+  dripIntervalDays?: number;
+}
+
+export interface CreateSpaceResponse {
+  space: Space;
+}
+
+export interface ListSpacesResponse {
+  spaces: Space[];
+  nextToken?: string;
+}
+
+export interface UploadSpaceThumbnailResponse {
+  space: Space;
+  upload: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+  };
+}
+
+export interface SpaceThumbnailResponse {
+  spaceId: string;
+  thumbnailUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
+/** What a piece of content *is*. One value today, a union so more can join it. */
+export type ContentType = 'VIDEO';
+
+export const CONTENT_TYPES: ContentType[] = ['VIDEO'];
+
+export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
+  VIDEO: 'Video',
+};
+
+/**
+ * A section of a space: the heading its content is published under.
+ *
+ * `position` is the order it is read in, and it is the author's decision rather
+ * than a timestamp — a course is arranged, not merely accumulated.
+ */
+export interface Section {
+  sectionId: string;
+  spaceId: string;
+  organizationId: string;
+  title: string;
+  description: string;
+  position: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A section together with the content filed under it. */
+export interface SectionWithContents extends Section {
+  contents: Content[];
+}
+
+/**
+ * A ProseMirror/TipTap document — what the notes editor reads and writes.
+ * Kept as a tree rather than an HTML string so it can be rendered node by node.
+ */
+export type NotesDocument = Record<string, unknown>;
+
+/** One piece of content in a section: a video and the material around it. */
+export interface Content {
+  contentId: string;
+  sectionId: string;
+  spaceId: string;
+  organizationId: string;
+  title: string;
+  type: ContentType;
+  /** The video this content plays. Absent while a lesson is still a draft. */
+  videoId?: string;
+  notes?: NotesDocument;
+  position: number;
+  fileCount: number;
+  favouriteCount: number;
+  commentCount: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A file attached to a piece of content. */
+export interface ContentFile {
+  contentId: string;
+  fileId: string;
+  name: string;
+  key: string;
+  contentType: string;
+  size?: number;
+  uploadedBy: string;
+  createdAt: number;
+}
+
+/** An attachment as the listing returns it, with a signed URL to fetch it. */
+export interface ContentFileWithUrl extends ContentFile {
+  url?: string;
+}
+
+/** What the current user has done with a piece of content. */
+export interface ContentViewerState {
+  favourited: boolean;
+  inPlaylist: boolean;
+}
+
+export interface CreateSectionPayload {
+  title: string;
+  description?: string;
+  position?: number;
+}
+
+export interface UpdateSectionPayload {
+  title?: string;
+  description?: string;
+  position?: number;
+}
+
+export interface CreateContentPayload {
+  title: string;
+  type?: ContentType;
+  videoId?: string;
+  notes?: NotesDocument;
+  position?: number;
+}
+
+export interface UpdateContentPayload {
+  title?: string;
+  type?: ContentType;
+  /** `null` unlinks the video. */
+  videoId?: string | null;
+  /** `null` clears the notes. */
+  notes?: NotesDocument | null;
+  position?: number;
+}
+
+export interface UploadContentFilePayload {
+  name: string;
+  contentType: string;
+  size?: number;
+}
+
+export interface SectionResponse {
+  section: Section;
+}
+
+/** The space outline: sections in reading order, each with its content. */
+export interface ListSectionsResponse {
+  sections: SectionWithContents[];
+  /** True when the course was larger than the outline reads in one go. */
+  truncated: boolean;
+}
+
+export interface ListContentsResponse {
+  contents: Content[];
+  nextToken?: string;
+}
+
+export interface ContentResponse {
+  content: Content;
+  viewer: ContentViewerState;
+}
+
+/**
+ * What creating or editing content answers with.
+ *
+ * Unlike a read, it carries no `viewer`: writing content is an editorial act,
+ * and the caller's own favouriting of it is not part of the answer.
+ */
+export interface ContentMutationResponse {
+  content: Content;
+}
+
+export interface ListContentFilesResponse {
+  files: ContentFileWithUrl[];
+  expiresAt: number;
+}
+
+export interface ContentFileResponse {
+  file: ContentFile;
+  url: string;
+  expiresAt: number;
+}
+
+export interface UploadContentFileResponse {
+  file: ContentFile;
+  upload: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+  };
+}
+
+export type FavouriteTargetType = 'CONTENT' | 'COMMENT';
+
+/** One learner's favourite, over a piece of content or a single comment. */
+export interface Favourite {
+  userId: string;
+  targetKey: string;
+  targetType: FavouriteTargetType;
+  targetId: string;
+  contentId?: string;
+  createdAt: number;
+}
+
+/** A favourite together with what it points at, when that still exists. */
+export interface FavouriteEntry extends Favourite {
+  content?: Content;
+  comment?: Comment;
+}
+
+/** A piece of content in a learner's playlist. */
+export interface PlaylistEntry {
+  userId: string;
+  contentId: string;
+  addedAt: number;
+  content?: Content;
+}
+
+/**
+ * A comment on a piece of content, or a reply to one. Replies are two levels
+ * deep: `parentId` is the thread's root, `replyToId` the comment answered.
+ */
+export interface Comment {
+  contentId: string;
+  commentId: string;
+  organizationId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  parentId?: string;
+  replyToId?: string;
+  replyCount: number;
+  favouriteCount: number;
+  editedAt?: number;
+  deletedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CommentThread {
+  comment: Comment;
+  replies: Comment[];
+}
+
+export interface CreateCommentPayload {
+  body: string;
+  /** The comment being replied to. Omit for a top-level comment. */
+  parentId?: string;
+  /** The specific comment being answered, when that differs from `parentId`. */
+  replyToId?: string;
+}
+
+export interface FavouriteResponse {
+  favourited: boolean;
+  favouriteCount: number;
+}
+
+export interface PlaylistResponse {
+  inPlaylist: boolean;
+}
+
+export interface ListFavouritesResponse {
+  favourites: FavouriteEntry[];
+  nextToken?: string;
+}
+
+export interface ListPlaylistResponse {
+  items: PlaylistEntry[];
+  nextToken?: string;
+}
+
+export interface ListCommentsResponse {
+  threads: CommentThread[];
+  truncated: boolean;
+}

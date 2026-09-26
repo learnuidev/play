@@ -43,3 +43,19 @@ export function formatDuration(seconds: number): string {
   const ss = String(s).padStart(2, '0');
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
+
+/**
+ * Formats an epoch-millisecond timestamp as a plain calendar date.
+ *
+ * The date is rendered in UTC because that is what a space's start date was
+ * stored as: a scheduled space starts on a day, not at an instant, and reading
+ * it back in the viewer's zone would shift it a day for anyone west of UTC.
+ */
+export function formatDate(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(timestamp));
+}

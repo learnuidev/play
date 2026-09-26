@@ -1,15 +1,40 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
   AudioResponse,
+  Comment,
+  ContentFileResponse,
+  ContentMutationResponse,
+  ContentResponse,
+  CreateCommentPayload,
+  CreateContentPayload,
   CreateOrganizationPayload,
   CreateOrganizationResponse,
+  CreateSectionPayload,
+  CreateSpacePayload,
+  CreateSpaceResponse,
   CreateVideoPayload,
   CreateVideoResponse,
+  FavouriteResponse,
+  ListCommentsResponse,
+  ListContentFilesResponse,
+  ListContentsResponse,
+  ListFavouritesResponse,
   ListOrganizationsResponse,
+  ListPlaylistResponse,
+  ListSectionsResponse,
+  ListSpacesResponse,
   ListVideosResponse,
+  PlaylistResponse,
+  SectionResponse,
+  SpaceThumbnailResponse,
   StreamResponse,
   SubtitleResponse,
   ThumbnailResponse,
+  UpdateContentPayload,
+  UpdateSectionPayload,
+  UploadContentFilePayload,
+  UploadContentFileResponse,
+  UploadSpaceThumbnailResponse,
   UploadThumbnailResponse,
   Video,
   VideoStatus,
@@ -120,5 +145,128 @@ export const api = {
     request<CreateOrganizationResponse>('/organizations', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+
+  /** Spaces (courses) an organization owns, newest first. */
+  listSpaces: (orgId: string) => request<ListSpacesResponse>(`/organizations/${orgId}/spaces`),
+
+  getSpace: (spaceId: string) => request<CreateSpaceResponse>(`/spaces/${spaceId}`),
+
+  createSpace: (orgId: string, payload: CreateSpacePayload) =>
+    request<CreateSpaceResponse>(`/organizations/${orgId}/spaces`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getSpaceThumbnail: (spaceId: string) =>
+    request<SpaceThumbnailResponse>(`/spaces/${spaceId}/thumbnail`),
+
+  uploadSpaceThumbnail: (spaceId: string, payload: { contentType: string; size?: number }) =>
+    request<UploadSpaceThumbnailResponse>(`/spaces/${spaceId}/thumbnail`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * A space's outline: its sections in reading order, each with the content
+   * filed under it. One request paints the whole course page.
+   */
+  listSections: (spaceId: string) => request<ListSectionsResponse>(`/spaces/${spaceId}/sections`),
+
+  getSection: (sectionId: string) => request<SectionResponse>(`/sections/${sectionId}`),
+
+  createSection: (spaceId: string, payload: CreateSectionPayload) =>
+    request<SectionResponse>(`/spaces/${spaceId}/sections`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateSection: (sectionId: string, patch: UpdateSectionPayload) =>
+    request<SectionResponse>(`/sections/${sectionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteSection: (sectionId: string) => request<void>(`/sections/${sectionId}`, { method: 'DELETE' }),
+
+  listContents: (sectionId: string) =>
+    request<ListContentsResponse>(`/sections/${sectionId}/contents`),
+
+  createContent: (sectionId: string, payload: CreateContentPayload) =>
+    request<ContentMutationResponse>(`/sections/${sectionId}/contents`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /** One piece of content, plus what the caller has done with it. */
+  getContent: (contentId: string) => request<ContentResponse>(`/contents/${contentId}`),
+
+  updateContent: (contentId: string, patch: UpdateContentPayload) =>
+    request<ContentMutationResponse>(`/contents/${contentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteContent: (contentId: string) => request<void>(`/contents/${contentId}`, { method: 'DELETE' }),
+
+  /** Reserves an attachment and returns the presigned PUT the client uploads to. */
+  uploadContentFile: (contentId: string, payload: UploadContentFilePayload) =>
+    request<UploadContentFileResponse>(`/contents/${contentId}/files`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
+  listContentFiles: (contentId: string) =>
+    request<ListContentFilesResponse>(`/contents/${contentId}/files`),
+
+  getContentFile: (contentId: string, fileId: string) =>
+    request<ContentFileResponse>(`/contents/${contentId}/files/${fileId}`),
+
+  deleteContentFile: (contentId: string, fileId: string) =>
+    request<void>(`/contents/${contentId}/files/${fileId}`, { method: 'DELETE' }),
+
+  // Learner state. Nothing in the app calls these yet — the classroom does.
+  favouriteContent: (contentId: string) =>
+    request<FavouriteResponse>(`/contents/${contentId}/favourite`, { method: 'PUT' }),
+
+  unfavouriteContent: (contentId: string) =>
+    request<FavouriteResponse>(`/contents/${contentId}/favourite`, { method: 'DELETE' }),
+
+  addToPlaylist: (contentId: string) =>
+    request<PlaylistResponse>(`/contents/${contentId}/playlist`, { method: 'PUT' }),
+
+  removeFromPlaylist: (contentId: string) =>
+    request<PlaylistResponse>(`/contents/${contentId}/playlist`, { method: 'DELETE' }),
+
+  listFavourites: () => request<ListFavouritesResponse>('/me/favourites'),
+
+  listPlaylist: () => request<ListPlaylistResponse>('/me/playlist'),
+
+  listComments: (contentId: string) =>
+    request<ListCommentsResponse>(`/contents/${contentId}/comments`),
+
+  createComment: (contentId: string, payload: CreateCommentPayload) =>
+    request<{ comment: Comment }>(`/contents/${contentId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateComment: (contentId: string, commentId: string, body: string) =>
+    request<{ comment: Comment }>(`/contents/${contentId}/comments/${commentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body }),
+    }),
+
+  deleteComment: (contentId: string, commentId: string) =>
+    request<void>(`/contents/${contentId}/comments/${commentId}`, { method: 'DELETE' }),
+
+  favouriteComment: (contentId: string, commentId: string) =>
+    request<FavouriteResponse>(`/contents/${contentId}/comments/${commentId}/favourite`, {
+      method: 'PUT',
+    }),
+
+  unfavouriteComment: (contentId: string, commentId: string) =>
+    request<FavouriteResponse>(`/contents/${contentId}/comments/${commentId}/favourite`, {
+      method: 'DELETE',
     }),
 };

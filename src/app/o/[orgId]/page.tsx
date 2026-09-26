@@ -22,7 +22,7 @@ const SECTIONS = [
   },
   {
     label: 'Spaces',
-    description: 'Groups of courses and videos inside the organization.',
+    description: 'Courses this organization publishes, and how they unfold.',
     segment: 'spaces',
   },
   {
