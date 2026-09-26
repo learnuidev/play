@@ -16,6 +16,18 @@ custom:
     name: cognito-authorizer
     type: COGNITO_USER_POOLS
     arn: !GetAtt CognitoUserPool.Arn
+  # Google sign-in (optional). The credentials live in SSM Parameter Store so
+  # they stay out of the repo and out of shell history — write them with
+  # scripts/set-google-oauth.sh. When they are missing, the Google identity
+  # provider and the Hosted UI domain are not created and the service keeps
+  # working with email/password sign-in only.
+  auth:
+    googleClientId: ${ssm:/play/auth/google-client-id, ''}
+    googleClientSecret: ${ssm:/play/auth/google-client-secret, ''}
+    # Comma-separated. Must match the frontend's
+    # NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_IN / _SIGN_OUT values.
+    callbackUrls: ${ssm:/play/auth/callback-urls, 'http://localhost:3000/auth/callback,http://localhost:3000'}
+    logoutUrls: ${ssm:/play/auth/logout-urls, 'http://localhost:3000'}
 
 provider:
   name: aws
@@ -269,6 +281,13 @@ functions:
                 - FAILED
 
 resources:
+  # Google sign-in is only wired up when credentials are present, so an existing
+  # email/password-only deployment keeps working unchanged.
+  Conditions:
+    GoogleSignInEnabled: !And
+      - !Not [!Equals ["${self:custom.auth.googleClientId}", ""]]
+      - !Not [!Equals ["${self:custom.auth.googleClientSecret}", ""]]
+
   Resources:
     VideosTable:
       Type: AWS::DynamoDB::Table
@@ -515,8 +534,55 @@ resources:
             Required: true
             Mutable: true
 
+    # Cognito requires a domain for federated sign-in: it serves the Hosted UI
+    # (/oauth2/authorize) and the token endpoint (/oauth2/token) that the
+    # frontend redirects to. Prefix domains share one namespace per region, so
+    # the account id keeps the prefix collision-free.
+    CognitoUserPoolDomain:
+      Type: AWS::Cognito::UserPoolDomain
+      Condition: GoogleSignInEnabled
+      Properties:
+        Domain: !Sub "play-${sls:stage}-${AWS::AccountId}"
+        UserPoolId: !Ref CognitoUserPool
+        # 1 = hosted UI (classic), 2 = managed login. Managed login needs a
+        # branding style, and Cognito does not apply one to app clients created
+        # outside the console — so pin the classic pages, which work as-is.
+        ManagedLoginVersion: 1
+
+    # Google IdP. Register the matching redirect URI in the Google OAuth client:
+    #   https://<domain>.auth.<region>.amazoncognito.com/oauth2/idpresponse
+    # (the CognitoDomain stack output prints the exact value; see also
+    # scripts/set-google-oauth.sh, which prints both Google console fields).
+    GoogleIdentityProvider:
+      Type: AWS::Cognito::UserPoolIdentityProvider
+      Condition: GoogleSignInEnabled
+      Properties:
+        UserPoolId: !Ref CognitoUserPool
+        ProviderName: Google
+        ProviderType: Google
+        # Cognito derives federated usernames itself (`Google_<sub>`), so
+        # `username` must not be mapped. `email_verified` carries Google's
+        # verification status, which Cognito can't establish on its own for a
+        # mapped address. Every mapped attribute here is a standard user pool
+        # attribute, which app clients can write by default.
+        AttributeMapping:
+          email: email
+          email_verified: email_verified
+          given_name: given_name
+          family_name: family_name
+          name: name
+          picture: picture
+        ProviderDetails:
+          # Google takes exactly these three keys — Cognito discovers Google's
+          # own endpoints (authorize_url, token_url, oidc_issuer, …) itself.
+          # `attributes_request_method` is an OIDC-provider key, not a Google one.
+          client_id: ${self:custom.auth.googleClientId}
+          client_secret: ${self:custom.auth.googleClientSecret}
+          # Google requires scopes separated by spaces.
+          authorize_scopes: "email profile openid"
+
     CognitoUserPoolClient:
-      Type: AWS::Cognito::UserPoolClient
+      Type: AWS::CognitoUserPoolClient
       Properties:
         UserPoolId: !Ref CognitoUserPool
         ClientName: play-app-${sls:stage}
@@ -526,6 +592,23 @@ resources:
           - ALLOW_USER_SRP_AUTH
           - ALLOW_REFRESH_TOKEN_AUTH
           - ALLOW_USER_PASSWORD_AUTH
+        # Hosted UI / OAuth settings. `COGNITO` stays in the provider list so
+        # email/password sign-in keeps working next to Google.
+        AllowedOAuthFlowsUserPoolClient: true
+        AllowedOAuthFlows:
+          - code
+        AllowedOAuthScopes:
+          - openid
+          - email
+          - profile
+        CallbackURLs: !Split [",", "${self:custom.auth.callbackUrls}"]
+        LogoutURLs: !Split [",", "${self:custom.auth.logoutUrls}"]
+        # `Ref` on the provider yields its name ("Google") and, unlike a literal,
+        # makes CloudFormation create it before the client — `Fn::If` is not
+        # supported in `DependsOn`, so ordering has to be implicit.
+        SupportedIdentityProviders:
+          - COGNITO
+          - !If [GoogleSignInEnabled, !Ref GoogleIdentityProvider, !Ref "AWS::NoValue"]
 
   Outputs:
     ApiUrl:
@@ -537,6 +620,15 @@ resources:
     CognitoUserPoolClientId:
       Description: Cognito app client id
       Value: !Ref CognitoUserPoolClient
+    CognitoDomain:
+      Description: Cognito Hosted UI domain (empty when Google sign-in is not configured)
+      Value: !If
+        - GoogleSignInEnabled
+        - !Sub "${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
+        - ""
+    GoogleAuthEnabled:
+      Description: Whether a Google identity provider is attached to this user pool
+      Value: !If [GoogleSignInEnabled, "true", "false"]
     CloudFrontDomain:
       Description: CloudFront distribution domain
       Value: !GetAtt VideoDistribution.DomainName
