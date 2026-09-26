@@ -160,3 +160,48 @@ export interface SubtitleCue {
   end: string;
   text: string;
 }
+
+export type OrgRole = 'ADMIN' | 'EDITOR' | 'VIEWER';
+
+export const ORG_ROLES: OrgRole[] = ['ADMIN', 'EDITOR', 'VIEWER'];
+
+export const ORG_ROLE_LABELS: Record<OrgRole, string> = {
+  ADMIN: 'Admin',
+  EDITOR: 'Editor',
+  VIEWER: 'Viewer',
+};
+
+export const ORG_ROLE_DESCRIPTIONS: Record<OrgRole, string> = {
+  ADMIN: 'Manages the organization, its members, and its courses.',
+  EDITOR: 'Creates and edits the organization’s courses.',
+  VIEWER: 'Can only view the organization’s courses.',
+};
+
+export interface Organization {
+  orgId: string;
+  name: string;
+  slug: string;
+  description: string;
+  ownerId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** An organization together with the current user's role in it. */
+export interface OrganizationSummary extends Organization {
+  role: OrgRole;
+}
+
+export interface CreateOrganizationPayload {
+  name: string;
+  description?: string;
+}
+
+export interface CreateOrganizationResponse {
+  organization: OrganizationSummary;
+}
+
+export interface ListOrganizationsResponse {
+  organizations: OrganizationSummary[];
+  nextToken?: string;
+}

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthenticator } from '@aws-amplify/ui-react';
-import { ClapperboardIcon, FilmIcon, LogOutIcon } from 'lucide-react';
+import { BuildingIcon, ClapperboardIcon, FilmIcon, LogOutIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sidebar,
@@ -53,6 +53,20 @@ export function AppSidebar() {
                 <Link href="/studio">
                   <FilmIcon />
                   <span>Videos</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Organizations</SidebarGroupLabel>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton isActive={pathname.startsWith('/studio/organizations')} asChild>
+                <Link href="/studio/organizations">
+                  <BuildingIcon />
+                  <span>All organizations</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

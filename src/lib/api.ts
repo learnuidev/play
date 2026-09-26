@@ -1,8 +1,11 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
   AudioResponse,
+  CreateOrganizationPayload,
+  CreateOrganizationResponse,
   CreateVideoPayload,
   CreateVideoResponse,
+  ListOrganizationsResponse,
   ListVideosResponse,
   StreamResponse,
   SubtitleResponse,
@@ -96,6 +99,17 @@ export const api = {
   uploadThumbnail: (videoId: string, payload: { contentType: string; size?: number }) =>
     request<UploadThumbnailResponse>(`/videos/${videoId}/thumbnail`, {
       method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
+  listOrganizations: () => request<ListOrganizationsResponse>('/organizations'),
+
+  getOrganization: (orgId: string) =>
+    request<CreateOrganizationResponse>(`/organizations/${orgId}`),
+
+  createOrganization: (payload: CreateOrganizationPayload) =>
+    request<CreateOrganizationResponse>('/organizations', {
+      method: 'POST',
       body: JSON.stringify(payload),
     }),
 };
