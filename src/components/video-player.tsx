@@ -37,6 +37,11 @@ export interface VideoPlayerHandle {
    * word reads this once a frame instead.
    */
   getTimeMs: () => number;
+  /**
+   * How long the video runs, in milliseconds, or 0 until the stream's metadata
+   * has arrived. Anything asking "is this nearly over?" needs both ends of it.
+   */
+  getDurationMs: () => number;
 }
 
 interface VideoPlayerProps {
@@ -106,6 +111,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           // Reading `currentTime` is a media property, not a layout one: it does
           // not force a style flush, so once a frame is cheap.
           return video && Number.isFinite(video.currentTime) ? video.currentTime * 1000 : 0;
+        },
+        getDurationMs: () => {
+          const video = videoRef.current;
+          return video && Number.isFinite(video.duration) ? video.duration * 1000 : 0;
         },
       }),
       [],

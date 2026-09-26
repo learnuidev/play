@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   ChevronLeftIcon,
   HeartIcon,
@@ -17,6 +17,8 @@ import {
 import { toast } from 'sonner';
 import { parseVtt } from '@/lib/vtt';
 import { buildTranscriptLines } from '@/lib/transcript';
+import { findNextWatchable } from '@/lib/course';
+import { usePlayingNext } from '@/hooks/use-playing-next';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,6 +35,7 @@ import { ContentFiles } from '@/components/content/content-files';
 import { NotesEditor } from '@/components/content/notes-editor';
 import { isEmptyNotes } from '@/components/content/notes';
 import { NotesView } from '@/components/content/notes-view';
+import { PlayingNext } from '@/components/content/playing-next';
 import { VideoPlayer, type VideoPlayerHandle } from '@/components/video-player';
 import { VideoStatusBadge } from '@/components/video/status-badge';
 import { useContent, useDeleteContent, useUpdateContent } from '@/modules/content/content.queries';
@@ -40,7 +43,7 @@ import { useOrganization } from '@/modules/organization/organization.queries';
 import { useSubtitles } from '@/modules/subtitle/subtitle.queries';
 import { useThumbnail } from '@/modules/thumbnail/thumbnail.queries';
 import { useStream, useVideo } from '@/modules/video/video.queries';
-import { useSection } from '@/modules/section/section.queries';
+import { useSection, useSections } from '@/modules/section/section.queries';
 import type { Content, NotesDocument } from '@/types';
 
 /**
@@ -94,9 +97,12 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 function LessonVideo({
   videoId,
   playerRef,
+  autoPlay,
 }: {
   videoId: string;
   playerRef: React.MutableRefObject<VideoPlayerHandle | null>;
+  /** Started from the lesson before it, rather than opened. */
+  autoPlay: boolean;
 }) {
   const { data: videoRes } = useVideo(videoId);
   const video = videoRes?.video;
@@ -131,6 +137,7 @@ function LessonVideo({
         src={stream.manifestUrl}
         signedQuery={stream.signedQuery}
         poster={thumbnail?.thumbnailUrl}
+        autoPlay={autoPlay}
       />
     </div>
   );
@@ -278,6 +285,10 @@ export default function ContentPage() {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
 
+  // The lesson before this one sends `?play=1`, which is how an automatic
+  // advance carries on playing instead of landing on a paused page.
+  const autoPlay = useSearchParams().get('play') === '1';
+
   const { data: orgData } = useOrganization(orgId);
   const canEdit = orgData ? orgData.organization.role !== 'VIEWER' : false;
 
@@ -290,10 +301,31 @@ export default function ContentPage() {
   const playerRef = useRef<VideoPlayerHandle | null>(null);
 
   const getTime = useCallback(() => playerRef.current?.getTimeMs() ?? 0, []);
+  const getDuration = useCallback(() => playerRef.current?.getDurationMs() ?? 0, []);
 
   const handleSeek = useCallback((timeMs: number) => {
     playerRef.current?.seekTo(timeMs);
   }, []);
+
+  // The course, in order, to know what comes next. The same query the sidebar
+  // beside this page already asked for, so it costs nothing.
+  const { data: outline } = useSections(spaceId);
+  const next = useMemo(
+    () => (outline ? findNextWatchable(outline.sections, contentId) : null),
+    [outline, contentId],
+  );
+
+  const handleAdvance = useCallback(() => {
+    if (!next) return;
+    router.push(`/o/${orgId}/spaces/${spaceId}/contents/${next.contentId}?play=1`);
+  }, [next, orgId, router, spaceId]);
+
+  const upNext = usePlayingNext({
+    getTimeMs: getTime,
+    getDurationMs: getDuration,
+    enabled: Boolean(next?.videoId),
+    onAdvance: handleAdvance,
+  });
 
   // The section is only needed for the way back, so a missing one is not an
   // error — the link just says where it goes instead of naming it.
@@ -412,10 +444,21 @@ export default function ContentPage() {
       {/* Seven to three: the video is what the lesson is, and the panel beside
           it is read at a glance. The panel keeps a floor, because a third of a
           narrow window is not enough to read a sentence in. */}
+      {/* Fixed to the corner of the page, not of the video: see the card. */}
+      {next && upNext.seconds !== null && (
+        <PlayingNext
+          title={next.title}
+          seconds={upNext.seconds}
+          total={upNext.total}
+          onPlayNow={upNext.playNow}
+          onCancel={upNext.cancel}
+        />
+      )}
+
       <div className="grid min-h-0 gap-6 lg:mt-2 lg:grid-cols-[minmax(0,7fr)_minmax(18rem,3fr)]">
         <div>
           {content.videoId ? (
-            <LessonVideo videoId={content.videoId} playerRef={playerRef} />
+            <LessonVideo videoId={content.videoId} playerRef={playerRef} autoPlay={autoPlay} />
           ) : (
             <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 text-center">
               <VideoOffIcon className="size-5 text-muted-foreground/60" />
