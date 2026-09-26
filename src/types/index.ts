@@ -107,3 +107,50 @@ export interface AudioInfo {
   signedQuery: string;
   expiresAt: number;
 }
+
+/**
+ * Role a user holds inside an organization. Courses (and everything else the
+ * organization owns) will be gated on these: admins manage the organization and
+ * its members, editors create/edit content, viewers only read it.
+ */
+export type OrgRole = 'ADMIN' | 'EDITOR' | 'VIEWER';
+
+export const ORG_ROLES: OrgRole[] = ['ADMIN', 'EDITOR', 'VIEWER'];
+
+/**
+ * Membership lifecycle. `INVITED` is the placeholder created by an invitation
+ * that has not been accepted yet — nothing issues one today, but the role model
+ * is already written down so invitations do not need a data migration.
+ */
+export type OrgMemberStatus = 'ACTIVE' | 'INVITED';
+
+export interface Organization {
+  orgId: string;
+  /** Display name, e.g. "Acme Learning". */
+  name: string;
+  /** URL-safe identifier derived from the name and uniquified with a suffix. */
+  slug: string;
+  description: string;
+  /** Cognito `sub` of the user who created it. */
+  ownerId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** An organization together with the caller's role in it. */
+export interface OrganizationSummary extends Organization {
+  role: OrgRole;
+}
+
+export interface OrgMember {
+  orgId: string;
+  /** Cognito `sub` of the member. */
+  userId: string;
+  role: OrgRole;
+  status: OrgMemberStatus;
+  /** Email of the member, when known. */
+  email?: string;
+  /** Cognito `sub` of the user who added them. */
+  invitedBy?: string;
+  joinedAt: number;
+}

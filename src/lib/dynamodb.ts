@@ -14,6 +14,9 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
 });
 
+/** Shared document client, so every repository talks to DynamoDB the same way. */
+export const documentClient = client;
+
 export const TABLE = env.tableName;
 
 export async function putVideo(video: Video): Promise<void> {

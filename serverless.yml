@@ -39,6 +39,8 @@ provider:
 
   environment:
     VIDEOS_TABLE: !Ref VideosTable
+    ORGANIZATIONS_TABLE: !Ref OrganizationsTable
+    ORG_MEMBERS_TABLE: !Ref OrgMembersTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
@@ -62,6 +64,24 @@ provider:
           Resource:
             - !GetAtt VideosTable.Arn
             - !Sub "${VideosTable.Arn}/index/*"
+        # Organizations and the memberships that authorize access to them.
+        # `TransactWriteItems` also needs the item-level actions it performs
+        # (PutItem here) — DynamoDB authorizes the transaction and each item in
+        # it separately.
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:BatchGetItem
+            - dynamodb:TransactWriteItems
+          Resource:
+            - !GetAtt OrganizationsTable.Arn
+            - !Sub "${OrganizationsTable.Arn}/index/*"
+            - !GetAtt OrgMembersTable.Arn
+            - !Sub "${OrgMembersTable.Arn}/index/*"
         - Effect: Allow
           Action:
             - s3:GetObject
@@ -238,6 +258,33 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  create-organization:
+    handler: src/functions/organizations/create-organization.handler
+    events:
+      - http:
+          path: organizations
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-organizations:
+    handler: src/functions/organizations/list-organizations.handler
+    events:
+      - http:
+          path: organizations
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-organization:
+    handler: src/functions/organizations/get-organization.handler
+    events:
+      - http:
+          path: organizations/{orgId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
@@ -330,6 +377,47 @@ resources:
               - AttributeName: ownerId
                 KeyType: HASH
               - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    OrganizationsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: orgId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: orgId
+            KeyType: HASH
+
+    # Who belongs to which organization, and with what role. Kept next to the
+    # organizations rather than embedded in them so a member row is a single
+    # item to write on invite/accept/remove, and so "my organizations" is one
+    # query (UserOrgIndex) instead of a scan.
+    OrgMembersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: orgId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: joinedAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: orgId
+            KeyType: HASH
+          - AttributeName: userId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: UserOrgIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: joinedAt
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
