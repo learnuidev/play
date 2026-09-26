@@ -1,7 +1,8 @@
 import { getVideo } from './dynamodb';
 import { HttpError } from './http';
 import { getMembership } from './organizations';
-import type { OrgRole, Video } from '../types';
+import { getSpace } from './spaces';
+import type { OrgRole, Space, Video } from '../types';
 
 /** Roles that may create, change, or delete what an organization owns. */
 const WRITE_ROLES: OrgRole[] = ['ADMIN', 'EDITOR'];
@@ -59,4 +60,22 @@ export async function requireVideoAccess(
   }
 
   throw new HttpError(403, 'Forbidden');
+}
+
+/**
+ * Loads a space and authorizes the caller against the organization that owns it.
+ *
+ * Unlike a video, a space has no personal-owner escape hatch: it is always
+ * organization property, so access is exactly membership of that organization.
+ */
+export async function requireSpaceAccess(
+  spaceId: string,
+  userId: string,
+  action: AccessAction,
+): Promise<Space> {
+  const space = await getSpace(spaceId);
+  if (!space) throw new HttpError(404, 'Space not found');
+
+  await requireOrganizationAccess(userId, space.organizationId, action);
+  return space;
 }

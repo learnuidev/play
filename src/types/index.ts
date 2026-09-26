@@ -150,6 +150,60 @@ export interface OrganizationSummary extends Organization {
   role: OrgRole;
 }
 
+/**
+ * How a space (course) unfolds for the people taking it.
+ *
+ * - `SELF_PACED` — the clock starts when a member enrolls, so nothing waits on
+ *   a calendar and all the content is available immediately.
+ * - `SCHEDULED`  — the space starts on `startAt`; sections drip relative to that
+ *   date (every `dripIntervalDays` days) rather than relative to enrollment.
+ *
+ * Stored as a string rather than a number so a third type can be added later
+ * without touching existing rows.
+ */
+export type SpaceType = 'SELF_PACED' | 'SCHEDULED';
+
+export const SPACE_TYPES: SpaceType[] = ['SELF_PACED', 'SCHEDULED'];
+
+/** Days between section unlocks in a scheduled space that does not set its own. */
+export const DEFAULT_DRIP_INTERVAL_DAYS = 7;
+
+/**
+ * A space (course) inside an organization: the container the organization's
+ * videos and courses will be grouped and sequenced in.
+ */
+export interface Space {
+  spaceId: string;
+  /** Organization that owns it. A space never exists outside one. */
+  organizationId: string;
+  title: string;
+  description: string;
+  type: SpaceType;
+  /** Custom accent colour, `#rrggbb`. Absent means the UI derives one. */
+  color?: string;
+  /**
+   * When a `SCHEDULED` space begins, epoch ms. Absent on self-paced spaces,
+   * which begin per member at enrollment.
+   */
+  startAt?: number;
+  /** Days between section unlocks. Only meaningful on `SCHEDULED` spaces. */
+  dripIntervalDays?: number;
+  /** Cover image key: spaces/{spaceId}/cover-{timestamp}.{ext} */
+  thumbnailKey?: string;
+  /** Cognito `sub` of the user who created it. */
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SpaceThumbnailInfo {
+  spaceId: string;
+  thumbnailUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
 export interface OrgMember {
   orgId: string;
   /** Cognito `sub` of the member. */

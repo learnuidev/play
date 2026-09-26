@@ -35,7 +35,7 @@ interface SignedUrl {
  * for every file under that prefix — so the frontend can append it to each
  * segment/subtitle request.
  */
-function buildSignedUrl(objectKey: string, wildcardPrefix: string): SignedUrl {
+export function buildSignedObjectUrl(objectKey: string, wildcardPrefix: string): SignedUrl {
   const baseUrl = `https://${env.cloudfrontDomain}/${objectKey}`;
   const expiresAt = Math.floor(Date.now() / 1000) + env.streamTtlSeconds;
   const resource = `https://${env.cloudfrontDomain}/${wildcardPrefix}*`;
@@ -71,7 +71,7 @@ function buildSignedUrl(objectKey: string, wildcardPrefix: string): SignedUrl {
  */
 export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
   const pathPrefix = manifestKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/hls
-  const { url, ...rest } = buildSignedUrl(manifestKey, `${pathPrefix}/`);
+  const { url, ...rest } = buildSignedObjectUrl(manifestKey, `${pathPrefix}/`);
   return { manifestUrl: url, ...rest };
 }
 
@@ -81,7 +81,7 @@ export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
  */
 export function buildSignedAudioUrl(audioKey: string): AudioInfo {
   const pathPrefix = audioKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/audio
-  const { url, ...rest } = buildSignedUrl(audioKey, `${pathPrefix}/`);
+  const { url, ...rest } = buildSignedObjectUrl(audioKey, `${pathPrefix}/`);
   return { videoId: audioKey.split("/")[1] ?? "", audioUrl: url, ...rest };
 }
 
@@ -91,7 +91,7 @@ export function buildSignedAudioUrl(audioKey: string): AudioInfo {
  */
 export function buildSignedSubtitleUrl(subtitleKey: string): SubtitleInfo {
   const pathPrefix = subtitleKey.split("/").slice(0, 2).join("/"); // subtitles/{videoId}
-  const { url, ...rest } = buildSignedUrl(subtitleKey, `${pathPrefix}/`);
+  const { url, ...rest } = buildSignedObjectUrl(subtitleKey, `${pathPrefix}/`);
   return { videoId: subtitleKey.split("/")[1] ?? "", subtitleUrl: url, ...rest };
 }
 
@@ -101,6 +101,6 @@ export function buildSignedSubtitleUrl(subtitleKey: string): SubtitleInfo {
  */
 export function buildSignedThumbnailUrl(thumbnailKey: string): ThumbnailInfo {
   const pathPrefix = thumbnailKey.split("/").slice(0, 2).join("/"); // thumbnails/{videoId}
-  const { url, ...rest } = buildSignedUrl(thumbnailKey, `${pathPrefix}/`);
+  const { url, ...rest } = buildSignedObjectUrl(thumbnailKey, `${pathPrefix}/`);
   return { videoId: thumbnailKey.split("/")[1] ?? "", thumbnailUrl: url, ...rest };
 }

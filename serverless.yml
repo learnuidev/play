@@ -41,6 +41,7 @@ provider:
     VIDEOS_TABLE: !Ref VideosTable
     ORGANIZATIONS_TABLE: !Ref OrganizationsTable
     ORG_MEMBERS_TABLE: !Ref OrgMembersTable
+    SPACES_TABLE: !Ref SpacesTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
@@ -82,6 +83,17 @@ provider:
             - !Sub "${OrganizationsTable.Arn}/index/*"
             - !GetAtt OrgMembersTable.Arn
             - !Sub "${OrgMembersTable.Arn}/index/*"
+        # Spaces (courses) an organization owns.
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+          Resource:
+            - !GetAtt SpacesTable.Arn
+            - !Sub "${SpacesTable.Arn}/index/*"
         - Effect: Allow
           Action:
             - s3:GetObject
@@ -285,6 +297,53 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  # Spaces (courses) belong to an organization, so creating and listing them is
+  # addressed under the organization. Reading one back is by its own id.
+  create-space:
+    handler: src/functions/spaces/create-space.handler
+    events:
+      - http:
+          path: organizations/{orgId}/spaces
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-spaces:
+    handler: src/functions/spaces/list-spaces.handler
+    events:
+      - http:
+          path: organizations/{orgId}/spaces
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-space:
+    handler: src/functions/spaces/get-space.handler
+    events:
+      - http:
+          path: spaces/{spaceId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-space-thumbnail:
+    handler: src/functions/spaces/get-space-thumbnail.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/thumbnail
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  upload-space-thumbnail:
+    handler: src/functions/spaces/upload-space-thumbnail.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/thumbnail
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
@@ -440,6 +499,37 @@ resources:
               - AttributeName: userId
                 KeyType: HASH
               - AttributeName: joinedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # Spaces — the courses an organization publishes. Kept in its own table
+    # rather than beside the organization row because a space is a growing
+    # entity of its own (sections, enrollment, drip state will all hang off it),
+    # and because a 400 KB organization item is a limit nobody wants to meet.
+    SpacesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: spaceId
+            AttributeType: S
+          - AttributeName: organizationId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: spaceId
+            KeyType: HASH
+        # One index serves the whole listing story: an organization's spaces,
+        # newest first. Filtering by type is a filter over that page, not a
+        # separate key space, so it does not get an index of its own.
+        GlobalSecondaryIndexes:
+          - IndexName: OrganizationCreatedIndex
+            KeySchema:
+              - AttributeName: organizationId
+                KeyType: HASH
+              - AttributeName: createdAt
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
@@ -827,3 +917,6 @@ resources:
     OrgMembersTableName:
       Description: Organization memberships DynamoDB table name
       Value: !Ref OrgMembersTable
+    SpacesTableName:
+      Description: Spaces (courses) DynamoDB table name
+      Value: !Ref SpacesTable

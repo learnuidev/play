@@ -9,6 +9,7 @@ export const env = {
   tableName: required('VIDEOS_TABLE', process.env.VIDEOS_TABLE),
   organizationsTableName: required('ORGANIZATIONS_TABLE', process.env.ORGANIZATIONS_TABLE),
   orgMembersTableName: required('ORG_MEMBERS_TABLE', process.env.ORG_MEMBERS_TABLE),
+  spacesTableName: required('SPACES_TABLE', process.env.SPACES_TABLE),
   bucket: required('VIDEOS_BUCKET', process.env.VIDEOS_BUCKET),
   cloudfrontDomain: required('CLOUDFRONT_DOMAIN', process.env.CLOUDFRONT_DOMAIN),
   cloudfrontKeyPairId: required('CLOUDFRONT_KEY_PAIR_ID', process.env.CLOUDFRONT_KEY_PAIR_ID),
