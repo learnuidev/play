@@ -1,30 +1,42 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
+  CaptionsIcon,
+  CheckIcon,
   ChevronLeftIcon,
   HeartIcon,
   Loader2Icon,
   MessageSquareIcon,
   MoreHorizontalIcon,
+  NotebookPenIcon,
   PaperclipIcon,
   PencilIcon,
+  RepeatIcon,
   Trash2Icon,
   VideoOffIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { parseVtt } from "@/lib/vtt";
-import { buildTranscriptLines } from "@/lib/transcript";
 import { findNextWatchable } from "@/lib/course";
-import { linesInRange, snapRangeToLines, transcriptTextFor } from "@/lib/transcript";
+import {
+  linesInRange,
+  snapRangeToLines,
+  transcriptTextFor,
+} from "@/lib/transcript";
 import { useLoopPlayback } from "@/hooks/use-loop-playback";
+import { useViewerId } from "@/hooks/use-viewer";
 import { usePlayingNext } from "@/hooks/use-playing-next";
 import { useTranscriptLines } from "@/hooks/use-transcript-lines";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,7 +64,8 @@ import {
   useDeleteContent,
   useUpdateContent,
 } from "@/modules/content/content.queries";
-import { useCreateLoop, useUpdateLoop } from "@/modules/loop/loop.queries";
+import { useToggleCompletion } from "@/modules/content/completion.queries";
+import { useCreateLoop, useLoops, useUpdateLoop } from "@/modules/loop/loop.queries";
 import { loopColor } from "@/lib/loop-color";
 import { useOrganization } from "@/modules/organization/organization.queries";
 import { useSubtitles } from "@/modules/subtitle/subtitle.queries";
@@ -77,25 +90,33 @@ import type { Content, ContentLoop, NotesDocument, Video } from "@/types";
 /**
  * Quiet tabs: an underline, not pills, on a page whose subject is the video.
  *
- * `shrink-0` because there are five of them in a column that is 30% of the page:
- * without it the flex row squeezes them into each other's padding rather than
- * admitting it has run out of room, and the labels collide before anything
- * scrolls.
+ * The icons are sized here rather than at each call site so the five of them
+ * cannot drift apart, and at 20px rather than Lucide's 24px default, which reads
+ * as a row of buttons in a panel this narrow.
+ *
+ * The padding is what the underline is drawn across, so it is also the target.
+ * `shrink-0` so a narrow panel cannot squeeze them into each other's padding
+ * instead of admitting it has run out of room.
  */
 const QUIET_TAB =
-  "shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent bg-transparent px-0 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none";
+  "shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none [&_svg]:size-5";
 
 /**
- * The tab strip itself, which is allowed to run out of room.
+ * The tab strip: five icons, spread evenly across the panel.
  *
- * Five tabs do not fit a narrow panel, and squeezing them is worse than
- * scrolling them: the strip scrolls sideways instead, with its scrollbar hidden
- * because a horizontal scrollbar under an underline is uglier than the overflow
- * it reports. The border stays on the strip rather than on the tabs, so the rule
- * under them is the panel's width however far the tabs scroll.
+ * `justify-evenly` rather than a fixed gap, because the panel is a different
+ * width on every screen: a row of icons bunched at one end with a gap between
+ * them looks like an accident, while one spread across the whole width reads as
+ * the panel's own bar whatever that width is. The gap is only a floor, for a
+ * panel so narrow that even spreading would crowd them.
+ *
+ * The sideways scrolling is kept as a last resort, with its scrollbar hidden —
+ * a horizontal one under an underline is uglier than the overflow it reports —
+ * and the border stays on the strip rather than on the tabs, so the rule under
+ * them is the panel's width however far the tabs run.
  */
 const TAB_STRIP =
-  "h-auto w-full justify-start gap-4 overflow-x-auto rounded-none border-b border-border/60 bg-transparent p-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+  "h-auto w-full justify-evenly gap-1 overflow-x-auto rounded-none border-b border-border/60 bg-transparent p-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 
 /** What the lesson carries, on one quiet line above its name. */
 function Meta({ content }: { content: Content }) {
@@ -120,6 +141,41 @@ function Meta({ content }: { content: Content }) {
         </span>
       ))}
     </p>
+  );
+}
+
+/**
+ * One tab: an icon, and what it holds when you point at it.
+ *
+ * The labels went because five of them do not fit a panel that is 30% of the
+ * page, and a tab strip that scrolls sideways is a tab strip nobody finishes
+ * reading. The name has not gone anywhere — it is the accessible name, and the
+ * tooltip — and the tooltip says what is *inside* rather than only repeating the
+ * name, which is the question an icon-only strip actually raises.
+ */
+function LessonTab({
+  value,
+  icon,
+  label,
+  hint,
+}: {
+  value: string;
+  icon: React.ReactNode;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <TabsTrigger value={value} className={QUIET_TAB} aria-label={label}>
+          {icon}
+        </TabsTrigger>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-56 text-center">
+        <span className="font-medium">{label}</span>
+        <span className="mt-0.5 block opacity-80">{hint}</span>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -217,20 +273,20 @@ function TranscriptTab({
     return (
       <EmptyNote>
         {canEdit
-          ? 'A transcript appears here once this lesson has a video and its subtitles have been generated.'
-          : 'This lesson has no video yet.'}
+          ? "A transcript appears here once this lesson has a video and its subtitles have been generated."
+          : "This lesson has no video yet."}
       </EmptyNote>
     );
   }
 
-  if (video && video.subtitleStatus !== 'READY') {
+  if (video && video.subtitleStatus !== "READY") {
     return (
       <EmptyNote>
-        {video.subtitleStatus === 'GENERATING'
-          ? 'The transcript is still being written.'
+        {video.subtitleStatus === "GENERATING"
+          ? "The transcript is still being written."
           : canEdit
-            ? 'This video has no transcript yet. Generate subtitles from the video’s own page and the transcript will appear here.'
-            : 'This lesson has no transcript yet.'}
+            ? "This video has no transcript yet. Generate subtitles from the video’s own page and the transcript will appear here."
+            : "This lesson has no transcript yet."}
       </EmptyNote>
     );
   }
@@ -360,8 +416,12 @@ export default function ContentPage() {
 
   // The lesson before this one sends `?play=1`, which is how an automatic
   // advance carries on playing instead of landing on a paused page.
-  const autoPlay = useSearchParams().get("play") === "1";
+  const search = useSearchParams();
+  const autoPlay = search.get("play") === "1";
+  /** A shared loop: somebody sent a link that opens on their passage. */
+  const sharedLoopId = search.get("loop");
 
+  const viewerId = useViewerId();
   const { data: orgData } = useOrganization(orgId);
   const canEdit = orgData ? orgData.organization.role !== "VIEWER" : false;
 
@@ -394,6 +454,30 @@ export default function ContentPage() {
   const next = useMemo(
     () => (outline ? findNextWatchable(outline.sections, contentId) : null),
     [outline, contentId],
+  );
+
+  /**
+   * A link that opens this lesson on this passage.
+   *
+   * The range travels in the link rather than in anything the server has to
+   * remember: whoever opens it gets the loop selected and playing, which is the
+   * whole of what sharing one means. `origin` is read at the moment of copying
+   * rather than at render, since there is no such thing during a server render.
+   */
+  const shareLoop = useCallback(
+    async (loop: ContentLoop) => {
+      const url = `${window.location.origin}/o/${orgId}/spaces/${spaceId}/contents/${contentId}?loop=${loop.loopId}`;
+
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success('Link copied', { description: `Opens on “${loop.name}”` });
+      } catch {
+        // A clipboard can be refused, and a link nobody can copy is worse than
+        // one they have to select by hand.
+        window.prompt('Copy this link', url);
+      }
+    },
+    [contentId, orgId, spaceId],
   );
 
   const handleAdvance = useCallback(() => {
@@ -502,6 +586,28 @@ export default function ContentPage() {
     [handleSeek],
   );
 
+  /**
+   * A shared link opens on the passage it names.
+   *
+   * The same query the Loops tab asks for, so this costs nothing extra, and it
+   * waits for the loops to arrive before deciding: the link may be opened before
+   * anything is loaded, and a loop that arrives a moment later still lands.
+   */
+  const { data: loopData } = useLoops(contentId, Boolean(sharedLoopId));
+  const openedSharedRef = useRef(false);
+
+  useEffect(() => {
+    if (!sharedLoopId || openedSharedRef.current) return;
+
+    const loop = loopData?.loops.find((candidate) => candidate.loopId === sharedLoopId);
+    if (!loop) return;
+
+    openedSharedRef.current = true;
+    setActiveLoop(loop);
+    handleSeek(loop.startMs);
+    playVideo();
+  }, [handleSeek, loopData, playVideo, sharedLoopId]);
+
   const createLoop = useCreateLoop(contentId);
   const updateLoop = useUpdateLoop(contentId);
 
@@ -557,6 +663,7 @@ export default function ContentPage() {
   const { data: sectionData } = useSection(content?.sectionId ?? "");
 
   const remove = useDeleteContent(spaceId);
+  const completion = useToggleCompletion(contentId, spaceId);
 
   async function deleteContent() {
     if (!content) return;
@@ -595,6 +702,7 @@ export default function ContentPage() {
   }
 
   const section = sectionData?.section;
+  const completed = data?.viewer.completed ?? false;
 
   return (
     // Two rows on a desktop screen: the way back, and then a split that fills
@@ -602,13 +710,46 @@ export default function ContentPage() {
     // shorter than its contents — which is what lets the panel scroll inside
     // itself instead of the page scrolling as a whole.
     <div className="grid gap-x-5 gap-y-4 lg:h-full lg:grid-rows-[auto_auto_minmax(0,1fr)] lg:gap-y-5">
-      <Link
-        href={`/o/${orgId}/spaces/${spaceId}`}
-        className="inline-flex w-fit items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ChevronLeftIcon className="size-4" />
-        {section ? section.title : "Spaces"}
-      </Link>
+      <div className="flex items-center justify-between gap-4">
+        <Link
+          href={`/o/${orgId}/spaces/${spaceId}`}
+          className="inline-flex w-fit items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ChevronLeftIcon className="size-4" />
+          {section ? section.title : "Spaces"}
+        </Link>
+
+        {/* The opposite corner to the way back, and the opposite thing: one
+            leaves the lesson, the other finishes it. */}
+        <Button
+          variant={completed ? "outline" : "default"}
+          size="sm"
+          className={
+            completed
+              ? "shrink-0 gap-1.5 border-emerald-600/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:text-emerald-200"
+              : "shrink-0 gap-1.5"
+          }
+          onClick={() =>
+            completion.mutate(completed, {
+              onSuccess: ({ completed: nowComplete }) => {
+                if (nowComplete) toast.success("Lesson marked as complete");
+              },
+              onError: (err) =>
+                toast.error(
+                  err instanceof Error
+                    ? err.message
+                    : "Could not save your progress",
+                ),
+            })
+          }
+          disabled={completion.isPending}
+        >
+          {completion.isPending ? (
+            <Loader2Icon className="animate-spin" />
+          ) : null}
+          {completed ? "Completed" : "Complete lesson"}
+        </Button>
+      </div>
 
       <header className="flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -703,8 +844,14 @@ export default function ContentPage() {
                       editingLoop ? loopColor(editingLoop) : "#6366f1"
                     }
                     lines={lines}
-                    selectedLines={linesInRange(lines, draft.startMs, draft.endMs).length}
-                    selectedText={transcriptTextFor(lines, draft.startMs, draft.endMs)}
+                    selectedLines={
+                      linesInRange(lines, draft.startMs, draft.endMs).length
+                    }
+                    selectedText={transcriptTextFor(
+                      lines,
+                      draft.startMs,
+                      draft.endMs,
+                    )}
                     editingName={editingLoop?.name}
                     previewing={previewing}
                     onTogglePreview={togglePreview}
@@ -743,26 +890,44 @@ export default function ContentPage() {
           className="flex min-h-0 flex-col lg:rounded-2xl lg:border lg:bg-card lg:p-5"
         >
           <TabsList className={TAB_STRIP}>
-            <TabsTrigger value="transcript" className={QUIET_TAB}>
-              Transcript
-            </TabsTrigger>
-            <TabsTrigger value="notes" className={QUIET_TAB}>
-              Notes
-            </TabsTrigger>
-            <TabsTrigger value="files" className={QUIET_TAB}>
-              Files
-              {content.fileCount > 0 && (
-                <span className="ml-1.5 tabular-nums text-muted-foreground/70">
-                  {content.fileCount}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="loops" className={QUIET_TAB}>
-              Loops
-            </TabsTrigger>
-            <TabsTrigger value="comments" className={QUIET_TAB}>
-              Comments
-            </TabsTrigger>
+            <LessonTab
+              value="transcript"
+              icon={<CaptionsIcon />}
+              label="Transcript"
+              hint="The video’s words, word by word — and where a loop is picked from."
+            />
+            <LessonTab
+              value="notes"
+              icon={<NotebookPenIcon />}
+              label="Notes"
+              hint="What the author wrote for this lesson."
+            />
+            <LessonTab
+              value="files"
+              icon={<PaperclipIcon />}
+              label="Files"
+              hint={
+                content.fileCount > 0
+                  ? `${content.fileCount} attachment${content.fileCount === 1 ? "" : "s"} for this lesson.`
+                  : "Nothing attached to this lesson yet."
+              }
+            />
+            <LessonTab
+              value="loops"
+              icon={<RepeatIcon />}
+              label="Loops"
+              hint="Passages worth hearing again, kept under a name."
+            />
+            <LessonTab
+              value="comments"
+              icon={<MessageSquareIcon />}
+              label="Comments"
+              hint={
+                content.commentCount > 0
+                  ? `${content.commentCount} comment${content.commentCount === 1 ? "" : "s"} on this lesson.`
+                  : "The discussion — it opens with the classroom."
+              }
+            />
           </TabsList>
 
           {/* The transcript owns its own scroll — the sheet follows the playhead
@@ -779,7 +944,7 @@ export default function ContentPage() {
               getTime={getTime}
               onSeek={handleSeek}
               selection={draft}
-              selectionColor={editingLoop ? loopColor(editingLoop) : '#6366f1'}
+              selectionColor={editingLoop ? loopColor(editingLoop) : "#6366f1"}
               onSelectLine={draft ? selectLine : undefined}
               canEdit={canEdit}
             />
@@ -814,6 +979,8 @@ export default function ContentPage() {
               onDeactivate={() => setActiveLoop(null)}
               onStartSelection={() => openPicker()}
               onMoveRange={(loop) => openPicker(loop)}
+              onShare={(loop) => void shareLoop(loop)}
+              viewerId={viewerId}
               onSeek={(timeMs) => {
                 // Straight to the words, and playing: a tap on a passage is a
                 // request to hear it, not to put the playhead somewhere and

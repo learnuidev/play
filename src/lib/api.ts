@@ -5,6 +5,7 @@ import type {
   ContentFileResponse,
   ContentMutationResponse,
   ContentResponse,
+  CompletionResponse,
   CreateCommentPayload,
   CreateContentPayload,
   CreateLoopPayload,
@@ -19,6 +20,7 @@ import type {
   ListCommentsResponse,
   ListContentFilesResponse,
   ListLoopsResponse,
+  LoopLikeResponse,
   ListContentsResponse,
   ListFavouritesResponse,
   ListOrganizationsResponse,
@@ -246,6 +248,13 @@ export const api = {
 
   listPlaylist: () => request<ListPlaylistResponse>('/me/playlist'),
 
+  // Progress: the caller's own record of what they have finished.
+  completeContent: (contentId: string) =>
+    request<CompletionResponse>(`/contents/${contentId}/completion`, { method: 'PUT' }),
+
+  uncompleteContent: (contentId: string) =>
+    request<CompletionResponse>(`/contents/${contentId}/completion`, { method: 'DELETE' }),
+
   // Loops: the caller's own named stretches of a lesson, for hearing a piece
   // again. Nobody else can see them.
   listLoops: (contentId: string) => request<ListLoopsResponse>(`/contents/${contentId}/loops`),
@@ -264,6 +273,13 @@ export const api = {
 
   deleteLoop: (contentId: string, loopId: string) =>
     request<void>(`/contents/${contentId}/loops/${loopId}`, { method: 'DELETE' }),
+
+  /** Loops are shared with the course, so any member may like any of them. */
+  likeLoop: (contentId: string, loopId: string) =>
+    request<LoopLikeResponse>(`/contents/${contentId}/loops/${loopId}/like`, { method: 'PUT' }),
+
+  unlikeLoop: (contentId: string, loopId: string) =>
+    request<LoopLikeResponse>(`/contents/${contentId}/loops/${loopId}/like`, { method: 'DELETE' }),
 
   listComments: (contentId: string) =>
     request<ListCommentsResponse>(`/contents/${contentId}/comments`),

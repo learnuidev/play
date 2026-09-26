@@ -414,6 +414,13 @@ export interface ContentFileWithUrl extends ContentFile {
 export interface ContentViewerState {
   favourited: boolean;
   inPlaylist: boolean;
+  /** Marked as done by this user. */
+  completed: boolean;
+}
+
+/** The answer to marking a lesson done, or taking it back. */
+export interface CompletionResponse {
+  completed: boolean;
 }
 
 export interface CreateSectionPayload {
@@ -611,16 +618,26 @@ export const LOOP_COLORS: string[] = [
  * transcript being re-cut.
  */
 export interface ContentLoop {
-  userId: string;
-  loopKey: string;
   contentId: string;
   loopId: string;
   name: string;
   color?: string;
   startMs: number;
   endMs: number;
+  /** How many people have liked it. */
+  likeCount: number;
+  /** Whether the caller is one of them. */
+  likedByMe: boolean;
+  /** Cognito `sub` of whoever made it. */
+  createdBy: string;
   createdAt: number;
   updatedAt: number;
+}
+
+/** The answer to liking a loop, or taking the like back. */
+export interface LoopLikeResponse {
+  liked: boolean;
+  likeCount: number;
 }
 
 export interface CreateLoopPayload {

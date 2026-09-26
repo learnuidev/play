@@ -2,6 +2,8 @@
 
 import { Fragment, useEffect, useRef, useState } from 'react';
 import {
+  HeartIcon,
+  LinkIcon,
   Loader2Icon,
   MoreHorizontalIcon,
   PauseIcon,
@@ -22,7 +24,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { LoopNameField } from './loop-name-field';
-import { useDeleteLoop, useLoops, useUpdateLoop } from '@/modules/loop/loop.queries';
+import {
+  useDeleteLoop,
+  useLoops,
+  useToggleLoopLike,
+  useUpdateLoop,
+} from '@/modules/loop/loop.queries';
 import { LOOP_COLORS, type ContentLoop } from '@/types';
 
 /**
@@ -48,11 +55,14 @@ function LoopRow({
   index,
   active,
   covered,
+  mine,
   onSeek,
   onToggle,
   onRename,
   onMoveRange,
   onDelete,
+  onLike,
+  onShare,
   busy,
 }: {
   loop: ContentLoop;
@@ -60,8 +70,13 @@ function LoopRow({
   active: boolean;
   /** The transcript lines the loop covers, in order. Empty when there is none. */
   covered: TranscriptLine[];
+  /** Whether the caller made it: only its maker may change it. */
+  mine: boolean;
   /** Takes the video to a line — the way back into the audio from the text. */
   onSeek: (timeMs: number) => void;
+  onLike: () => void;
+  /** Copies a link that opens this lesson on this passage. */
+  onShare: () => void;
   onToggle: () => void;
   onRename: (name: string) => void;
   onMoveRange: () => void;
@@ -120,7 +135,34 @@ function LoopRow({
           <span className="text-muted-foreground/50"> · {stamp(loop.endMs - loop.startMs)}</span>
         </span>
 
-        {busy ? (
+        {/* A loop is a passage somebody thought worth hearing again, so the two
+            things to do with one you did not make are the two things worth
+            doing: say you liked it, or pass it on. */}
+        <button
+          type="button"
+          onClick={onLike}
+          aria-pressed={loop.likedByMe}
+          title={loop.likedByMe ? 'Take your like back' : 'Like this loop'}
+          className={cn(
+            'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] tabular-nums transition-colors hover:bg-accent',
+            loop.likedByMe ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground/70 hover:text-foreground',
+          )}
+        >
+          <HeartIcon className={cn('size-3.5', loop.likedByMe && 'fill-current')} />
+          {loop.likeCount > 0 && loop.likeCount}
+        </button>
+
+        <button
+          type="button"
+          onClick={onShare}
+          title="Copy a link to this passage"
+          aria-label="Copy a link to this passage"
+          className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <LinkIcon className="size-3.5" />
+        </button>
+
+        {!mine ? null : busy ? (
           <Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
         ) : (
           <DropdownMenu>
@@ -204,6 +246,8 @@ export function ContentLoops({
   onStartSelection,
   onMoveRange,
   onSeek,
+  onShare,
+  viewerId,
   canEdit,
 }: {
   contentId: string;
@@ -218,11 +262,16 @@ export function ContentLoops({
   onMoveRange: (loop: ContentLoop) => void;
   /** Takes the video to a moment in the transcript. */
   onSeek: (timeMs: number) => void;
+  /** Copies a link that opens this lesson on a passage. */
+  onShare: (loop: ContentLoop) => void;
+  /** The caller's own Cognito `sub`, to tell their loops from everyone else's. */
+  viewerId?: string;
   canEdit: boolean;
 }) {
   const { data, isLoading } = useLoops(contentId);
   const update = useUpdateLoop(contentId);
   const remove = useDeleteLoop(contentId);
+  const like = useToggleLoopLike(contentId);
 
   /** The loop just made, waiting to be named. */
   const [namingId, setNamingId] = useState<string | null>(null);
@@ -274,7 +323,8 @@ export function ContentLoops({
       {loops.length === 0 ? (
         <p className="px-2 py-10 text-center text-[13px] leading-relaxed text-muted-foreground">
           No loops yet. Start one where a piece begins, let it play to where it ends, and keep
-          it under a name — it will play round and round until you stop it.
+          it under a name — it will play round and round until you stop it, and everyone in the
+          course can see it.
         </p>
       ) : (
         <ul className="grid">
@@ -305,7 +355,18 @@ export function ContentLoops({
                 index={index}
                 active={activeLoopId === loop.loopId}
                 covered={linesInRange(lines, loop.startMs, loop.endMs)}
+                mine={!viewerId || loop.createdBy === viewerId}
                 onSeek={onSeek}
+                onLike={() =>
+                  like.mutate(
+                    { loopId: loop.loopId, liked: loop.likedByMe },
+                    {
+                      onError: (err) =>
+                        toast.error(err instanceof Error ? err.message : 'Could not save your like'),
+                    },
+                  )
+                }
+                onShare={() => onShare(loop)}
                 busy={remove.isPending && remove.variables === loop.loopId}
                 onToggle={() => (activeLoopId === loop.loopId ? onDeactivate() : onActivate(loop))}
                 onRename={(name) => rename(loop, name)}

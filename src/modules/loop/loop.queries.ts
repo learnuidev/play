@@ -6,7 +6,7 @@ export const loopKeys = {
   list: (contentId: string) => ['content', contentId, 'loops'] as const,
 };
 
-/** The caller's own loops on a lesson. Nobody else's are reachable. */
+/** The loops on a lesson — everybody's, since they are shared with the course. */
 export function useLoops(contentId: string, enabled = true) {
   return useQuery({
     queryKey: loopKeys.list(contentId),
@@ -60,5 +60,33 @@ export function useDeleteLoop(contentId: string) {
   return useMutation({
     mutationFn: (loopId: string) => api.deleteLoop(contentId, loopId),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Liking a loop, and taking the like back.
+ *
+ * The answer already carries the new count, so the list is written from it
+ * rather than refetched: a heart that waits for a round trip before filling in
+ * feels broken, and the count it would come back with is the one already here.
+ */
+export function useToggleLoopLike(contentId: string) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ loopId, liked }: { loopId: string; liked: boolean }) =>
+      liked ? api.unlikeLoop(contentId, loopId) : api.likeLoop(contentId, loopId),
+
+    onSuccess: ({ liked, likeCount }, { loopId }) => {
+      qc.setQueryData(loopKeys.list(contentId), (prev: { loops: ContentLoop[] } | undefined) =>
+        prev
+          ? {
+              loops: prev.loops.map((loop) =>
+                loop.loopId === loopId ? { ...loop, likedByMe: liked, likeCount } : loop,
+              ),
+            }
+          : prev,
+      );
+    },
   });
 }
