@@ -93,6 +93,25 @@ export interface SubtitleTrackInfo extends SubtitleInfo {
   isSource: boolean;
 }
 
+/**
+ * One spoken word, with when it is said.
+ *
+ * Transcribe reports these alongside the subtitle it writes, and they are what
+ * lets a transcript animate word by word instead of cue by cue — a cue is a
+ * line of text with a start and an end, which says nothing about the order its
+ * words arrive in.
+ *
+ * `w` carries its punctuation, because that is how it appears in the subtitle
+ * text it will be laid against.
+ */
+export interface TranscriptWord {
+  w: string;
+  /** Start, epoch-relative to the video, in milliseconds. */
+  s: number;
+  /** End, in milliseconds. */
+  e: number;
+}
+
 /** Editable subtitle content for a single language track. */
 export interface SubtitleLanguageContent {
   language: string;

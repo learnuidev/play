@@ -1,6 +1,7 @@
 import type { EventBridgeEvent } from 'aws-lambda';
 import { updateVideo } from '../../lib/dynamodb';
 import { deleteObjects, getObjectText, listKeysUnderPrefix, putObjectText } from '../../lib/s3';
+import { writeTranscriptWords } from '../../lib/transcript-words';
 import { normalizeVtt } from '../../lib/vtt';
 
 interface TranscribeDetail {
@@ -21,6 +22,16 @@ async function findSubtitleKey(videoId: string): Promise<string | undefined> {
   const prefix = `subtitles/${videoId}/source/`;
   const keys = await listKeysUnderPrefix(prefix);
   return keys.find((k) => k.endsWith('.vtt'));
+}
+
+/**
+ * Transcribe writes its JSON transcript beside the VTT it writes, into the same
+ * output prefix. It holds the word-level timings the VTT does not, so it is
+ * kept as an artifact of its own rather than discarded.
+ */
+async function findTranscriptJsonKey(videoId: string): Promise<string | undefined> {
+  const keys = await listKeysUnderPrefix(`subtitles/${videoId}/source/`);
+  return keys.find((k) => k.endsWith('.json'));
 }
 
 /**
@@ -66,6 +77,21 @@ export const handler = async (event: TranscribeStateChangeEvent): Promise<void> 
         console.error(`Failed to normalize subtitles for videoId=${videoId}`, err);
         subtitleKey = sourceKey; // fall back to the raw Transcribe file
       }
+    }
+
+    // Word timings are a bonus, not a requirement: a video whose transcript is
+    // missing them still gets an animated transcript, spread across each cue
+    // rather than placed word by word. So a failure here is logged, never fatal.
+    try {
+      const transcriptKey = await findTranscriptJsonKey(videoId);
+      if (transcriptKey) {
+        const count = await writeTranscriptWords(videoId, transcriptKey);
+        console.info(`Stored ${count} word timings for video ${videoId}`);
+      } else {
+        console.info(`No JSON transcript found for video ${videoId}; word timings unavailable`);
+      }
+    } catch (err) {
+      console.error(`Failed to store word timings for videoId=${videoId}`, err);
     }
 
     await updateVideo(videoId, {

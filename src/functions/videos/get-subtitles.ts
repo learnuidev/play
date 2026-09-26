@@ -4,12 +4,15 @@ import { requireUserId } from '../../lib/auth';
 import { buildSignedSubtitleUrl } from '../../lib/cloudfront';
 import { HttpError, handle, ok } from '../../lib/http';
 import { getObjectText } from '../../lib/s3';
+import { MAX_TRANSCRIPT_WORDS, readTranscriptWords } from '../../lib/transcript-words';
 import type { SubtitleLanguageContent, SubtitleTrackInfo } from '../../types';
 
 /**
  * Returns the raw source VTT content (for the editor) plus signed CloudFront
  * URLs for every available subtitle track — the source language and any
- * generated translations.
+ * generated translations. Word timings ride along with it when the video has
+ * them, because a transcript that animates word by word needs more than a cue's
+ * boundaries can say.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const userId = requireUserId(event);
@@ -26,6 +29,8 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const content = await getObjectText(video.subtitleKey);
   const sourceLanguage = video.subtitleLanguage ?? 'en-US';
   const sourceLabel = sourceLanguage.toLowerCase().startsWith('en') ? 'English' : sourceLanguage;
+
+  const words = await readTranscriptWords(videoId);
 
   const tracks: SubtitleTrackInfo[] = [
     {
@@ -62,6 +67,10 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     sourceLanguage,
     tracks,
     languages,
+    // Capped: a transcript long enough to exceed this is one whose reader will
+    // scroll rather than follow, and the frontend falls back to interpolating
+    // whatever is missing.
+    ...(words ? { words: words.slice(0, MAX_TRANSCRIPT_WORDS) } : {}),
   });
 }
 
