@@ -1,6 +1,6 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { Comment, CommentThread } from '../types';
-import { documentClient as client } from './dynamodb';
+import { documentClient as client, isConditionalCheckFailed } from './dynamodb';
 import { env } from './config';
 
 export const COMMENTS_TABLE = env.commentsTableName;
@@ -72,13 +72,18 @@ export interface CommentCounterDeltas {
  * Moves a comment's counters by the given deltas. `ADD` is atomic and treats a
  * missing attribute as zero, so two learners favouriting at the same moment
  * cannot lose one another's increment.
+ *
+ * Like a content's counters, the write is conditional on the row existing: an
+ * `ADD` a moment after the comment was deleted would otherwise leave a row
+ * holding nothing but an id and a count, and the comment is gone either way, so
+ * there is no counter left to move.
  */
 export async function addCommentCounters(
   contentId: string,
   commentId: string,
   deltas: CommentCounterDeltas,
 ): Promise<void> {
-  const names: Record<string, string> = {};
+  const names: Record<string, string> = { '#commentId': 'commentId' };
   const values: Record<string, unknown> = {};
   const parts: string[] = [];
 
@@ -92,15 +97,21 @@ export async function addCommentCounters(
 
   if (parts.length === 0) return;
 
-  await client.send(
-    new UpdateCommand({
-      TableName: COMMENTS_TABLE,
-      Key: { contentId, commentId },
-      UpdateExpression: `ADD ${parts.join(', ')}`,
-      ExpressionAttributeNames: names,
-      ExpressionAttributeValues: values,
-    }),
-  );
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: COMMENTS_TABLE,
+        Key: { contentId, commentId },
+        UpdateExpression: `ADD ${parts.join(', ')}`,
+        ConditionExpression: 'attribute_exists(#commentId)',
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      }),
+    );
+  } catch (err) {
+    if (isConditionalCheckFailed(err)) return; // the comment is gone; so is its counter
+    throw err;
+  }
 }
 
 /**

@@ -30,8 +30,9 @@ const MAX_NAME_LENGTH = 120;
 
 /**
  * Turns a client-supplied file name into a key segment: separators and control
- * characters out (a name is a name, not a path), length capped, and a fallback
- * so an empty one still yields a usable key.
+ * characters out (a name is a name, not a path), a leading dot-run dropped so
+ * nothing looks like a relative path, length capped, and a fallback so an empty
+ * one still yields a usable key.
  */
 function safeFileName(name: string): string {
   const cleaned = name
@@ -40,7 +41,7 @@ function safeFileName(name: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(-MAX_NAME_LENGTH)
-    .replace(/^\.+/, '');
+    .replace(/^[.\-\s]+/, '');
   return cleaned || 'file';
 }
 

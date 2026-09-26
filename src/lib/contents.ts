@@ -3,7 +3,7 @@ import type { Content, ContentType } from '../types';
 import { deleteContentFileItems, deleteContentFileObjects } from './content-files';
 import { deleteCommentItem, listAllComments } from './comments';
 import { env } from './config';
-import { documentClient as client } from './dynamodb';
+import { documentClient as client, isConditionalCheckFailed } from './dynamodb';
 
 export const CONTENTS_TABLE = env.contentsTableName;
 
@@ -127,9 +127,14 @@ const COUNTER_FIELDS = ['fileCount', 'favouriteCount', 'commentCount'] as const;
  * needs to be initialized and two learners favouriting at the same moment
  * cannot lose one another's increment. `updatedAt` is deliberately untouched: a
  * favourite is not an edit to the content.
+ *
+ * The write is conditional on the row existing, because `ADD` would otherwise
+ * *create* it: a counter moved a moment after the content was deleted would
+ * leave behind a row holding nothing but an id and a count. When the condition
+ * fails the content is already gone, so there is no counter left to move.
  */
 export async function addContentCounters(contentId: string, deltas: ContentCounterDeltas): Promise<void> {
-  const names: Record<string, string> = {};
+  const names: Record<string, string> = { '#contentId': 'contentId' };
   const values: Record<string, unknown> = {};
   const parts: string[] = [];
 
@@ -143,15 +148,21 @@ export async function addContentCounters(contentId: string, deltas: ContentCount
 
   if (parts.length === 0) return;
 
-  await client.send(
-    new UpdateCommand({
-      TableName: CONTENTS_TABLE,
-      Key: { contentId },
-      UpdateExpression: `ADD ${parts.join(', ')}`,
-      ExpressionAttributeNames: names,
-      ExpressionAttributeValues: values,
-    }),
-  );
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: CONTENTS_TABLE,
+        Key: { contentId },
+        UpdateExpression: `ADD ${parts.join(', ')}`,
+        ConditionExpression: 'attribute_exists(#contentId)',
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      }),
+    );
+  } catch (err) {
+    if (isConditionalCheckFailed(err)) return; // the content is gone; so is its counter
+    throw err;
+  }
 }
 
 export interface ListContentsResult {

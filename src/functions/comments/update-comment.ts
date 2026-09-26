@@ -19,7 +19,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const contentId = pathParam(event, 'contentId');
   const commentId = pathParam(event, 'commentId');
 
-  const { comment } = await requireCommentAuthor(contentId, commentId, userId);
+  const comment = await requireCommentAuthor(contentId, commentId, userId);
   if (comment.deletedAt) throw new HttpError(409, 'A deleted comment cannot be edited');
 
   const body = jsonBody<UpdateCommentBody>(event);

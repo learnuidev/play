@@ -140,24 +140,47 @@ export async function requireCommentAccess(
 }
 
 /**
- * Authorizes a change to a comment that is the author's own business: reading
- * the organization is not enough to edit someone else's words.
+ * Authorizes a change only the author of a comment may make.
  *
- * Returns the role the caller holds, so a handler can additionally allow an
- * admin or editor to moderate — the shape `requireOrganizationAccess` already
- * uses.
+ * Reading the organization is not enough to edit someone else's words: a course
+ * editor curates a discussion, they do not speak in it.
  */
 export async function requireCommentAuthor(
   contentId: string,
   commentId: string,
   userId: string,
-): Promise<{ comment: Comment; role: OrgRole }> {
+): Promise<Comment> {
   const comment = await getComment(contentId, commentId);
   if (!comment) throw new HttpError(404, 'Comment not found');
 
-  const role = await requireOrganizationAccess(userId, comment.organizationId, 'read');
-  if (comment.authorId !== userId && role === 'VIEWER') {
+  await requireOrganizationAccess(userId, comment.organizationId, 'read');
+  if (comment.authorId !== userId) {
     throw new HttpError(403, 'Only the author can change this comment');
   }
-  return { comment, role };
+  return comment;
+}
+
+/**
+ * Authorizes taking a comment down: its author, or an admin or editor of the
+ * organization moderating the discussion.
+ *
+ * The author is checked against reading access because they are acting on their
+ * own words; anyone else has to hold a write role, which is what keeps a viewer
+ * from deleting other people's comments.
+ */
+export async function requireCommentModerator(
+  contentId: string,
+  commentId: string,
+  userId: string,
+): Promise<Comment> {
+  const comment = await getComment(contentId, commentId);
+  if (!comment) throw new HttpError(404, 'Comment not found');
+
+  if (comment.authorId === userId) {
+    await requireOrganizationAccess(userId, comment.organizationId, 'read');
+    return comment;
+  }
+
+  await requireOrganizationAccess(userId, comment.organizationId, 'write');
+  return comment;
 }

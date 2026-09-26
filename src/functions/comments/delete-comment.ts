@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireCommentAuthor } from '../../lib/access';
+import { requireCommentModerator } from '../../lib/access';
 import { requireUserId } from '../../lib/auth';
 import { addCommentCounters, deleteCommentItem, tombstoneComment } from '../../lib/comments';
 import { addContentCounters } from '../../lib/contents';
@@ -21,7 +21,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const contentId = pathParam(event, 'contentId');
   const commentId = pathParam(event, 'commentId');
 
-  const { comment } = await requireCommentAuthor(contentId, commentId, userId);
+  const comment = await requireCommentModerator(contentId, commentId, userId);
   if (comment.deletedAt) return noContent();
 
   if (comment.replyCount > 0) {
