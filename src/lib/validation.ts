@@ -111,3 +111,45 @@ export function parseCommentBody(raw: unknown): string {
   }
   return body;
 }
+
+/** Loop names are short: they are labels on a list, not sentences. */
+export const MIN_LOOP_NAME_LENGTH = 1;
+export const MAX_LOOP_NAME_LENGTH = 60;
+
+export function parseLoopName(raw: unknown): string {
+  if (typeof raw !== 'string') throw new HttpError(400, 'name is required');
+
+  const name = raw.trim().replace(/\s+/g, ' ');
+  if (name.length < MIN_LOOP_NAME_LENGTH) throw new HttpError(400, 'name is required');
+  if (name.length > MAX_LOOP_NAME_LENGTH) {
+    throw new HttpError(400, `name must be <= ${MAX_LOOP_NAME_LENGTH} characters`);
+  }
+  return name;
+}
+
+/**
+ * A loop's boundaries, in milliseconds.
+ *
+ * Checked as a pair rather than one at a time, because the only thing that makes
+ * a loop a loop is that it has two ends in the right order.
+ */
+export function parseLoopRange(
+  startRaw: unknown,
+  endRaw: unknown,
+  minLengthMs: number,
+): { startMs: number; endMs: number } {
+  const startMs = Number(startRaw);
+  const endMs = Number(endRaw);
+
+  if (!Number.isFinite(startMs) || startMs < 0) {
+    throw new HttpError(400, 'startMs must be a number of milliseconds >= 0');
+  }
+  if (!Number.isFinite(endMs)) {
+    throw new HttpError(400, 'endMs must be a number of milliseconds');
+  }
+  if (endMs - startMs < minLengthMs) {
+    throw new HttpError(400, `A loop must be at least ${minLengthMs}ms long`);
+  }
+
+  return { startMs: Math.round(startMs), endMs: Math.round(endMs) };
+}

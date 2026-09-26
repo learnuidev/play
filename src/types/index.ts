@@ -443,3 +443,35 @@ export interface ContentViewerState {
   favourited: boolean;
   inPlaylist: boolean;
 }
+
+/**
+ * A named stretch of a lesson's video, kept by the learner who made it — the
+ * piece of a lesson worth hearing again.
+ *
+ * Boundaries are milliseconds rather than second-and-line pairs because they are
+ * what a player seeks by: the line numbers a reader recognises are derivable
+ * from the transcript, and a loop should survive that transcript being re-cut.
+ */
+export interface ContentLoop {
+  /** Cognito `sub` of the learner who made it. Partition key. */
+  userId: string;
+  /**
+   * Sort key: `{contentId}#{loopId}`. One partition per learner, so a lesson's
+   * loops are a single `begins_with` query rather than a filter over everything
+   * they have ever looped.
+   */
+  loopKey: string;
+  contentId: string;
+  /** ULID, the loop's own id. */
+  loopId: string;
+  /** 1–60 characters, whitespace collapsed. */
+  name: string;
+  /** Accent colour, `#rrggbb`. Absent means the UI derives one. */
+  color?: string;
+  /** Start of the loop, in milliseconds from the beginning of the video. */
+  startMs: number;
+  /** End of the loop, in milliseconds. Always after `startMs`. */
+  endMs: number;
+  createdAt: number;
+  updatedAt: number;
+}

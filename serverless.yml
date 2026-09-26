@@ -48,6 +48,7 @@ provider:
     FAVOURITES_TABLE: !Ref FavouritesTable
     PLAYLIST_TABLE: !Ref PlaylistTable
     COMMENTS_TABLE: !Ref CommentsTable
+    CONTENT_LOOPS_TABLE: !Ref ContentLoopsTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
@@ -134,6 +135,7 @@ provider:
             - !Sub "${PlaylistTable.Arn}/index/*"
             - !GetAtt CommentsTable.Arn
             - !Sub "${CommentsTable.Arn}/index/*"
+            - !GetAtt ContentLoopsTable.Arn
         - Effect: Allow
           Action:
             - s3:GetObject
@@ -574,6 +576,44 @@ functions:
 
   # The discussion on a piece of content. Comments are addressed under their
   # content because that is the pair the table is keyed by.
+  # Loops — a learner's named stretches of a lesson's video, for hearing a
+  # piece again. Addressable only through their owner.
+  create-loop:
+    handler: src/functions/loops/create-loop.handler
+    events:
+      - http:
+          path: contents/{contentId}/loops
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-loops:
+    handler: src/functions/loops/list-loops.handler
+    events:
+      - http:
+          path: contents/{contentId}/loops
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-loop:
+    handler: src/functions/loops/update-loop.handler
+    events:
+      - http:
+          path: contents/{contentId}/loops/{loopId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  delete-loop:
+    handler: src/functions/loops/delete-loop.handler
+    events:
+      - http:
+          path: contents/{contentId}/loops/{loopId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   list-comments:
     handler: src/functions/comments/list-comments.handler
     events:
@@ -967,6 +1007,26 @@ resources:
           - AttributeName: contentId
             KeyType: HASH
           - AttributeName: commentId
+            KeyType: RANGE
+
+    # A learner's loops on a lesson. Partitioned by the learner and sorted by
+    # `{contentId}#{loopId}`, so "the loops on this lesson" is one `begins_with`
+    # query and a loop can only ever be addressed through the person who made
+    # it. No index: nobody reads these except their owner, and their owner reads
+    # them one lesson at a time.
+    ContentLoopsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: loopKey
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: loopKey
             KeyType: RANGE
 
     VideosBucket:
@@ -1373,3 +1433,6 @@ resources:
     CommentsTableName:
       Description: Content comments DynamoDB table name
       Value: !Ref CommentsTable
+    ContentLoopsTableName:
+      Description: Learner content loops DynamoDB table name
+      Value: !Ref ContentLoopsTable
