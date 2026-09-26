@@ -173,19 +173,32 @@ export interface ListOptions {
   exclusiveStartKey?: Record<string, unknown>;
 }
 
-export async function listVideosByOwner(ownerId: string, opts: ListOptions): Promise<ListResult> {
+/**
+ * Queries videos through an owner or organization index.
+ *
+ * Both key spaces carry the same pair of indexes — `{Prefix}StatusIndex` for
+ * status filtering and `{Prefix}CreatedIndex` for chronological listing — so
+ * the query only differs by index and key name.
+ */
+async function listVideosByIndex(
+  keyName: 'ownerId' | 'organizationId',
+  indexPrefix: 'Owner' | 'Organization',
+  keyValue: string,
+  opts: ListOptions,
+): Promise<ListResult> {
   if (opts.status) {
     const res = await client.send(
       new QueryCommand({
         TableName: TABLE,
-        IndexName: 'OwnerStatusIndex',
-        KeyConditionExpression: '#owner = :owner AND #status = :status',
-        ExpressionAttributeNames: { '#owner': 'ownerId', '#status': 'status' },
-        ExpressionAttributeValues: { ':owner': ownerId, ':status': opts.status },
+        IndexName: `${indexPrefix}StatusIndex`,
+        KeyConditionExpression: '#key = :key AND #status = :status',
+        ExpressionAttributeNames: { '#key': keyName, '#status': 'status' },
+        ExpressionAttributeValues: { ':key': keyValue, ':status': opts.status },
         Limit: opts.limit,
         ExclusiveStartKey: opts.exclusiveStartKey,
       }),
     );
+    // This index is ordered by status, not time, so order the page here.
     const videos = (res.Items ?? []) as Video[];
     videos.sort((a, b) => b.createdAt - a.createdAt);
     return { videos, lastEvaluatedKey: res.LastEvaluatedKey };
@@ -194,10 +207,10 @@ export async function listVideosByOwner(ownerId: string, opts: ListOptions): Pro
   const res = await client.send(
     new QueryCommand({
       TableName: TABLE,
-      IndexName: 'OwnerCreatedIndex',
-      KeyConditionExpression: '#owner = :owner',
-      ExpressionAttributeNames: { '#owner': 'ownerId' },
-      ExpressionAttributeValues: { ':owner': ownerId },
+      IndexName: `${indexPrefix}CreatedIndex`,
+      KeyConditionExpression: '#key = :key',
+      ExpressionAttributeNames: { '#key': keyName },
+      ExpressionAttributeValues: { ':key': keyValue },
       Limit: opts.limit,
       ExclusiveStartKey: opts.exclusiveStartKey,
       ScanIndexForward: false,
@@ -208,4 +221,14 @@ export async function listVideosByOwner(ownerId: string, opts: ListOptions): Pro
     videos: (res.Items ?? []) as Video[],
     lastEvaluatedKey: res.LastEvaluatedKey,
   };
+}
+
+/** Videos uploaded by a user, across every organization they uploaded to. */
+export function listVideosByOwner(ownerId: string, opts: ListOptions): Promise<ListResult> {
+  return listVideosByIndex('ownerId', 'Owner', ownerId, opts);
+}
+
+/** Videos that belong to an organization, newest first. */
+export function listVideosByOrganization(organizationId: string, opts: ListOptions): Promise<ListResult> {
+  return listVideosByIndex('organizationId', 'Organization', organizationId, opts);
 }

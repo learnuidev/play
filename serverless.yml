@@ -356,6 +356,8 @@ resources:
             AttributeType: S
           - AttributeName: ownerId
             AttributeType: S
+          - AttributeName: organizationId
+            AttributeType: S
           - AttributeName: status
             AttributeType: S
           - AttributeName: createdAt
@@ -363,6 +365,10 @@ resources:
         KeySchema:
           - AttributeName: videoId
             KeyType: HASH
+        # Owner and organization key spaces deliberately mirror each other:
+        # `{Prefix}CreatedIndex` lists newest-first, `{Prefix}StatusIndex`
+        # filters by status. A video carries both keys, so the organization's
+        # library and a single user's uploads are both a Query.
         GlobalSecondaryIndexes:
           - IndexName: OwnerStatusIndex
             KeySchema:
@@ -375,6 +381,22 @@ resources:
           - IndexName: OwnerCreatedIndex
             KeySchema:
               - AttributeName: ownerId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: OrganizationStatusIndex
+            KeySchema:
+              - AttributeName: organizationId
+                KeyType: HASH
+              - AttributeName: status
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: OrganizationCreatedIndex
+            KeySchema:
+              - AttributeName: organizationId
                 KeyType: HASH
               - AttributeName: createdAt
                 KeyType: RANGE
@@ -792,3 +814,16 @@ resources:
     VideosBucketName:
       Description: S3 bucket name
       Value: !Ref VideosBucket
+    # Exported for the maintenance scripts (see scripts/), which resolve the
+    # physical table names from stack outputs. `describe-stack-resources` is not
+    # usable here: it silently truncates at 100 resources on this stack and
+    # returns no NextToken, so the tables never appear in it.
+    VideosTableName:
+      Description: Videos DynamoDB table name
+      Value: !Ref VideosTable
+    OrganizationsTableName:
+      Description: Organizations DynamoDB table name
+      Value: !Ref OrganizationsTable
+    OrgMembersTableName:
+      Description: Organization memberships DynamoDB table name
+      Value: !Ref OrgMembersTable

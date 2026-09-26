@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireOwnerId } from '../../lib/auth';
-import { listVideosByOwner } from '../../lib/dynamodb';
+import { requireUserId } from '../../lib/auth';
+import { requireOrganizationAccess } from '../../lib/access';
+import { listVideosByOrganization, listVideosByOwner } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
 import { VIDEO_STATUSES, type VideoStatus } from '../../types';
 
@@ -16,11 +17,18 @@ function parseToken(token: string | undefined): Record<string, unknown> | undefi
   }
 }
 
+function parseLimit(raw: string | undefined): number {
+  const n = Number(raw ?? DEFAULT_LIMIT);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_LIMIT;
+  return Math.min(Math.floor(n), MAX_LIMIT);
+}
+
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const ownerId = requireOwnerId(event);
+  const userId = requireUserId(event);
 
   const statusParam = event.queryStringParameters?.status;
-  const limit = Math.min(Number(event.queryStringParameters?.limit ?? DEFAULT_LIMIT), MAX_LIMIT);
+  const organizationId = event.queryStringParameters?.organizationId?.trim();
+  const limit = parseLimit(event.queryStringParameters?.limit);
   const exclusiveStartKey = parseToken(event.queryStringParameters?.nextToken);
 
   let status: VideoStatus | undefined;
@@ -31,16 +39,20 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     status = statusParam as VideoStatus;
   }
 
-  const { videos, lastEvaluatedKey } = await listVideosByOwner(ownerId, {
-    status,
-    limit,
-    exclusiveStartKey,
-  });
+  // With `organizationId` this is the organization's library, which every
+  // member can see; without it, it is the caller's own uploads.
+  let result;
+  if (organizationId) {
+    await requireOrganizationAccess(userId, organizationId, 'read');
+    result = await listVideosByOrganization(organizationId, { status, limit, exclusiveStartKey });
+  } else {
+    result = await listVideosByOwner(userId, { status, limit, exclusiveStartKey });
+  }
 
   return ok({
-    videos,
-    nextToken: lastEvaluatedKey
-      ? Buffer.from(JSON.stringify(lastEvaluatedKey)).toString('base64url')
+    videos: result.videos,
+    nextToken: result.lastEvaluatedKey
+      ? Buffer.from(JSON.stringify(result.lastEvaluatedKey)).toString('base64url')
       : undefined,
   });
 }

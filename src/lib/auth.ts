@@ -27,9 +27,10 @@ export function requireUser(event: APIGatewayProxyEvent): AuthUser {
 }
 
 /**
- * Extracts the authenticated Cognito user's `sub` (owner id) from the
- * COGNITO_USER_POOLS authorizer context injected by API Gateway.
+ * The authenticated caller's `sub`. Videos are no longer owned by a single
+ * user, so handlers authorize through `lib/access` rather than by comparing
+ * this against `ownerId`.
  */
-export function requireOwnerId(event: APIGatewayProxyEvent): string {
+export function requireUserId(event: APIGatewayProxyEvent): string {
   return requireUser(event).userId;
 }

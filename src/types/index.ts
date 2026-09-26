@@ -23,6 +23,14 @@ export interface SubtitleTranslation {
 
 export interface Video {
   videoId: string;
+  /**
+   * Organization this video belongs to. Present on everything uploaded since
+   * organizations existed; absent only on rows created before that, which
+   * `scripts/backfill-video-organizations.js` fills in. New videos cannot be
+   * created without one.
+   */
+  organizationId?: string;
+  /** Cognito `sub` of the user who uploaded it. */
   ownerId: string;
   title: string;
   description: string;

@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireOwnerId } from '../../lib/auth';
+import { requireVideoAccess } from '../../lib/access';
+import { requireUserId } from '../../lib/auth';
 import { getVideo, updateVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
 
@@ -9,14 +10,12 @@ interface UpdateVideoBody {
 }
 
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const ownerId = requireOwnerId(event);
+  const userId = requireUserId(event);
   const videoId = event.pathParameters?.videoId;
 
   if (!videoId) throw new HttpError(400, 'videoId path parameter is required');
 
-  const existing = await getVideo(videoId);
-  if (!existing) throw new HttpError(404, 'Video not found');
-  if (existing.ownerId !== ownerId) throw new HttpError(403, 'Forbidden');
+  const existing = await requireVideoAccess(videoId, userId, 'write');
 
   const body = (event.body ? JSON.parse(event.body) : {}) as UpdateVideoBody;
   const patch: { title?: string; description?: string } = {};

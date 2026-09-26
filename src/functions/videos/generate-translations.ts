@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireOwnerId } from '../../lib/auth';
+import { requireVideoAccess } from '../../lib/access';
+import { requireUserId } from '../../lib/auth';
 import { getVideo, updateVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
 import { deleteObjects, getObjectText, listKeysUnderPrefix, putObjectText } from '../../lib/s3';
@@ -21,14 +22,12 @@ interface GenerateTranslationsBody {
  * AWS Translate, writing one WebVTT file per language and preserving cue timing.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const ownerId = requireOwnerId(event);
+  const userId = requireUserId(event);
   const videoId = event.pathParameters?.videoId;
 
   if (!videoId) throw new HttpError(400, 'videoId path parameter is required');
 
-  const video = await getVideo(videoId);
-  if (!video) throw new HttpError(404, 'Video not found');
-  if (video.ownerId !== ownerId) throw new HttpError(403, 'Forbidden');
+  const video = await requireVideoAccess(videoId, userId, 'write');
 
   if (video.subtitleStatus !== 'READY' || !video.subtitleKey) {
     throw new HttpError(409, 'Source subtitles are not ready');

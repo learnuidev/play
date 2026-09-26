@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { randomUUID } from 'node:crypto';
-import { requireOwnerId } from '../../lib/auth';
+import { ulid } from 'ulid';
+import { requireUserId } from '../../lib/auth';
+import { requireOrganizationAccess } from '../../lib/access';
 import { putVideo } from '../../lib/dynamodb';
 import { HttpError, handle, ok } from '../../lib/http';
 import { createPresignedUploadUrl } from '../../lib/s3';
@@ -18,6 +19,8 @@ function sanitizeFileName(name: string): string {
 interface CreateVideoBody {
   title?: string;
   description?: string;
+  /** Organization the video belongs to. Required. */
+  organizationId?: string;
   fileName?: string;
   contentType?: string;
   size?: number;
@@ -43,7 +46,7 @@ function toPositiveNumber(value: unknown): number | undefined {
 }
 
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const ownerId = requireOwnerId(event);
+  const userId = requireUserId(event);
 
   const body = (event.body ? JSON.parse(event.body) : {}) as CreateVideoBody;
   const title = (body.title ?? '').trim();
@@ -51,6 +54,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const contentType = body.contentType ?? 'application/octet-stream';
   const size = typeof body.size === 'number' ? body.size : undefined;
   const description = (body.description ?? '').trim();
+  const organizationId = (body.organizationId ?? '').trim();
 
   const width = toPositiveInt(body.width);
   const height = toPositiveInt(body.height);
@@ -64,14 +68,20 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   if (description.length > MAX_DESCRIPTION_LENGTH) {
     throw new HttpError(400, `description must be <= ${MAX_DESCRIPTION_LENGTH} characters`);
   }
+  // Every video lives inside an organization. The id is opaque — the ids of
+  // videos uploaded before organizations existed are UUIDs, not ULIDs — so it
+  // is authorized by membership rather than by shape.
+  if (!organizationId) throw new HttpError(400, 'organizationId is required');
+  await requireOrganizationAccess(userId, organizationId, 'write');
 
-  const videoId = randomUUID();
+  const videoId = ulid();
   const now = Date.now();
   const s3Key = `uploads/${videoId}/${fileName}`;
 
   const video: Video = {
     videoId,
-    ownerId,
+    organizationId,
+    ownerId: userId,
     title,
     description,
     status: 'UPLOADING',

@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireOwnerId } from '../../lib/auth';
-import { getVideo } from '../../lib/dynamodb';
+import { requireVideoAccess } from '../../lib/access';
+import { requireUserId } from '../../lib/auth';
 import { HttpError, handle, ok } from '../../lib/http';
 import { buildThumbnailSignedUrl } from '../../lib/thumbnail';
 
@@ -9,14 +9,12 @@ import { buildThumbnailSignedUrl } from '../../lib/thumbnail';
  * auto-generated poster frame or a custom upload).
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const ownerId = requireOwnerId(event);
+  const userId = requireUserId(event);
   const videoId = event.pathParameters?.videoId;
 
   if (!videoId) throw new HttpError(400, 'videoId path parameter is required');
 
-  const video = await getVideo(videoId);
-  if (!video) throw new HttpError(404, 'Video not found');
-  if (video.ownerId !== ownerId) throw new HttpError(403, 'Forbidden');
+  const video = await requireVideoAccess(videoId, userId, 'read');
 
   if (!video.thumbnailKey) {
     throw new HttpError(404, 'No thumbnail for this video');

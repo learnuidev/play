@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { randomUUID } from 'node:crypto';
+import { ulid } from 'ulid';
 import { requireUser } from '../../lib/auth';
 import { HttpError, handle, ok } from '../../lib/http';
 import { buildSlug, createOrganization } from '../../lib/organizations';
@@ -38,8 +38,10 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     throw new HttpError(400, `description must be <= ${MAX_DESCRIPTION_LENGTH} characters`);
   }
 
-  const orgId = randomUUID();
-  const suffix = randomUUID().replace(/-/g, '').slice(0, 6);
+  const orgId = ulid();
+  // The tail of the ULID is its random half, so it doubles as the slug suffix
+  // that keeps two organizations with the same name apart.
+  const suffix = orgId.slice(-6).toLowerCase();
   const now = Date.now();
 
   const organization: Organization = {

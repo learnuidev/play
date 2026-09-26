@@ -10,9 +10,12 @@ interface TranscribeDetail {
 
 type TranscribeStateChangeEvent = EventBridgeEvent<'Transcribe Job State Change', TranscribeDetail>;
 
-// Transcribe job names are `play-{videoId}-{timestamp}`, where videoId is a
-// UUID v4 (randomUUID). Extract it to map the job back to a video record.
-const VIDEO_ID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+// Transcribe job names are `play-{videoId}-{timestamp}` (see lib/transcribe.ts).
+// Parse between the prefix and the trailing millisecond timestamp rather than
+// matching an id shape, so both the UUIDs of videos uploaded before ULIDs and
+// the ULIDs used now resolve — a UUID's hyphens and a ULID's length would each
+// defeat a pattern that tried to describe the id itself.
+const JOB_NAME_PATTERN = /^play-(.+)-(\d+)$/;
 
 async function findSubtitleKey(videoId: string): Promise<string | undefined> {
   const prefix = `subtitles/${videoId}/source/`;
@@ -46,7 +49,7 @@ export const handler = async (event: TranscribeStateChangeEvent): Promise<void> 
     return;
   }
 
-  const videoId = TranscriptionJobName.match(VIDEO_ID_PATTERN)?.[0];
+  const videoId = TranscriptionJobName.match(JOB_NAME_PATTERN)?.[1];
   if (!videoId) {
     console.info(`Ignoring Transcribe event with unparseable job name: ${TranscriptionJobName}`);
     return;
