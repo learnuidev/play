@@ -11,11 +11,15 @@ import { PlayIcon } from 'lucide-react';
  * in, never sideways — so it arrives at the edge of attention rather than in
  * front of the video.
  *
- * It is fixed to the page's bottom-left rather than tucked into the video's
- * corner: the video is only 70% of the width and the panel beside it is where a
- * reader's attention is for most of a lesson, so a notice drawn *inside* the
- * video is a notice half the time nobody sees. Dark, so it reads over whatever
- * it lands on.
+ * It sits at the page's bottom-left rather than in the video's corner: the video
+ * is only 70% of the width and the panel beside it is where a reader's attention
+ * lives for most of a lesson, so a notice drawn *inside* the video is a notice
+ * that half the time nobody sees.
+ *
+ * `absolute`, not `fixed`: the containing block here is the shell's main column,
+ * so the card lands at the left edge of the page — beside the course menu rather
+ * than on top of it — and being outside the scrolling container it stays put
+ * while the transcript scrolls. Dark, so it reads over whatever it lands on.
  *
  * Both ways out are here. "Play now" for the impatient, "Cancel" for the reader
  * who is not finished, and the next lesson is only ever offered, never taken.
@@ -43,7 +47,7 @@ export function PlayingNext({
     <div
       role="status"
       aria-live="polite"
-      className="playing-next fixed bottom-6 left-6 z-50 w-[min(19rem,calc(100vw-3rem))] overflow-hidden rounded-xl bg-black/85 p-3.5 text-white shadow-xl ring-1 ring-white/10 backdrop-blur-md"
+      className="playing-next absolute bottom-6 left-6 z-50 w-[min(19rem,calc(100%-3rem))] overflow-hidden rounded-xl bg-black/85 p-3.5 text-white shadow-xl ring-1 ring-white/10 backdrop-blur-md"
     >
       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">
         Up next

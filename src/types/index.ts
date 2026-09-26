@@ -586,3 +586,61 @@ export interface ListCommentsResponse {
   threads: CommentThread[];
   truncated: boolean;
 }
+
+/**
+ * Accent colours a loop can wear.
+ *
+ * Its own palette rather than the spaces' one: a loop is a note to yourself in
+ * the margin of a lesson, and it should not be possible to confuse one with a
+ * course.
+ */
+export const LOOP_COLORS: string[] = [
+  '#f43f5e',
+  '#f97316',
+  '#f59e0b',
+  '#10b981',
+  '#0ea5e9',
+  '#8b5cf6',
+];
+
+/**
+ * A named stretch of a lesson's video: the piece worth hearing again.
+ *
+ * Boundaries are milliseconds because that is what a player seeks by — the
+ * transcript's line numbers are derivable from them, and a loop survives that
+ * transcript being re-cut.
+ */
+export interface ContentLoop {
+  userId: string;
+  loopKey: string;
+  contentId: string;
+  loopId: string;
+  name: string;
+  color?: string;
+  startMs: number;
+  endMs: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateLoopPayload {
+  name: string;
+  startMs: number;
+  endMs: number;
+  color?: string;
+}
+
+export interface UpdateLoopPayload {
+  name?: string;
+  startMs?: number;
+  endMs?: number;
+  color?: string;
+}
+
+export interface ListLoopsResponse {
+  loops: ContentLoop[];
+}
+
+export interface LoopResponse {
+  loop: ContentLoop;
+}

@@ -104,8 +104,11 @@ const TranscriptSentence = memo(function TranscriptSentence({
   index,
   isActive,
   isPast,
+  selected,
+  selectionColor,
   getTime,
   onSeek,
+  onSelect,
   registerRef,
 }: {
   line: TranscriptLine;
@@ -113,9 +116,15 @@ const TranscriptSentence = memo(function TranscriptSentence({
   index: number;
   isActive: boolean;
   isPast: boolean;
+  /** Inside the passage the loop picker is choosing. */
+  selected: boolean;
+  /** The colour that passage is drawn in. */
+  selectionColor?: string;
   /** Playback position in milliseconds, read fresh every frame. */
   getTime: () => number;
   onSeek: (timeMs: number) => void;
+  /** Grows the passage around this line, when the picker is open. */
+  onSelect?: (line: TranscriptLine) => void;
   registerRef: (index: number, el: HTMLSpanElement | null) => void;
 }) {
   const tokenRefs = useRef<(HTMLSpanElement | null)[]>([]);
@@ -165,8 +174,18 @@ const TranscriptSentence = memo(function TranscriptSentence({
   return (
     <span
       ref={(el) => registerRef(index, el)}
+      // A whole sentence at a time while choosing a passage, so the band the
+      // reader is drawing is the same shape as the text they are drawing it on.
+      style={selected ? { backgroundColor: `${selectionColor}24`, borderRadius: '4px' } : undefined}
       className="cursor-pointer"
       onClick={(event) => {
+        // Picking a passage is not watching: a tap that is choosing where a loop
+        // ends should not also send the video somewhere.
+        if (onSelect) {
+          onSelect(line);
+          return;
+        }
+
         const start = (event.target as HTMLElement)?.dataset?.tStart;
         const parsed = start === undefined ? NaN : Number(start);
         onSeek(Number.isFinite(parsed) ? parsed : line.start);
@@ -198,12 +217,20 @@ export function AnimatedTranscript({
   lines,
   getTime,
   onSeek,
+  selection,
+  selectionColor,
+  onSelectLine,
   className,
 }: {
   lines: TranscriptLine[];
   /** Playback position in milliseconds, read fresh every frame. */
   getTime: () => number;
   onSeek: (timeMs: number) => void;
+  /** The passage a loop is being chosen over, while the picker is open. */
+  selection?: { startMs: number; endMs: number } | null;
+  selectionColor?: string;
+  /** Set while choosing: a tap on a line grows the passage instead of seeking. */
+  onSelectLine?: (line: TranscriptLine) => void;
   className?: string;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
@@ -421,8 +448,11 @@ export function AnimatedTranscript({
                 index={index}
                 isActive={index === activeIndex}
                 isPast={activeIndex >= 0 && index < activeIndex}
+                selected={Boolean(selection && lines[index].end > selection.startMs && lines[index].start < selection.endMs)}
+                selectionColor={selectionColor}
                 getTime={getTime}
                 onSeek={onSeek}
+                onSelect={onSelectLine}
                 registerRef={registerRef}
               />
             ))}

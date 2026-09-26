@@ -29,6 +29,14 @@ export interface SubtitleTrack {
 export interface VideoPlayerHandle {
   seekTo: (timeMs: number) => void;
   /**
+   * Starts playback.
+   *
+   * Seeking is not playing: a player that has been paused and put somewhere else
+   * is still paused. Anything that auditions a stretch of the video — the loop
+   * picker — has to ask for both.
+   */
+  play: () => void;
+  /**
    * Where playback is, in milliseconds, read straight off the media element.
    *
    * `onTimeUpdate` is not enough to animate against: the element reports its
@@ -111,6 +119,15 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           // Reading `currentTime` is a media property, not a layout one: it does
           // not force a style flush, so once a frame is cheap.
           return video && Number.isFinite(video.currentTime) ? video.currentTime * 1000 : 0;
+        },
+        play: () => {
+          const video = videoRef.current;
+          if (!video) return;
+          // A rejected promise here is the browser refusing to start playback
+          // on its own terms, which is not an error worth surfacing: the
+          // controls are right there.
+          const started = video.play();
+          if (started && typeof started.catch === 'function') started.catch(() => {});
         },
         getDurationMs: () => {
           const video = videoRef.current;

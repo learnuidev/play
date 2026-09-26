@@ -7,6 +7,7 @@ import type {
   ContentResponse,
   CreateCommentPayload,
   CreateContentPayload,
+  CreateLoopPayload,
   CreateOrganizationPayload,
   CreateOrganizationResponse,
   CreateSectionPayload,
@@ -17,6 +18,7 @@ import type {
   FavouriteResponse,
   ListCommentsResponse,
   ListContentFilesResponse,
+  ListLoopsResponse,
   ListContentsResponse,
   ListFavouritesResponse,
   ListOrganizationsResponse,
@@ -24,6 +26,7 @@ import type {
   ListSectionsResponse,
   ListSpacesResponse,
   ListVideosResponse,
+  LoopResponse,
   PlaylistResponse,
   SectionResponse,
   SpaceThumbnailResponse,
@@ -31,6 +34,7 @@ import type {
   SubtitleResponse,
   ThumbnailResponse,
   UpdateContentPayload,
+  UpdateLoopPayload,
   UpdateSectionPayload,
   UploadContentFilePayload,
   UploadContentFileResponse,
@@ -241,6 +245,25 @@ export const api = {
   listFavourites: () => request<ListFavouritesResponse>('/me/favourites'),
 
   listPlaylist: () => request<ListPlaylistResponse>('/me/playlist'),
+
+  // Loops: the caller's own named stretches of a lesson, for hearing a piece
+  // again. Nobody else can see them.
+  listLoops: (contentId: string) => request<ListLoopsResponse>(`/contents/${contentId}/loops`),
+
+  createLoop: (contentId: string, payload: CreateLoopPayload) =>
+    request<LoopResponse>(`/contents/${contentId}/loops`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateLoop: (contentId: string, loopId: string, patch: UpdateLoopPayload) =>
+    request<LoopResponse>(`/contents/${contentId}/loops/${loopId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteLoop: (contentId: string, loopId: string) =>
+    request<void>(`/contents/${contentId}/loops/${loopId}`, { method: 'DELETE' }),
 
   listComments: (contentId: string) =>
     request<ListCommentsResponse>(`/contents/${contentId}/comments`),

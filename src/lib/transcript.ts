@@ -229,3 +229,132 @@ export function findActiveLine(lines: TranscriptLine[], timeMs: number): number 
 
   return found;
 }
+
+/** The lines a stretch of the video covers. */
+export function linesInRange(
+  lines: TranscriptLine[],
+  startMs: number,
+  endMs: number,
+): TranscriptLine[] {
+  return lines.filter((line) => line.end > startMs && line.start < endMs);
+}
+
+/**
+ * What a stretch of the video says.
+ *
+ * This is what makes a loop more than two numbers: "0:12 – 0:27" is where it is,
+ * and this is what it is. A loop whose boundaries fall inside a sentence still
+ * covers the whole of it, which is why the test is overlap rather than
+ * containment — half a sentence is not a thing anyone wants to read.
+ */
+export function transcriptTextFor(
+  lines: TranscriptLine[],
+  startMs: number,
+  endMs: number,
+): string {
+  return linesInRange(lines, startMs, endMs)
+    .map((line) => line.text)
+    .join(' ');
+}
+
+/**
+ * The same stretch, widened to whole lines.
+ *
+ * A loop is a passage, and a passage starts at the beginning of a sentence:
+ * boundaries set from the playhead land mid-word as often as not, so they are
+ * snapped outward to the lines they fall in. A stretch that covers no line at
+ * all — the video is only just playing, or the transcript has not arrived — is
+ * left exactly as it was, because snapping to nothing is not a thing to do.
+ */
+export function snapRangeToLines(
+  lines: TranscriptLine[],
+  startMs: number,
+  endMs: number,
+): { startMs: number; endMs: number } {
+  const covered = linesInRange(lines, startMs, endMs);
+  if (covered.length === 0) return { startMs, endMs };
+
+  return {
+    startMs: Math.min(startMs, covered[0].start),
+    endMs: Math.max(endMs, covered[covered.length - 1].end),
+  };
+}
+
+/**
+ * The line a moment falls in, or the nearest one when it falls in a pause.
+ *
+ * Pauses are most of a transcript — that is what makes it a transcript of speech
+ * rather than of noise — so "the line you dropped it on" has to mean the line it
+ * is nearest to when it is not inside one.
+ */
+export function lineAt(lines: TranscriptLine[], timeMs: number): TranscriptLine | undefined {
+  const containing = lines.find((line) => timeMs >= line.start && timeMs <= line.end);
+  if (containing) return containing;
+
+  let nearest: TranscriptLine | undefined;
+  let shortest = Infinity;
+
+  for (const line of lines) {
+    const distance = Math.min(Math.abs(line.start - timeMs), Math.abs(line.end - timeMs));
+    if (distance < shortest) {
+      shortest = distance;
+      nearest = line;
+    }
+  }
+
+  return nearest;
+}
+
+/**
+ * Where a boundary goes when it is put down at a moment: the start of a line, or
+ * the end of one — never the moment itself.
+ *
+ * A loop is a passage, and a passage starts at the beginning of a sentence. Two
+ * timestamps are what a player seeks by, but whole sentences are what a reader
+ * can hold in their head, so the picker refuses anything else: there is no drag
+ * that ends mid-word. With no transcript to snap to there is nothing to be
+ * faithful to, and the moment itself is the answer.
+ */
+export function snapToLineBoundary(
+  lines: TranscriptLine[],
+  timeMs: number,
+  edge: 'start' | 'end',
+): number | undefined {
+  const line = lineAt(lines, timeMs);
+  if (!line) return undefined;
+  return edge === 'start' ? line.start : line.end;
+}
+
+/**
+ * The next boundary along from one, for the arrow keys.
+ *
+ * Stepping by a second would be no more use than dragging freely — a second
+ * lands mid-sentence as often as not — so an arrow key moves a boundary to the
+ * neighbouring sentence and stops there.
+ */
+export function stepLineBoundary(
+  lines: TranscriptLine[],
+  timeMs: number,
+  edge: 'start' | 'end',
+  direction: -1 | 1,
+): number | undefined {
+  // Deduplicated by hand rather than with a Set: the app's tsconfig targets ES5
+  // for spreads, and a boundary list is not worth changing that for.
+  const boundaries: number[] = [];
+  for (const line of lines) {
+    const value = edge === 'start' ? line.start : line.end;
+    if (!boundaries.includes(value)) boundaries.push(value);
+  }
+  boundaries.sort((a, b) => a - b);
+  if (boundaries.length === 0) return undefined;
+
+  if (direction > 0) {
+    return boundaries.find((value) => value > timeMs + 1) ?? boundaries[boundaries.length - 1];
+  }
+
+  for (let index = boundaries.length - 1; index >= 0; index -= 1) {
+    if (boundaries[index] < timeMs - 1) return boundaries[index];
+  }
+
+  return boundaries[0];
+}

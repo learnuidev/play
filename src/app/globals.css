@@ -220,6 +220,35 @@
   }
 
   /**
+   * The bar that owns a loop while it is being chosen.
+   *
+   * A short rise and fade, the same gesture the next-lesson card makes, so the
+   * two never look like different kinds of interruption.
+   */
+  .loop-bar {
+    animation: loop-bar-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* It settles down into place under the video, a few pixels from where it
+     belongs rather than from anywhere else on the page. */
+  @keyframes loop-bar-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, -4px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .loop-bar {
+      animation-duration: 1ms;
+    }
+  }
+
+  /**
    * The next lesson arriving over the end of this one.
    *
    * Up and in, never sideways: a card that slides in from the edge reads as
