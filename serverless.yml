@@ -582,7 +582,7 @@ resources:
           authorize_scopes: "email profile openid"
 
     CognitoUserPoolClient:
-      Type: AWS::CognitoUserPoolClient
+      Type: AWS::Cognito::UserPoolClient
       Properties:
         UserPoolId: !Ref CognitoUserPool
         ClientName: play-app-${sls:stage}
