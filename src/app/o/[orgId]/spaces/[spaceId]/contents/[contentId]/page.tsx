@@ -183,7 +183,7 @@ function TranscriptTab({
   }
 
   if (lines.length === 0) {
-    return <Skeleton className="h-[380px] rounded-2xl sm:h-[440px]" />;
+    return <Skeleton className="h-[420px] rounded-2xl lg:h-full" />;
   }
 
   return (
@@ -191,7 +191,7 @@ function TranscriptTab({
       lines={lines}
       getTime={getTime}
       onSeek={onSeek}
-      className="h-[380px] rounded-2xl sm:h-[440px]"
+      className="h-[420px] lg:h-full"
     />
   );
 }
@@ -338,128 +338,150 @@ export default function ContentPage() {
   const section = sectionData?.section;
 
   return (
-    <div className="grid gap-6 pb-4">
+    // Two rows on a desktop screen: the way back, and then a split that fills
+    // whatever is left. `minmax(0, 1fr)` rather than `1fr` so the split can be
+    // shorter than its contents — which is what lets the panel scroll inside
+    // itself instead of the page scrolling as a whole.
+    <div className="grid gap-5 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)]">
       <Link
         href={`/o/${orgId}/spaces/${spaceId}`}
-        className="-mb-2 inline-flex w-fit items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="inline-flex w-fit items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronLeftIcon className="size-4" />
         {section ? section.title : 'Spaces'}
       </Link>
 
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <Meta content={content} />
-          <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
-            {content.title}
-          </h1>
-        </div>
+      {/* Half the width each: what the lesson is on the left, everything filed
+          under it on the right. Below `lg` the two stack and the page scrolls
+          normally, because a phone has no second half to give. */}
+      <div className="grid min-h-0 gap-6 lg:grid-cols-2">
+        <div className="grid content-start gap-5">
+          <header className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <Meta content={content} />
+              <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
+                {content.title}
+              </h1>
+            </div>
 
-        {canEdit && (
-          <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="-mr-2 size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
-                  aria-label="Lesson actions"
-                >
-                  <MoreHorizontalIcon />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                {/* The menu closes before this opens: a dialog inside a menu item
-                    fights the menu for focus. */}
-                <DropdownMenuItem onSelect={() => setTimeout(() => setEditing(true), 0)}>
-                  <PencilIcon />
-                  Edit details
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={deleteContent}>
-                  <Trash2Icon />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {canEdit && (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="-mr-2 size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
+                      aria-label="Lesson actions"
+                    >
+                      <MoreHorizontalIcon />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    {/* The menu closes before this opens: a dialog inside a menu
+                        item fights the menu for focus. */}
+                    <DropdownMenuItem onSelect={() => setTimeout(() => setEditing(true), 0)}>
+                      <PencilIcon />
+                      Edit details
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={deleteContent}
+                    >
+                      <Trash2Icon />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
-            <ContentDetailsDialog
-              orgId={orgId}
-              spaceId={spaceId}
-              content={content}
-              open={editing}
-              onOpenChange={setEditing}
-            />
-          </>
-        )}
-      </header>
+                <ContentDetailsDialog
+                  orgId={orgId}
+                  spaceId={spaceId}
+                  content={content}
+                  open={editing}
+                  onOpenChange={setEditing}
+                />
+              </>
+            )}
+          </header>
 
-      {content.videoId ? (
-        <LessonVideo videoId={content.videoId} playerRef={playerRef} />
-      ) : (
-        <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 text-center">
-          <VideoOffIcon className="size-5 text-muted-foreground/60" />
-          <p className="text-[13px] text-muted-foreground">
-            {canEdit ? 'This lesson has nothing to play yet.' : 'This lesson has no video yet.'}
-          </p>
-          {canEdit && (
-            <ContentDetailsDialog
-              orgId={orgId}
-              spaceId={spaceId}
-              content={content}
-              trigger={
-                <Button variant="outline" size="sm">
-                  Choose a video
-                </Button>
-              }
-            />
+          {content.videoId ? (
+            <LessonVideo videoId={content.videoId} playerRef={playerRef} />
+          ) : (
+            <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 text-center">
+              <VideoOffIcon className="size-5 text-muted-foreground/60" />
+              <p className="text-[13px] text-muted-foreground">
+                {canEdit ? 'This lesson has nothing to play yet.' : 'This lesson has no video yet.'}
+              </p>
+              {canEdit && (
+                <ContentDetailsDialog
+                  orgId={orgId}
+                  spaceId={spaceId}
+                  content={content}
+                  trigger={
+                    <Button variant="outline" size="sm">
+                      Choose a video
+                    </Button>
+                  }
+                />
+              )}
+            </div>
           )}
         </div>
-      )}
 
-      <Tabs defaultValue="transcript">
-        <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-border/60 bg-transparent p-0">
-          <TabsTrigger value="transcript" className={QUIET_TAB}>
-            Transcript
-          </TabsTrigger>
-          <TabsTrigger value="notes" className={QUIET_TAB}>
-            Notes
-          </TabsTrigger>
-          <TabsTrigger value="files" className={QUIET_TAB}>
-            Files
-            {content.fileCount > 0 && (
-              <span className="ml-1.5 tabular-nums text-muted-foreground/70">{content.fileCount}</span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="comments" className={QUIET_TAB}>
-            Comments
-          </TabsTrigger>
-        </TabsList>
+        <Tabs
+          defaultValue="transcript"
+          className="flex min-h-0 flex-col lg:rounded-2xl lg:border lg:bg-card lg:p-5"
+        >
+          <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-border/60 bg-transparent p-0">
+            <TabsTrigger value="transcript" className={QUIET_TAB}>
+              Transcript
+            </TabsTrigger>
+            <TabsTrigger value="notes" className={QUIET_TAB}>
+              Notes
+            </TabsTrigger>
+            <TabsTrigger value="files" className={QUIET_TAB}>
+              Files
+              {content.fileCount > 0 && (
+                <span className="ml-1.5 tabular-nums text-muted-foreground/70">
+                  {content.fileCount}
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="comments" className={QUIET_TAB}>
+              Comments
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="transcript" className="mt-4">
-          <TranscriptTab
-            videoId={content.videoId}
-            getTime={getTime}
-            onSeek={handleSeek}
-            canEdit={canEdit}
-          />
-        </TabsContent>
+          {/* The transcript owns its own scroll — the sheet follows the playhead
+              itself — so the panel must not scroll it a second time. Everything
+              else is read top to bottom and scrolls here. */}
+          <TabsContent value="transcript" className="mt-4 min-h-0 flex-1 overflow-hidden">
+            <TranscriptTab
+              videoId={content.videoId}
+              getTime={getTime}
+              onSeek={handleSeek}
+              canEdit={canEdit}
+            />
+          </TabsContent>
 
-        <TabsContent value="notes" className="mt-4">
-          <NotesTab content={content} spaceId={spaceId} canEdit={canEdit} />
-        </TabsContent>
+          <TabsContent value="notes" className="mt-4 min-h-0 flex-1 overflow-y-auto">
+            <NotesTab content={content} spaceId={spaceId} canEdit={canEdit} />
+          </TabsContent>
 
-        <TabsContent value="files" className="mt-4">
-          <ContentFiles contentId={content.contentId} canEdit={canEdit} />
-        </TabsContent>
+          <TabsContent value="files" className="mt-4 min-h-0 flex-1 overflow-y-auto">
+            <ContentFiles contentId={content.contentId} canEdit={canEdit} />
+          </TabsContent>
 
-        <TabsContent value="comments" className="mt-4">
-          <EmptyNote>
-            The discussion opens here with the classroom — comments, replies and favourites are
-            already built behind it.
-          </EmptyNote>
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="comments" className="mt-4 min-h-0 flex-1 overflow-y-auto">
+            <EmptyNote>
+              The discussion opens here with the classroom — comments, replies and favourites are
+              already built behind it.
+            </EmptyNote>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }

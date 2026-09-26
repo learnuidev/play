@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
 import { lessonRoute } from '@/lib/routes';
 import { CommunitySidebar } from './community-sidebar';
 import { CourseSidebar } from './course-sidebar';
@@ -40,7 +41,18 @@ export function AppShell({ orgId, children }: { orgId: string; children: React.R
         <SidebarInset className="min-w-0 bg-muted/30">
           <OrgTabs orgId={orgId} />
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-5xl px-6 py-6">{children}</div>
+            {/* A lesson is split down the middle — the video on one side, the
+                tabs beside it — so it gets the window's width rather than the
+                reading measure the rest of the app is set to. Still bounded:
+                past this the two halves stop being a pair. */}
+            <div
+              className={cn(
+                'mx-auto w-full px-6 py-6',
+                lesson ? 'h-full max-w-[1600px]' : 'max-w-5xl',
+              )}
+            >
+              {children}
+            </div>
           </div>
         </SidebarInset>
       </div>

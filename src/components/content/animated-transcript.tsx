@@ -51,20 +51,27 @@ import { findActiveLine, groupIntoParagraphs, type TranscriptLine } from '@/lib/
  */
 
 /**
- * Where the line being read is parked: a few pixels below the top of the sheet,
- * so the page opens on the words being said and everything below is what you
- * are reading towards.
+ * Where the line being read is parked, in pixels from the top of the sheet.
  *
- * Pixels rather than a fraction, and a spacer element rather than padding,
- * because vertical *padding* percentages resolve against an element's width — a
- * "15%" top spacer on a wide page is 15% of the page, not of the stage, which is
- * how a transcript ends up starting halfway down nothing.
+ * Far enough down that the line before it is still on screen — reading along
+ * means seeing where a sentence came from as well as where it is going — and no
+ * further, so what is below is what you are reading towards.
+ *
+ * Pixels rather than a fraction, and spacers rather than padding, because
+ * vertical *padding* percentages resolve against an element's width: a "15%" top
+ * spacer on a wide page is 15% of the page, not of the stage, which is how a
+ * transcript ends up starting halfway down nothing.
  */
-const ANCHOR_PX = 8;
+const ANCHOR_PX = 56;
 
-/** Room kept above and below, so the first and last line can both reach it. */
-const TOP_SPACER_CLASS = 'h-2';
-const BOTTOM_SPACER_CLASS = 'h-[calc(100%_-_0.5rem)]';
+/**
+ * Room kept above and below, so the first and last line can both reach the
+ * anchor. Both are derived from it, so the three cannot drift apart.
+ */
+const topSpacer = { height: ANCHOR_PX };
+// The stage's own height less the anchor: any less and the last line could not
+// be scrolled up to where every other line is read.
+const bottomSpacer = { height: `calc(100% - ${ANCHOR_PX}px)` };
 
 /** Reading `scrollTop` forces a style flush, so it is trusted for a few frames. */
 const RESYNC_FRAMES = 12;
@@ -400,10 +407,10 @@ export function AnimatedTranscript({
         // scrolls it, whatever the page around it is doing.
         className="tt-scroll tt-stage relative h-full overflow-y-auto"
       >
-        {/* Room for the first and the last line to reach the anchor. The bottom
-            one is the stage's own height less the anchor, so following stays
-            exact to the very last word instead of running out of scroll. */}
-        <div aria-hidden className={TOP_SPACER_CLASS} />
+        {/* Room for the first and the last line to reach the anchor, so
+            following stays exact to the very last word instead of running out
+            of scroll. */}
+        <div aria-hidden style={topSpacer} />
 
         {paragraphs.map((paragraph) => (
           <p key={paragraph.key} className="tt-para mx-auto max-w-3xl">
@@ -422,7 +429,7 @@ export function AnimatedTranscript({
           </p>
         ))}
 
-        <div aria-hidden className={BOTTOM_SPACER_CLASS} />
+        <div aria-hidden style={bottomSpacer} />
       </div>
 
       {/* Offered, not taken: the sheet has stopped following, and this is the
@@ -431,7 +438,7 @@ export function AnimatedTranscript({
         <button
           type="button"
           onClick={resumeFollowing}
-          className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm backdrop-blur transition-colors hover:bg-background"
+          className="absolute bottom-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent"
         >
           <ArrowDownIcon className="size-3.5" />
           Back to the current line
