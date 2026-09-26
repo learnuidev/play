@@ -342,7 +342,7 @@ export default function ContentPage() {
     // whatever is left. `minmax(0, 1fr)` rather than `1fr` so the split can be
     // shorter than its contents — which is what lets the panel scroll inside
     // itself instead of the page scrolling as a whole.
-    <div className="grid gap-5 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)]">
+    <div className="grid gap-x-5 gap-y-4 lg:h-full lg:grid-rows-[auto_auto_minmax(0,1fr)] lg:gap-y-5">
       <Link
         href={`/o/${orgId}/spaces/${spaceId}`}
         className="inline-flex w-fit items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -351,61 +351,66 @@ export default function ContentPage() {
         {section ? section.title : 'Spaces'}
       </Link>
 
-      {/* Half the width each: what the lesson is on the left, everything filed
-          under it on the right. Below `lg` the two stack and the page scrolls
-          normally, because a phone has no second half to give. */}
-      <div className="grid min-h-0 gap-6 lg:grid-cols-2">
-        <div className="grid content-start gap-5">
-          <header className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <Meta content={content} />
-              <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
-                {content.title}
-              </h1>
-            </div>
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <Meta content={content} />
+          <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
+            {content.title}
+          </h1>
+        </div>
 
-            {canEdit && (
-              <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="-mr-2 size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
-                      aria-label="Lesson actions"
-                    >
-                      <MoreHorizontalIcon />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    {/* The menu closes before this opens: a dialog inside a menu
-                        item fights the menu for focus. */}
-                    <DropdownMenuItem onSelect={() => setTimeout(() => setEditing(true), 0)}>
-                      <PencilIcon />
-                      Edit details
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={deleteContent}
-                    >
-                      <Trash2Icon />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+        {canEdit && (
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="-mr-2 size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
+                  aria-label="Lesson actions"
+                >
+                  <MoreHorizontalIcon />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {/* The menu closes before this opens: a dialog inside a menu
+                    item fights the menu for focus. */}
+                <DropdownMenuItem onSelect={() => setTimeout(() => setEditing(true), 0)}>
+                  <PencilIcon />
+                  Edit details
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={deleteContent}
+                >
+                  <Trash2Icon />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-                <ContentDetailsDialog
-                  orgId={orgId}
-                  spaceId={spaceId}
-                  content={content}
-                  open={editing}
-                  onOpenChange={setEditing}
-                />
-              </>
-            )}
-          </header>
+            <ContentDetailsDialog
+              orgId={orgId}
+              spaceId={spaceId}
+              content={content}
+              open={editing}
+              onOpenChange={setEditing}
+            />
+          </>
+        )}
+      </header>
 
+      {/* Half the width each: the video on the left, everything filed under it on
+          the right. Below `lg` the two stack and the page scrolls normally,
+          because a phone has no second half to give.
+
+          The title sits above both rather than inside the left half, which is
+          what lets the video and the panel start on the same line — a heading in
+          the video's own column would push it down by its own height and leave
+          the two columns visibly out of step. */}
+      <div className="grid min-h-0 gap-6 lg:mt-2 lg:grid-cols-2">
+        <div>
           {content.videoId ? (
             <LessonVideo videoId={content.videoId} playerRef={playerRef} />
           ) : (
