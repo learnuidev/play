@@ -1,5 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
+  BatchGetCommand,
   DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
@@ -18,6 +19,46 @@ const client = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 export const documentClient = client;
 
 export const TABLE = env.tableName;
+
+const BATCH_GET_ATTEMPTS = 3;
+const BATCH_GET_BACKOFF_MS = 50;
+
+/**
+ * Fetches items by key, retrying the keys DynamoDB reports as unprocessed.
+ *
+ * `BatchGetItem` can return a partial result under throttling without failing
+ * the call, which would otherwise drop rows from a list silently. Keys are
+ * capped at 100 by DynamoDB, so callers page first and batch second.
+ */
+export async function batchGetItems<T>(
+  tableName: string,
+  keys: Record<string, unknown>[],
+): Promise<T[]> {
+  const items: T[] = [];
+  let pending = keys;
+
+  for (let attempt = 0; attempt < BATCH_GET_ATTEMPTS && pending.length > 0; attempt += 1) {
+    // Immediate retries would hit the same throttling, so space them out.
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, BATCH_GET_BACKOFF_MS * attempt));
+
+    const batch = await client.send(
+      new BatchGetCommand({ RequestItems: { [tableName]: { Keys: pending } } }),
+    );
+
+    items.push(...((batch.Responses?.[tableName] ?? []) as T[]));
+    pending = (batch.UnprocessedKeys?.[tableName]?.Keys ?? []) as Record<string, unknown>[];
+  }
+
+  return items;
+}
+
+/**
+ * Whether a conditional write failed because its condition was not met — the
+ * signal a toggle uses to tell "I changed it" from "it was already so".
+ */
+export function isConditionalCheckFailed(err: unknown): boolean {
+  return err instanceof Error && err.name === 'ConditionalCheckFailedException';
+}
 
 export async function putVideo(video: Video): Promise<void> {
   await client.send(new PutCommand({ TableName: TABLE, Item: video }));

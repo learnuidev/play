@@ -42,6 +42,12 @@ provider:
     ORGANIZATIONS_TABLE: !Ref OrganizationsTable
     ORG_MEMBERS_TABLE: !Ref OrgMembersTable
     SPACES_TABLE: !Ref SpacesTable
+    SECTIONS_TABLE: !Ref SectionsTable
+    CONTENTS_TABLE: !Ref ContentsTable
+    CONTENT_FILES_TABLE: !Ref ContentFilesTable
+    FAVOURITES_TABLE: !Ref FavouritesTable
+    PLAYLIST_TABLE: !Ref PlaylistTable
+    COMMENTS_TABLE: !Ref CommentsTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
@@ -94,6 +100,40 @@ provider:
           Resource:
             - !GetAtt SpacesTable.Arn
             - !Sub "${SpacesTable.Arn}/index/*"
+        # What a space holds: its sections, the content filed under them, and the
+        # files attached to that content.
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:BatchGetItem
+          Resource:
+            - !GetAtt SectionsTable.Arn
+            - !Sub "${SectionsTable.Arn}/index/*"
+            - !GetAtt ContentsTable.Arn
+            - !Sub "${ContentsTable.Arn}/index/*"
+            - !GetAtt ContentFilesTable.Arn
+            - !Sub "${ContentFilesTable.Arn}/index/*"
+        # Learner state: what a user has favourited, what is in their learning
+        # playlist, and the discussion on a piece of content.
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:BatchGetItem
+          Resource:
+            - !GetAtt FavouritesTable.Arn
+            - !Sub "${FavouritesTable.Arn}/index/*"
+            - !GetAtt PlaylistTable.Arn
+            - !Sub "${PlaylistTable.Arn}/index/*"
+            - !GetAtt CommentsTable.Arn
+            - !Sub "${CommentsTable.Arn}/index/*"
         - Effect: Allow
           Action:
             - s3:GetObject
@@ -344,6 +384,250 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  # Sections — the headings a space's content is published under. Creating and
+  # listing them is addressed under the space; the rest by their own id.
+  create-section:
+    handler: src/functions/sections/create-section.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/sections
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-sections:
+    handler: src/functions/sections/list-sections.handler
+    events:
+      - http:
+          # The space outline: its sections, each with the content under it.
+          path: spaces/{spaceId}/sections
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-section:
+    handler: src/functions/sections/get-section.handler
+    events:
+      - http:
+          path: sections/{sectionId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-section:
+    handler: src/functions/sections/update-section.handler
+    events:
+      - http:
+          path: sections/{sectionId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  delete-section:
+    handler: src/functions/sections/delete-section.handler
+    events:
+      - http:
+          path: sections/{sectionId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # Content — one piece of a section: a video, its notes, and its files.
+  create-content:
+    handler: src/functions/contents/create-content.handler
+    events:
+      - http:
+          path: sections/{sectionId}/contents
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-contents:
+    handler: src/functions/contents/list-contents.handler
+    events:
+      - http:
+          path: sections/{sectionId}/contents
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-content:
+    handler: src/functions/contents/get-content.handler
+    events:
+      - http:
+          path: contents/{contentId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-content:
+    handler: src/functions/contents/update-content.handler
+    events:
+      - http:
+          path: contents/{contentId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  delete-content:
+    handler: src/functions/contents/delete-content.handler
+    events:
+      - http:
+          path: contents/{contentId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # Files attached to a piece of content. The upload is a presigned PUT the
+  # client sends straight to S3; only the reservation passes through the API.
+  upload-content-file:
+    handler: src/functions/contents/upload-content-file.handler
+    events:
+      - http:
+          path: contents/{contentId}/files
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-content-files:
+    handler: src/functions/contents/list-content-files.handler
+    events:
+      - http:
+          path: contents/{contentId}/files
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-content-file:
+    handler: src/functions/contents/get-content-file.handler
+    events:
+      - http:
+          path: contents/{contentId}/files/{fileId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  delete-content-file:
+    handler: src/functions/contents/delete-content-file.handler
+    events:
+      - http:
+          path: contents/{contentId}/files/{fileId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # Learner state. Reading the content is all any of these needs: favouriting,
+  # playlisting, and commenting are things a viewer does, not editorial acts.
+  favourite-content:
+    handler: src/functions/learning/favourite-content.handler
+    events:
+      - http:
+          path: contents/{contentId}/favourite
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  unfavourite-content:
+    handler: src/functions/learning/unfavourite-content.handler
+    events:
+      - http:
+          path: contents/{contentId}/favourite
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  add-to-playlist:
+    handler: src/functions/learning/add-to-playlist.handler
+    events:
+      - http:
+          path: contents/{contentId}/playlist
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  remove-from-playlist:
+    handler: src/functions/learning/remove-from-playlist.handler
+    events:
+      - http:
+          path: contents/{contentId}/playlist
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-favourites:
+    handler: src/functions/learning/list-favourites.handler
+    events:
+      - http:
+          path: me/favourites
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-playlist:
+    handler: src/functions/learning/list-playlist.handler
+    events:
+      - http:
+          path: me/playlist
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # The discussion on a piece of content. Comments are addressed under their
+  # content because that is the pair the table is keyed by.
+  list-comments:
+    handler: src/functions/comments/list-comments.handler
+    events:
+      - http:
+          path: contents/{contentId}/comments
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  create-comment:
+    handler: src/functions/comments/create-comment.handler
+    events:
+      - http:
+          path: contents/{contentId}/comments
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-comment:
+    handler: src/functions/comments/update-comment.handler
+    events:
+      - http:
+          path: contents/{contentId}/comments/{commentId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  delete-comment:
+    handler: src/functions/comments/delete-comment.handler
+    events:
+      - http:
+          path: contents/{contentId}/comments/{commentId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  favourite-comment:
+    handler: src/functions/comments/favourite-comment.handler
+    events:
+      - http:
+          path: contents/{contentId}/comments/{commentId}/favourite
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  unfavourite-comment:
+    handler: src/functions/comments/unfavourite-comment.handler
+    events:
+      - http:
+          path: contents/{contentId}/comments/{commentId}/favourite
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
@@ -533,6 +817,157 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+
+    # Sections — the headings a space's content is published under. Order is a
+    # decision the author makes, so it is the range key rather than createdAt;
+    # `organizationId` is denormalized from the space so authorizing a section
+    # (and anything under it) is one read plus the membership check.
+    SectionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: sectionId
+            AttributeType: S
+          - AttributeName: spaceId
+            AttributeType: S
+          - AttributeName: position
+            AttributeType: N
+        KeySchema:
+          - AttributeName: sectionId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: SpacePositionIndex
+            KeySchema:
+              - AttributeName: spaceId
+                KeyType: HASH
+              - AttributeName: position
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # Content — one piece of a section. Two indexes, because a course is read
+    # two ways: a section's own list in its authored order, and a whole space's
+    # outline in one query rather than one per section.
+    ContentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: contentId
+            AttributeType: S
+          - AttributeName: sectionId
+            AttributeType: S
+          - AttributeName: spaceId
+            AttributeType: S
+          - AttributeName: position
+            AttributeType: N
+        KeySchema:
+          - AttributeName: contentId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: SectionPositionIndex
+            KeySchema:
+              - AttributeName: sectionId
+                KeyType: HASH
+              - AttributeName: position
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: SpacePositionIndex
+            KeySchema:
+              - AttributeName: spaceId
+                KeyType: HASH
+              - AttributeName: position
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # Files attached to a piece of content. Their own table rather than an array
+    # on the content, so adding or removing one is a single item write that
+    # cannot race with an edit to the notes beside it. No index: a file is only
+    # ever read under the content it belongs to.
+    ContentFilesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: contentId
+            AttributeType: S
+          - AttributeName: fileId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: contentId
+            KeyType: HASH
+          - AttributeName: fileId
+            KeyType: RANGE
+
+    # What each learner has favourited — content and comments in one table,
+    # because the relation is the same one and a learner's own list is then a
+    # single query. The count of a target's favourites is kept on the target
+    # itself, so this table is never read to render one.
+    FavouritesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: targetKey
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: targetKey
+            KeyType: RANGE
+
+    # A learner's learning playlist. Keyed by content so "is this in my
+    # playlist?" is one lookup and removing one is one delete; the order it was
+    # added in lives in an index, because neither of those can be answered from
+    # an `addedAt` key without knowing the timestamp first.
+    PlaylistTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: contentId
+            AttributeType: S
+          - AttributeName: addedAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: contentId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: UserAddedIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: addedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # The discussion on a piece of content. Keyed by content and comment so a
+    # whole thread is one query; ULIDs make the key order the order things were
+    # said in. No index: a comment is always read under its content.
+    CommentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: contentId
+            AttributeType: S
+          - AttributeName: commentId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: contentId
+            KeyType: HASH
+          - AttributeName: commentId
+            KeyType: RANGE
 
     VideosBucket:
       Type: AWS::S3::Bucket
@@ -920,3 +1355,21 @@ resources:
     SpacesTableName:
       Description: Spaces (courses) DynamoDB table name
       Value: !Ref SpacesTable
+    SectionsTableName:
+      Description: Space sections DynamoDB table name
+      Value: !Ref SectionsTable
+    ContentsTableName:
+      Description: Section content DynamoDB table name
+      Value: !Ref ContentsTable
+    ContentFilesTableName:
+      Description: Content attachments DynamoDB table name
+      Value: !Ref ContentFilesTable
+    FavouritesTableName:
+      Description: Learner favourites DynamoDB table name
+      Value: !Ref FavouritesTable
+    PlaylistTableName:
+      Description: Learner playlists DynamoDB table name
+      Value: !Ref PlaylistTable
+    CommentsTableName:
+      Description: Content comments DynamoDB table name
+      Value: !Ref CommentsTable

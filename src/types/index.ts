@@ -216,3 +216,211 @@ export interface OrgMember {
   invitedBy?: string;
   joinedAt: number;
 }
+
+/**
+ * What a piece of content *is*. One value today — a video from the
+ * organization's library — with the notes beside it.
+ *
+ * It is stored as a string rather than a number so a second kind (`TEXT`,
+ * `FILE`, `LIVE`) can be added later without migrating existing rows, and so an
+ * unknown value read back by an older client is inert rather than nonsense.
+ */
+export type ContentType = 'VIDEO';
+
+export const CONTENT_TYPES: ContentType[] = ['VIDEO'];
+
+/** A section of a space: the grouping its content is published under. */
+export interface Section {
+  /** ULID, the table key. */
+  sectionId: string;
+  /** The space it belongs to. A section never exists outside one. */
+  spaceId: string;
+  /**
+   * The organization that owns the space. Denormalized from the space so
+   * authorizing a section — and anything filed under it — is one read plus the
+   * membership check, rather than a walk up the tree. A space never changes
+   * organization, so the copy cannot drift.
+   */
+  organizationId: string;
+  /** Required, 2–80 characters (whitespace collapsed). */
+  title: string;
+  /** Optional, ≤ 500 characters. */
+  description: string;
+  /** 1-based order inside the space. Sparse: gaps are legal. */
+  position: number;
+  /** Cognito `sub` of the user who created it. */
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A section together with everything filed under it, as the outline needs it. */
+export interface SectionWithContents extends Section {
+  contents: Content[];
+}
+
+/** One piece of content in a section: a video and the material around it. */
+export interface Content {
+  /** ULID, the table key. */
+  contentId: string;
+  sectionId: string;
+  /** Denormalized from the section, so a content read authorizes in one hop. */
+  spaceId: string;
+  /** Denormalized from the space, for the same reason as on a section. */
+  organizationId: string;
+  /** Required, 2–120 characters (whitespace collapsed). */
+  title: string;
+  type: ContentType;
+  /**
+   * The video this content plays, for `VIDEO` content. Optional so content can
+   * be drafted before its video is picked; validated to belong to the same
+   * organization when it is set.
+   */
+  videoId?: string;
+  /**
+   * The lesson notes, as a TipTap/ProseMirror document (`{ type: 'doc', … }`)
+   * rather than an HTML string: the frontend renders the tree directly, so
+   * author-supplied markup is never handed to `dangerouslySetInnerHTML`.
+   */
+  notes?: Record<string, unknown>;
+  /** 1-based order inside the section. Sparse: gaps are legal. */
+  position: number;
+  /**
+   * Counters kept on the row rather than counted on read: a content page shows
+   * all three, and counting them would otherwise be a query each.
+   */
+  fileCount: number;
+  favouriteCount: number;
+  commentCount: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * A file attached to a piece of content. Its own table rather than an array on
+ * the content, so adding or removing one is a single item write that cannot
+ * race with an edit to the notes beside it.
+ */
+export interface ContentFile {
+  /** Partition key. */
+  contentId: string;
+  /** ULID, the sort key — and the part of the S3 key that makes it unique. */
+  fileId: string;
+  /** Original file name, for display and for the download's name. */
+  name: string;
+  /** S3 key: contents/{contentId}/{fileId}/{name} */
+  key: string;
+  /** MIME type recorded at upload, and sent back with the download. */
+  contentType: string;
+  size?: number;
+  /** Cognito `sub` of the user who attached it. */
+  uploadedBy: string;
+  createdAt: number;
+}
+
+/** What a piece of content is called when a learner is looking at it. */
+export type FavouriteTargetType = 'CONTENT' | 'COMMENT';
+
+export const FAVOURITE_TARGET_TYPES: FavouriteTargetType[] = ['CONTENT', 'COMMENT'];
+
+/**
+ * One learner's favourite, over a piece of content or over a single comment.
+ *
+ * Both kinds live in one table because the relation is the same one — a user
+ * marks a target — and because the learner's own list is then a single query
+ * rather than a merge of two.
+ */
+export interface Favourite {
+  /** Cognito `sub` of the learner. Partition key. */
+  userId: string;
+  /**
+   * Sort key: `CONTENT#<contentId>` or `COMMENT#<commentId>`. Prefixing the id
+   * with its type keeps the two kinds in one key space with no collision, and
+   * groups a learner's list by kind.
+   */
+  targetKey: string;
+  targetType: FavouriteTargetType;
+  /** The contentId or commentId, without the prefix. */
+  targetId: string;
+  /**
+   * The content a favourited comment hangs off, so a comment favourite can be
+   * read back (a comment is keyed by content *and* comment id). Absent on
+   * content favourites, which already carry their content id as the target.
+   */
+  contentId?: string;
+  createdAt: number;
+}
+
+/** A favourite together with what it points at, when that still exists. */
+export interface FavouriteEntry extends Favourite {
+  content?: Content;
+  comment?: Comment;
+}
+
+/**
+ * A piece of content a learner has put in their learning playlist. Private to
+ * that learner — a playlist is what you mean to watch, not a public signal.
+ */
+export interface PlaylistItem {
+  /** Cognito `sub` of the learner. Partition key. */
+  userId: string;
+  /** Sort key. */
+  contentId: string;
+  addedAt: number;
+}
+
+/** A playlist entry together with the content it points at, when it exists. */
+export interface PlaylistEntry extends PlaylistItem {
+  content?: Content;
+}
+
+/**
+ * A comment on a piece of content, or a reply to one.
+ *
+ * Threads are two levels deep on purpose: a reply to a reply keeps the same
+ * top-level `parentId` and records who it answers in `replyToId`. That is what
+ * the interfaces people already use do, and it means a content's whole
+ * discussion is one query with no recursive assembly.
+ */
+export interface Comment {
+  /** Partition key: the content being discussed. */
+  contentId: string;
+  /** Sort key. ULID, so the key order is the order they were written in. */
+  commentId: string;
+  /** Denormalized from the content, so a comment authorizes in one hop. */
+  organizationId: string;
+  /** Cognito `sub` of the author. */
+  authorId: string;
+  /** The author's name as it was when they wrote it. */
+  authorName: string;
+  /** 1–2000 characters. Emptied when the comment is deleted. */
+  body: string;
+  /** The top-level comment this belongs to. Absent on a top-level comment. */
+  parentId?: string;
+  /** The comment this one answers, when it is a reply to a reply. */
+  replyToId?: string;
+  /** Replies directly under this comment. Always 0 on a reply. */
+  replyCount: number;
+  favouriteCount: number;
+  editedAt?: number;
+  /**
+   * Set instead of removing the row when a comment that has replies is deleted,
+   * so the replies keep their parent. The body is emptied at the same time.
+   */
+  deletedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A top-level comment and its replies, in the order they were written. */
+export interface CommentThread {
+  comment: Comment;
+  replies: Comment[];
+}
+
+/** What the caller themselves has done with a piece of content. */
+export interface ContentViewerState {
+  favourited: boolean;
+  inPlaylist: boolean;
+}

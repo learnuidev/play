@@ -28,6 +28,11 @@ interface SignedUrl {
   expiresAt: number;
 }
 
+/** The distribution's origin, with no key path — for building sibling URLs. */
+export function cloudfrontOrigin(): string {
+  return `https://${env.cloudfrontDomain}`;
+}
+
 /**
  * Signs a single object URL using a path-scoped custom policy that covers
  * every file under `wildcardPrefix`. Because the policy is path-scoped

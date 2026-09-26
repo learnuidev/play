@@ -1,8 +1,11 @@
+import { getContent } from './contents';
+import { getComment } from './comments';
 import { getVideo } from './dynamodb';
 import { HttpError } from './http';
 import { getMembership } from './organizations';
+import { getSection } from './sections';
 import { getSpace } from './spaces';
-import type { OrgRole, Space, Video } from '../types';
+import type { Comment, Content, OrgRole, Section, Space, Video } from '../types';
 
 /** Roles that may create, change, or delete what an organization owns. */
 const WRITE_ROLES: OrgRole[] = ['ADMIN', 'EDITOR'];
@@ -78,4 +81,83 @@ export async function requireSpaceAccess(
 
   await requireOrganizationAccess(userId, space.organizationId, action);
   return space;
+}
+
+/**
+ * Loads a section and authorizes the caller against the organization that owns
+ * the space it belongs to.
+ *
+ * The section carries its organization, so this is a read plus the membership
+ * check — no walk space-ward. A section cannot be moved to another space, so
+ * the copy cannot fall out of step with its parent.
+ */
+export async function requireSectionAccess(
+  sectionId: string,
+  userId: string,
+  action: AccessAction,
+): Promise<Section> {
+  const section = await getSection(sectionId);
+  if (!section) throw new HttpError(404, 'Section not found');
+
+  await requireOrganizationAccess(userId, section.organizationId, action);
+  return section;
+}
+
+/**
+ * Loads a piece of content and authorizes the caller against the organization
+ * that owns it. Content carries both its section and its organization, so this
+ * is likewise a read plus the membership check.
+ */
+export async function requireContentAccess(
+  contentId: string,
+  userId: string,
+  action: AccessAction,
+): Promise<Content> {
+  const content = await getContent(contentId);
+  if (!content) throw new HttpError(404, 'Content not found');
+
+  await requireOrganizationAccess(userId, content.organizationId, action);
+  return content;
+}
+
+/**
+ * Loads a comment and authorizes the caller against the organization that owns
+ * the content it is on. Comments are addressed by both ids, because the pair is
+ * what the table is keyed by — there is no index that would answer by comment
+ * id alone, and none is needed while a comment is always read under its content.
+ */
+export async function requireCommentAccess(
+  contentId: string,
+  commentId: string,
+  userId: string,
+  action: AccessAction,
+): Promise<Comment> {
+  const comment = await getComment(contentId, commentId);
+  if (!comment) throw new HttpError(404, 'Comment not found');
+
+  await requireOrganizationAccess(userId, comment.organizationId, action);
+  return comment;
+}
+
+/**
+ * Authorizes a change to a comment that is the author's own business: reading
+ * the organization is not enough to edit someone else's words.
+ *
+ * Returns the role the caller holds, so a handler can additionally allow an
+ * admin or editor to moderate — the shape `requireOrganizationAccess` already
+ * uses.
+ */
+export async function requireCommentAuthor(
+  contentId: string,
+  commentId: string,
+  userId: string,
+): Promise<{ comment: Comment; role: OrgRole }> {
+  const comment = await getComment(contentId, commentId);
+  if (!comment) throw new HttpError(404, 'Comment not found');
+
+  const role = await requireOrganizationAccess(userId, comment.organizationId, 'read');
+  if (comment.authorId !== userId && role === 'VIEWER') {
+    throw new HttpError(403, 'Only the author can change this comment');
+  }
+  return { comment, role };
 }
