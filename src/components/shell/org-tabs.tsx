@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { lessonRoute } from '@/lib/routes';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { AccountMenu } from './account-menu';
 
@@ -17,6 +18,12 @@ const TABS = [
 export function OrgTabs({ orgId }: { orgId: string }) {
   const pathname = usePathname();
   const base = `/o/${orgId}`;
+
+  // A lesson takes the whole window — it is watched and read rather than
+  // navigated around, and a row offering Home, Videos, Spaces and Members above
+  // a video is chrome nobody asked for. The sidebar already shows the course it
+  // belongs to, and that is the way back.
+  if (lessonRoute(pathname)) return null;
 
   return (
     <div className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">

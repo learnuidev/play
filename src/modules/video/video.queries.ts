@@ -31,10 +31,15 @@ export function useVideos(status: VideoStatus | 'ALL' = 'ALL', organizationId?: 
   });
 }
 
-export function useVideo(videoId: string) {
+/**
+ * One video. `enabled` lets a page that only sometimes has a video id — a
+ * lesson whose video has not been chosen yet — ask without fetching.
+ */
+export function useVideo(videoId: string, enabled = true) {
   return useQuery({
     queryKey: videoKeys.detail(videoId),
     queryFn: () => api.getVideo(videoId),
+    enabled: Boolean(videoId) && enabled,
     refetchInterval: (query) => {
       const video = query.state.data?.video;
       const needsPoll =

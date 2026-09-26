@@ -1,99 +1,203 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeftIcon,
-  CirclePlayIcon,
+  ChevronLeftIcon,
   HeartIcon,
-  ListVideoIcon,
   Loader2Icon,
   MessageSquareIcon,
+  MoreHorizontalIcon,
   PaperclipIcon,
   PencilIcon,
   Trash2Icon,
   VideoOffIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatDuration } from '@/lib/utils';
+import { parseVtt } from '@/lib/vtt';
+import { buildTranscriptLines } from '@/lib/transcript';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState, PageCard } from '@/components/shell/page-card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { AnimatedTranscript } from '@/components/content/animated-transcript';
 import { ContentDetailsDialog } from '@/components/content/content-details-dialog';
 import { ContentFiles } from '@/components/content/content-files';
 import { NotesEditor } from '@/components/content/notes-editor';
 import { isEmptyNotes } from '@/components/content/notes';
 import { NotesView } from '@/components/content/notes-view';
-import { VideoThumbnail } from '@/components/video/video-thumbnail';
+import { VideoPlayer, type VideoPlayerHandle } from '@/components/video-player';
 import { VideoStatusBadge } from '@/components/video/status-badge';
 import { useContent, useDeleteContent, useUpdateContent } from '@/modules/content/content.queries';
 import { useOrganization } from '@/modules/organization/organization.queries';
-import { useVideo } from '@/modules/video/video.queries';
+import { useSubtitles } from '@/modules/subtitle/subtitle.queries';
+import { useThumbnail } from '@/modules/thumbnail/thumbnail.queries';
+import { useStream, useVideo } from '@/modules/video/video.queries';
 import { useSection } from '@/modules/section/section.queries';
-import { CONTENT_TYPE_LABELS, type Content, type NotesDocument } from '@/types';
+import type { Content, NotesDocument } from '@/types';
 
 /**
- * The video a lesson plays, as a card that leads to the player.
+ * A lesson: its title, the video, and everything filed under it.
  *
- * Playback itself lives with every other video — the player, the synced
- * transcript, the audio-only mode — so a lesson links there rather than growing
- * a second way to watch the same manifest.
+ * The player is here rather than linked away to, because a lesson *is* the
+ * video and the material around it — being sent to another page to watch it and
+ * back again to read the notes is what made the two feel like separate things.
+ *
+ * Captions are deliberately not switched on for the player: the transcript tab
+ * is the words, animated and seekable, and painting a second copy of the same
+ * sentence over the picture would only be in the way.
  */
-function LinkedVideo({ orgId, videoId }: { orgId: string; videoId: string }) {
-  const { data, isLoading } = useVideo(videoId);
-  const video = data?.video;
 
-  if (isLoading) return <Skeleton className="h-24 rounded-xl" />;
+/** Quiet tabs: an underline, not pills, on a page whose subject is the video. */
+const QUIET_TAB =
+  'rounded-none border-b-2 border-transparent bg-transparent px-0 pb-2 pt-0 text-[13px] font-medium text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none';
 
-  if (!video) {
+/** What the lesson carries, on one quiet line above its name. */
+function Meta({ content }: { content: Content }) {
+  const stats = [
+    { icon: PaperclipIcon, value: content.fileCount, label: 'files' },
+    { icon: HeartIcon, value: content.favouriteCount, label: 'favourites' },
+    { icon: MessageSquareIcon, value: content.commentCount, label: 'comments' },
+  ].filter((stat) => stat.value > 0);
+
+  if (stats.length === 0) return null;
+
+  return (
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      {stats.map(({ icon: Icon, value, label }) => (
+        <span key={label} className="inline-flex items-center gap-1" title={`${value} ${label}`}>
+          <Icon className="size-3" />
+          <span className="tabular-nums">{value}</span>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/** A quiet line where a tab has nothing to show yet. */
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="grid min-h-32 place-items-center px-6 text-center text-[13px] leading-relaxed text-muted-foreground">
+      {children}
+    </p>
+  );
+}
+
+/** The video, playing where it is talked about. */
+function LessonVideo({
+  videoId,
+  playerRef,
+}: {
+  videoId: string;
+  playerRef: React.MutableRefObject<VideoPlayerHandle | null>;
+}) {
+  const { data: videoRes } = useVideo(videoId);
+  const video = videoRes?.video;
+  const isReady = video?.status === 'READY';
+
+  const { data: stream } = useStream(videoId, isReady);
+  const { data: thumbnail } = useThumbnail(videoId, Boolean(isReady && video?.thumbnailKey));
+
+  if (!isReady || !stream) {
     return (
-      <p className="rounded-xl border border-dashed px-3 py-6 text-sm text-muted-foreground">
-        This lesson points at a video that is no longer in the library.
-      </p>
+      <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-2xl border bg-muted/40">
+        {video ? (
+          <div className="grid justify-items-center gap-2 text-center">
+            <VideoStatusBadge status={video.status} />
+            <p className="max-w-xs text-[13px] text-muted-foreground">
+              {video.status === 'FAILED'
+                ? 'This video failed to encode. Open it in the library to retry.'
+                : 'The video is still being prepared.'}
+            </p>
+          </div>
+        ) : (
+          <Skeleton className="size-full rounded-2xl" />
+        )}
+      </div>
     );
   }
 
   return (
-    <Link
-      href={`/o/${orgId}/videos/${video.videoId}/preview`}
-      className="flex items-center gap-3 rounded-xl border bg-background p-3 transition-colors hover:border-ring/50"
-    >
-      <VideoThumbnail video={video} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{video.title}</span>
-        <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-          <VideoStatusBadge status={video.status} />
-          {video.duration ? <span>{formatDuration(video.duration)}</span> : null}
-        </span>
-      </span>
-      <CirclePlayIcon className="size-5 shrink-0 text-muted-foreground" />
-    </Link>
-  );
-}
-
-/** The counts a lesson carries. The classroom is what makes them interactive. */
-function Counters({ content }: { content: Content }) {
-  const items = [
-    { icon: PaperclipIcon, value: content.fileCount, label: 'files' },
-    { icon: HeartIcon, value: content.favouriteCount, label: 'favourites' },
-    { icon: MessageSquareIcon, value: content.commentCount, label: 'comments' },
-  ];
-
-  return (
-    <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-      {items.map(({ icon: Icon, value, label }) => (
-        <span key={label} className="inline-flex items-center gap-1.5">
-          <Icon className="size-3.5" />
-          {value} {label}
-        </span>
-      ))}
+    <div className="overflow-hidden rounded-2xl ring-1 ring-black/5">
+      <VideoPlayer
+        ref={playerRef}
+        src={stream.manifestUrl}
+        signedQuery={stream.signedQuery}
+        poster={thumbnail?.thumbnailUrl}
+      />
     </div>
   );
 }
 
+/** The video's words, animated word by word and seekable by tapping one. */
+function TranscriptTab({
+  videoId,
+  getTime,
+  onSeek,
+  canEdit,
+}: {
+  videoId?: string;
+  /** Playback position in milliseconds, read fresh every frame. */
+  getTime: () => number;
+  onSeek: (timeMs: number) => void;
+  canEdit: boolean;
+}) {
+  const { data: videoRes } = useVideo(videoId ?? '', Boolean(videoId));
+  const video = videoRes?.video;
+  const hasSubtitles = video?.subtitleStatus === 'READY';
+
+  const { data: subtitles } = useSubtitles(videoId ?? '', Boolean(videoId) && hasSubtitles);
+
+  const lines = useMemo(() => {
+    if (!subtitles?.content) return [];
+    return buildTranscriptLines(parseVtt(subtitles.content), subtitles.words);
+  }, [subtitles]);
+
+  if (!videoId) {
+    return (
+      <EmptyNote>
+        {canEdit
+          ? 'A transcript appears here once this lesson has a video and its subtitles have been generated.'
+          : 'This lesson has no video yet.'}
+      </EmptyNote>
+    );
+  }
+
+  if (video && video.subtitleStatus !== 'READY') {
+    return (
+      <EmptyNote>
+        {video.subtitleStatus === 'GENERATING'
+          ? 'The transcript is still being written.'
+          : canEdit
+            ? 'This video has no transcript yet. Generate subtitles from the video’s own page and the transcript will appear here.'
+            : 'This lesson has no transcript yet.'}
+      </EmptyNote>
+    );
+  }
+
+  if (lines.length === 0) {
+    return <Skeleton className="h-[380px] rounded-2xl sm:h-[440px]" />;
+  }
+
+  return (
+    <AnimatedTranscript
+      lines={lines}
+      getTime={getTime}
+      onSeek={onSeek}
+      className="h-[380px] rounded-2xl sm:h-[440px]"
+    />
+  );
+}
+
 /** The notes, rendered; and the editor that replaces them while they are edited. */
-function NotesSection({ content, spaceId, canEdit }: { content: Content; spaceId: string; canEdit: boolean }) {
+function NotesTab({ content, spaceId, canEdit }: { content: Content; spaceId: string; canEdit: boolean }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<NotesDocument | undefined>(content.notes);
   const update = useUpdateContent(content.contentId, spaceId);
@@ -138,20 +242,19 @@ function NotesSection({ content, spaceId, canEdit }: { content: Content; spaceId
   }
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-2">
       {hasNotes ? (
         <NotesView notes={content.notes} />
       ) : (
-        <p className="text-sm italic text-muted-foreground">
-          {canEdit ? 'No notes yet.' : 'No notes for this lesson.'}
-        </p>
+        <EmptyNote>{canEdit ? 'No notes yet.' : 'No notes for this lesson.'}</EmptyNote>
       )}
 
       {canEdit && (
         <div>
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
+            className="h-7 gap-1.5 px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground"
             onClick={() => {
               setDraft(content.notes);
               setEditing(true);
@@ -166,7 +269,6 @@ function NotesSection({ content, spaceId, canEdit }: { content: Content; spaceId
   );
 }
 
-/** One lesson: its video, its notes, and its files. */
 export default function ContentPage() {
   const { orgId, spaceId, contentId } = useParams<{
     orgId: string;
@@ -174,6 +276,7 @@ export default function ContentPage() {
     contentId: string;
   }>();
   const router = useRouter();
+  const [editing, setEditing] = useState(false);
 
   const { data: orgData } = useOrganization(orgId);
   const canEdit = orgData ? orgData.organization.role !== 'VIEWER' : false;
@@ -181,8 +284,19 @@ export default function ContentPage() {
   const { data, isLoading, isError, error } = useContent(contentId);
   const content = data?.content;
 
-  // The section is only needed for the breadcrumb, so a missing one is not an
-  // error — it just means the lesson is shown without its heading.
+  // The transcript drives itself off the player's own clock: it reads the
+  // media element once a frame, which is smooth enough to fill a word letter by
+  // letter, and seeks through the same handle.
+  const playerRef = useRef<VideoPlayerHandle | null>(null);
+
+  const getTime = useCallback(() => playerRef.current?.getTimeMs() ?? 0, []);
+
+  const handleSeek = useCallback((timeMs: number) => {
+    playerRef.current?.seekTo(timeMs);
+  }, []);
+
+  // The section is only needed for the way back, so a missing one is not an
+  // error — the link just says where it goes instead of naming it.
   const { data: sectionData } = useSection(content?.sectionId ?? '');
 
   const remove = useDeleteContent(spaceId);
@@ -205,19 +319,18 @@ export default function ContentPage() {
 
   if (isError) {
     return (
-      <PageCard title="Content">
-        <p className="text-sm text-destructive">
-          {error instanceof Error ? error.message : 'Failed to load this content'}
-        </p>
-      </PageCard>
+      <p className="text-sm text-destructive">
+        {error instanceof Error ? error.message : 'Failed to load this content'}
+      </p>
     );
   }
 
   if (isLoading || !content) {
     return (
-      <div className="grid gap-6">
-        <Skeleton className="h-32 rounded-2xl" />
-        <Skeleton className="h-48 rounded-2xl" />
+      <div className="grid gap-6 pb-4">
+        <Skeleton className="h-8 w-72" />
+        <Skeleton className="aspect-video w-full rounded-2xl" />
+        <Skeleton className="h-40 rounded-2xl" />
       </div>
     );
   }
@@ -225,93 +338,128 @@ export default function ContentPage() {
   const section = sectionData?.section;
 
   return (
-    <div className="grid gap-6">
-      <section className="overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm">
-        <div className="flex flex-col gap-4 p-5">
-          <Button variant="ghost" size="sm" className="w-fit -ml-2" asChild>
-            <Link href={`/o/${orgId}/spaces/${spaceId}`}>
-              <ArrowLeftIcon />
-              {section ? section.title : 'Back to space'}
-            </Link>
-          </Button>
+    <div className="grid gap-6 pb-4">
+      <Link
+        href={`/o/${orgId}/spaces/${spaceId}`}
+        className="-mb-2 inline-flex w-fit items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronLeftIcon className="size-4" />
+        {section ? section.title : 'Spaces'}
+      </Link>
 
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight">{content.title}</h1>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {CONTENT_TYPE_LABELS[content.type] ?? content.type}
-              </p>
-            </div>
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <Meta content={content} />
+          <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
+            {content.title}
+          </h1>
+        </div>
 
-            {canEdit && (
-              <div className="flex shrink-0 items-center gap-2">
-                <ContentDetailsDialog
-                  orgId={orgId}
-                  spaceId={spaceId}
-                  content={content}
-                  trigger={
-                    <Button variant="outline" size="sm">
-                      <PencilIcon />
-                      Edit
-                    </Button>
-                  }
-                />
+        {canEdit && (
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-muted-foreground hover:text-destructive"
-                  onClick={deleteContent}
-                  disabled={remove.isPending}
-                  aria-label="Delete content"
+                  className="-mr-2 size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
+                  aria-label="Lesson actions"
                 >
-                  {remove.isPending ? <Loader2Icon className="animate-spin" /> : <Trash2Icon />}
+                  <MoreHorizontalIcon />
                 </Button>
-              </div>
-            )}
-          </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {/* The menu closes before this opens: a dialog inside a menu item
+                    fights the menu for focus. */}
+                <DropdownMenuItem onSelect={() => setTimeout(() => setEditing(true), 0)}>
+                  <PencilIcon />
+                  Edit details
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={deleteContent}>
+                  <Trash2Icon />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <Counters content={content} />
-        </div>
-      </section>
-
-      <PageCard title="Video" description="What this lesson plays.">
-        {content.videoId ? (
-          <LinkedVideo orgId={orgId} videoId={content.videoId} />
-        ) : (
-          <EmptyState
-            icon={<VideoOffIcon className="size-5 text-muted-foreground" />}
-            title="No video linked"
-            description={
-              canEdit
-                ? 'This lesson is written but has nothing to play yet. Link one of the organization’s videos.'
-                : 'This lesson has no video yet.'
-            }
-            action={
-              canEdit ? (
-                <ContentDetailsDialog
-                  orgId={orgId}
-                  spaceId={spaceId}
-                  content={content}
-                  trigger={
-                    <Button>
-                      <ListVideoIcon />
-                      Choose a video
-                    </Button>
-                  }
-                />
-              ) : undefined
-            }
-          />
+            <ContentDetailsDialog
+              orgId={orgId}
+              spaceId={spaceId}
+              content={content}
+              open={editing}
+              onOpenChange={setEditing}
+            />
+          </>
         )}
-      </PageCard>
+      </header>
 
-      <PageCard title="Notes" description="The lesson, in the author’s own words.">
-        <NotesSection content={content} spaceId={spaceId} canEdit={canEdit} />
-      </PageCard>
+      {content.videoId ? (
+        <LessonVideo videoId={content.videoId} playerRef={playerRef} />
+      ) : (
+        <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 text-center">
+          <VideoOffIcon className="size-5 text-muted-foreground/60" />
+          <p className="text-[13px] text-muted-foreground">
+            {canEdit ? 'This lesson has nothing to play yet.' : 'This lesson has no video yet.'}
+          </p>
+          {canEdit && (
+            <ContentDetailsDialog
+              orgId={orgId}
+              spaceId={spaceId}
+              content={content}
+              trigger={
+                <Button variant="outline" size="sm">
+                  Choose a video
+                </Button>
+              }
+            />
+          )}
+        </div>
+      )}
 
-      <PageCard title="Files" description="Material that goes with this lesson.">
-        <ContentFiles contentId={content.contentId} canEdit={canEdit} />
-      </PageCard>
+      <Tabs defaultValue="transcript">
+        <TabsList className="h-auto w-full justify-start gap-6 rounded-none border-b border-border/60 bg-transparent p-0">
+          <TabsTrigger value="transcript" className={QUIET_TAB}>
+            Transcript
+          </TabsTrigger>
+          <TabsTrigger value="notes" className={QUIET_TAB}>
+            Notes
+          </TabsTrigger>
+          <TabsTrigger value="files" className={QUIET_TAB}>
+            Files
+            {content.fileCount > 0 && (
+              <span className="ml-1.5 tabular-nums text-muted-foreground/70">{content.fileCount}</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="comments" className={QUIET_TAB}>
+            Comments
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="transcript" className="mt-4">
+          <TranscriptTab
+            videoId={content.videoId}
+            getTime={getTime}
+            onSeek={handleSeek}
+            canEdit={canEdit}
+          />
+        </TabsContent>
+
+        <TabsContent value="notes" className="mt-4">
+          <NotesTab content={content} spaceId={spaceId} canEdit={canEdit} />
+        </TabsContent>
+
+        <TabsContent value="files" className="mt-4">
+          <ContentFiles contentId={content.contentId} canEdit={canEdit} />
+        </TabsContent>
+
+        <TabsContent value="comments" className="mt-4">
+          <EmptyNote>
+            The discussion opens here with the classroom — comments, replies and favourites are
+            already built behind it.
+          </EmptyNote>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

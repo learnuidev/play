@@ -28,6 +28,15 @@ export interface SubtitleTrack {
 
 export interface VideoPlayerHandle {
   seekTo: (timeMs: number) => void;
+  /**
+   * Where playback is, in milliseconds, read straight off the media element.
+   *
+   * `onTimeUpdate` is not enough to animate against: the element reports its
+   * position about four times a second, which is plenty to know where playback
+   * is and far too little to move a fill front with. Anything animating word by
+   * word reads this once a frame instead.
+   */
+  getTimeMs: () => number;
 }
 
 interface VideoPlayerProps {
@@ -91,6 +100,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           if (video && Number.isFinite(timeMs)) {
             video.currentTime = timeMs / 1000;
           }
+        },
+        getTimeMs: () => {
+          const video = videoRef.current;
+          // Reading `currentTime` is a media property, not a layout one: it does
+          // not force a style flush, so once a frame is cheap.
+          return video && Number.isFinite(video.currentTime) ? video.currentTime * 1000 : 0;
         },
       }),
       [],

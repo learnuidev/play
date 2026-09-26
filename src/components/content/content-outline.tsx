@@ -1,21 +1,22 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import {
   ChevronDownIcon,
+  ChevronRightIcon,
   ChevronUpIcon,
   FileTextIcon,
   HeartIcon,
-  ListVideoIcon,
   MessageSquareIcon,
   MoreHorizontalIcon,
   PaperclipIcon,
-  PencilIcon,
   PlayIcon,
   PlusIcon,
   Trash2Icon,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -24,47 +25,56 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/shell/page-card';
 import { ContentDialog } from './content-dialog';
 import { SectionDialog } from './section-dialog';
 import { useDeleteContent, useUpdateContent } from '@/modules/content/content.queries';
 import { useDeleteSection, useUpdateSection } from '@/modules/section/section.queries';
-import { CONTENT_TYPE_LABELS, type Content, type Section, type SectionWithContents } from '@/types';
+import type { Content, Section, SectionWithContents } from '@/types';
 
 /**
- * Works out which two rows a move is between.
+ * The outline, as a list rather than a stack of boxes.
  *
- * Order is stored as a position on each row rather than as a list, so moving one
- * step is a swap of two positions. Sparse positions are what make that cheap:
- * nothing between the neighbours has to be renumbered.
+ * Everything here is one surface: hairlines and indentation say what belongs to
+ * what, so nothing is nested inside a border of its own. The controls an author
+ * needs are the quietest thing on the page — a menu that appears on the row you
+ * are pointing at, and one always-visible "add" line per section — because a
+ * course is read far more often than it is edited.
  */
+
+/** Works out which two rows a move is between: a move is a swap of two positions. */
 function neighbours<T>(items: T[], index: number, direction: -1 | 1): { from: T; to: T } | null {
   const target = index + direction;
   if (target < 0 || target >= items.length) return null;
   return { from: items[index], to: items[target] };
 }
 
-/** The counts a lesson carries, shown as icons so a row stays one line. */
-function ContentMeta({ content }: { content: Content }) {
+/** Small, quiet controls that only speak when pointed at. */
+const QUIET_CONTROL =
+  'size-7 shrink-0 text-muted-foreground/50 transition-colors hover:text-foreground focus-visible:opacity-100';
+
+/** What a lesson has in it. Counts of nothing are left out rather than shown as zero. */
+function ContentStats({ content }: { content: Content }) {
+  const stats = [
+    { key: 'files', icon: PaperclipIcon, value: content.fileCount, label: 'files' },
+    { key: 'favourites', icon: HeartIcon, value: content.favouriteCount, label: 'favourites' },
+    { key: 'comments', icon: MessageSquareIcon, value: content.commentCount, label: 'comments' },
+  ].filter((stat) => stat.value > 0);
+
+  if (stats.length === 0) return null;
+
   return (
-    <span className="flex items-center gap-3 text-xs text-muted-foreground">
-      <span className="inline-flex items-center gap-1" title={`${content.fileCount} files`}>
-        <PaperclipIcon className="size-3.5" />
-        {content.fileCount}
-      </span>
-      <span className="inline-flex items-center gap-1" title={`${content.favouriteCount} favourites`}>
-        <HeartIcon className="size-3.5" />
-        {content.favouriteCount}
-      </span>
-      <span className="inline-flex items-center gap-1" title={`${content.commentCount} comments`}>
-        <MessageSquareIcon className="size-3.5" />
-        {content.commentCount}
-      </span>
-    </span>
+    <>
+      {stats.map(({ key, icon: Icon, value, label }) => (
+        <span key={key} className="inline-flex items-center gap-1" title={`${value} ${label}`}>
+          <Icon className="size-3" />
+          <span className="tabular-nums">{value}</span>
+        </span>
+      ))}
+    </>
   );
 }
 
-/** One lesson in a section: what it is, and what has been put in it. */
+/** One lesson: a row you open, with what it holds stated quietly beside it. */
 function ContentRow({
   orgId,
   spaceId,
@@ -83,8 +93,8 @@ function ContentRow({
   const update = useUpdateContent(content.contentId, spaceId);
   const remove = useDeleteContent(spaceId);
 
-  const move = neighbours(siblings, index, -1);
-  const moveDown = neighbours(siblings, index, 1);
+  const up = neighbours(siblings, index, -1);
+  const down = neighbours(siblings, index, 1);
 
   async function swap(target: Content) {
     try {
@@ -112,33 +122,48 @@ function ContentRow({
   }
 
   return (
-    <div className="group flex items-center gap-3 rounded-lg border bg-background px-3 py-2 transition-colors hover:border-ring/40">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-        {content.videoId ? <PlayIcon className="size-4" /> : <FileTextIcon className="size-4" />}
-      </span>
-
-      <Link href={`/o/${orgId}/spaces/${spaceId}/contents/${content.contentId}`} className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{content.title}</span>
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span>{CONTENT_TYPE_LABELS[content.type] ?? content.type}</span>
-          {!content.videoId && <span className="text-amber-600 dark:text-amber-500">No video linked</span>}
-          <ContentMeta content={content} />
+    <li className="group/row flex items-center rounded-lg transition-colors hover:bg-background">
+      <Link
+        href={`/o/${orgId}/spaces/${spaceId}/contents/${content.contentId}`}
+        className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-2"
+      >
+        <span className="flex w-4 shrink-0 justify-center text-muted-foreground/70">
+          {content.videoId ? <PlayIcon className="size-3.5" /> : <FileTextIcon className="size-3.5" />}
         </span>
+
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{content.title}</span>
+
+        <span className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+          {!content.videoId && (
+            <span className="hidden font-medium text-amber-600 sm:inline dark:text-amber-500">
+              No video
+            </span>
+          )}
+          <ContentStats content={content} />
+        </span>
+
+        {/* A list that opens says so, the way every list you already know does. */}
+        <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover/row:text-muted-foreground" />
       </Link>
 
       {canEdit && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-8 opacity-0 group-hover:opacity-100" aria-label="Content actions">
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(QUIET_CONTROL, 'mr-1 opacity-0 group-hover/row:opacity-100 max-sm:opacity-100')}
+              aria-label={`Actions for ${content.title}`}
+            >
               <MoreHorizontalIcon />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem disabled={!move} onClick={() => move && swap(move.to)}>
+            <DropdownMenuItem disabled={!up} onClick={() => up && swap(up.to)}>
               <ChevronUpIcon />
               Move up
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={!moveDown} onClick={() => moveDown && swap(moveDown.to)}>
+            <DropdownMenuItem disabled={!down} onClick={() => down && swap(down.to)}>
               <ChevronDownIcon />
               Move down
             </DropdownMenuItem>
@@ -150,11 +175,11 @@ function ContentRow({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-    </div>
+    </li>
   );
 }
 
-/** A section of a course: its heading, and the lessons filed under it. */
+/** A section: its heading, the lessons under it, and a line to add another. */
 function SectionBlock({
   orgId,
   spaceId,
@@ -170,11 +195,14 @@ function SectionBlock({
   index: number;
   canEdit: boolean;
 }) {
+  const [renaming, setRenaming] = useState(false);
+
   const update = useUpdateSection(spaceId, section.sectionId);
   const remove = useDeleteSection(spaceId);
 
   const up = neighbours(siblings, index, -1);
   const down = neighbours(siblings, index, 1);
+  const lessons = section.contents.length;
 
   async function swap(target: Section) {
     try {
@@ -188,11 +216,10 @@ function SectionBlock({
   }
 
   async function deleteSection() {
-    const count = section.contents.length;
     const confirmed = window.confirm(
-      count === 0
+      lessons === 0
         ? `Delete the section “${section.title}”?`
-        : `Delete “${section.title}” and the ${count} piece${count === 1 ? '' : 's'} of content in it?`,
+        : `Delete “${section.title}” and the ${lessons} piece${lessons === 1 ? '' : 's'} of content in it?`,
     );
     if (!confirmed) return;
 
@@ -205,55 +232,43 @@ function SectionBlock({
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border bg-card">
-      <header className="flex items-start gap-3 border-b bg-muted/30 px-4 py-3">
-        <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border bg-background text-xs font-semibold text-muted-foreground">
-          {index + 1}
+    <section className="group/section border-t border-border/60 py-5 first:border-t-0 first:pt-1">
+      <header className="flex items-center gap-3">
+        <span className="w-4 shrink-0 text-xs font-medium tabular-nums text-muted-foreground/60">
+          {String(index + 1).padStart(2, '0')}
         </span>
-
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold">{section.title}</h2>
-          {section.description ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">{section.description}</p>
-          ) : (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {section.contents.length === 0
-                ? 'Nothing in this section yet'
-                : `${section.contents.length} piece${section.contents.length === 1 ? '' : 's'} of content`}
-            </p>
-          )}
-        </div>
+        <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">
+          {section.title}
+        </h3>
+        {lessons > 0 && (
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {lessons} lesson{lessons === 1 ? '' : 's'}
+          </span>
+        )}
 
         {canEdit && (
-          <div className="flex shrink-0 items-center gap-1">
-            <SectionDialog
-              spaceId={spaceId}
-              section={section}
-              trigger={
-                <Button variant="ghost" size="icon" className="size-8" aria-label="Edit section">
-                  <PencilIcon />
-                </Button>
-              }
-            />
-            <ContentDialog
-              orgId={orgId}
-              spaceId={spaceId}
-              sectionId={section.sectionId}
-              sectionTitle={section.title}
-              trigger={
-                <Button variant="outline" size="sm">
-                  <PlusIcon />
-                  Add content
-                </Button>
-              }
-            />
+          <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="size-8" aria-label="Section actions">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    QUIET_CONTROL,
+                    '-mr-1 opacity-0 group-hover/section:opacity-100 group-focus-within/section:opacity-100 max-sm:opacity-100',
+                  )}
+                  aria-label={`Actions for ${section.title}`}
+                >
                   <MoreHorizontalIcon />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                {/* The menu closes before this opens: a dialog inside a menu item
+                    fights the menu for focus. */}
+                <DropdownMenuItem onSelect={() => setTimeout(() => setRenaming(true), 0)}>
+                  Rename section
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem disabled={!up} onClick={() => up && swap(up.to)}>
                   <ChevronUpIcon />
                   Move up
@@ -269,30 +284,88 @@ function SectionBlock({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
+
+            <SectionDialog
+              spaceId={spaceId}
+              section={section}
+              open={renaming}
+              onOpenChange={setRenaming}
+            />
+          </>
         )}
       </header>
 
-      <div className="grid gap-2 p-3">
-        {section.contents.length === 0 ? (
-          <p className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-            {canEdit ? 'Add the first piece of content to this section.' : 'Nothing published here yet.'}
-          </p>
-        ) : (
-          section.contents.map((content, contentIndex) => (
-            <ContentRow
-              key={content.contentId}
+      {section.description && (
+        <p className="mt-1 pl-7 text-[13px] leading-relaxed text-muted-foreground">
+          {section.description}
+        </p>
+      )}
+
+      <ul className="mt-1.5 grid gap-0.5 pl-5">
+        {section.contents.map((content, contentIndex) => (
+          <ContentRow
+            key={content.contentId}
+            orgId={orgId}
+            spaceId={spaceId}
+            content={content}
+            siblings={section.contents}
+            index={contentIndex}
+            canEdit={canEdit}
+          />
+        ))}
+
+        {canEdit && (
+          <li>
+            <ContentDialog
               orgId={orgId}
               spaceId={spaceId}
-              content={content}
-              siblings={section.contents}
-              index={contentIndex}
-              canEdit={canEdit}
+              sectionId={section.sectionId}
+              sectionTitle={section.title}
+              trigger={
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-lg py-2 pl-2 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-background hover:text-foreground"
+                >
+                  <span className="flex w-4 shrink-0 justify-center">
+                    <PlusIcon className="size-3.5" />
+                  </span>
+                  Add content
+                </button>
+              }
             />
-          ))
+          </li>
         )}
-      </div>
+
+        {!canEdit && lessons === 0 && (
+          <li className="py-2 pl-2 text-sm text-muted-foreground">Nothing published here yet.</li>
+        )}
+      </ul>
     </section>
+  );
+}
+
+/** The quiet block a course page shows before anything has been put in it. */
+function NothingYet({ spaceId, canEdit }: { spaceId: string; canEdit: boolean }) {
+  return (
+    <div className="grid justify-items-center gap-3 py-16 text-center">
+      <p className="text-[15px] font-medium">No sections yet</p>
+      <p className="max-w-xs text-[13px] leading-relaxed text-muted-foreground">
+        {canEdit
+          ? 'A section is a heading over the lessons that follow it.'
+          : 'Nothing has been published to this space yet.'}
+      </p>
+      {canEdit && (
+        <SectionDialog
+          spaceId={spaceId}
+          trigger={
+            <Button variant="outline" size="sm" className="mt-1">
+              <PlusIcon />
+              New section
+            </Button>
+          }
+        />
+      )}
+    </div>
   );
 }
 
@@ -301,7 +374,7 @@ function SectionBlock({
  *
  * This is the outline an author arranges and a member reads: sections in the
  * order they were put in, each holding its content in the order it was put in.
- * An admin or editor gets the controls; a viewer gets the same page without
+ * An admin or editor gets the controls; a viewer gets the same list without
  * them.
  */
 export function ContentOutline({
@@ -318,38 +391,15 @@ export function ContentOutline({
   canEdit: boolean;
 }) {
   if (sections.length === 0) {
-    return (
-      <EmptyState
-        icon={<ListVideoIcon className="size-5 text-muted-foreground" />}
-        title="Nothing in this space yet"
-        description={
-          canEdit
-            ? 'A space holds sections, and each section holds its content. Start with a section.'
-            : 'Nothing has been published to this space yet.'
-        }
-        action={
-          canEdit ? (
-            <SectionDialog
-              spaceId={spaceId}
-              trigger={
-                <Button>
-                  <PlusIcon />
-                  New section
-                </Button>
-              }
-            />
-          ) : undefined
-        }
-      />
-    );
+    return <NothingYet spaceId={spaceId} canEdit={canEdit} />;
   }
 
   return (
-    <div className="grid gap-4">
+    <div>
       {truncated && (
-        <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-          This course is larger than one page reads, so the outline stops here. The rest is still
-          there — content is reachable from its own section.
+        <p className="pb-3 text-[13px] text-muted-foreground">
+          This course is larger than one page reads, so the outline stops here. Every lesson still
+          opens from its own section.
         </p>
       )}
 

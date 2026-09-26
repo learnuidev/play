@@ -132,6 +132,94 @@
 
 @layer components {
   /**
+   * The animated transcript: a page of prose whose ink arrives as it is spoken.
+   *
+   * The whole animation is here as plain CSS, driven by two custom properties
+   * that a frame loop writes onto each word — `--p`, how much of the word has
+   * been said, and `--pop`, the swell of the word being said right now. Nothing
+   * goes through a re-render, which is what lets a transcript of several
+   * hundred words animate at frame rate.
+   */
+  .tt-stage {
+    /* Said and not yet said. The unsaid words are the page's own ink, thinned,
+       so the sheet reads as one colour being filled in rather than two. */
+    --tt-said: var(--foreground);
+    --tt-unsaid: color-mix(in oklab, var(--foreground) 26%, transparent);
+
+    /* The page fades out at the bottom rather than ending at a hard line. There
+       is deliberately no fade at the top: the line being said is parked just
+       under the tabs, and fading the top would thin the very words arriving. */
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 90%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 90%, transparent 100%);
+  }
+
+  .tt-para {
+    font-size: 17px;
+    line-height: 1.75;
+    letter-spacing: -0.005em;
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 640px) {
+    .tt-para {
+      font-size: 18px;
+    }
+  }
+
+  /* The gap that makes a paragraph a paragraph; the leading inside one is the
+     line-height above. */
+  .tt-para + .tt-para {
+    margin-top: 1.4em;
+  }
+
+  .tt-token {
+    --p: 0;
+    --pop: 0;
+    display: inline-block;
+    /* A fill front travelling across the glyph: the gradient's hard stop is
+       the playhead, so the word darkens left to right as it is said. */
+    background-image: linear-gradient(
+      to right,
+      var(--tt-said) calc(var(--p) * 100%),
+      var(--tt-unsaid) 0
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    /* Deliberately barely there: a 2% swell and three quarters of a pixel of
+       lift, anchored below the baseline so the word grows upwards. Anything
+       stronger reads as the text jumping while you are reading it. */
+    transform: translate3d(0, calc(var(--pop) * -0.75px), 0) scale(calc(1 + var(--pop) * 0.02));
+    transform-origin: 50% 85%;
+    /* The glow rides the fill front: transparent until a word is actually being
+       said, so a resting word costs nothing to paint. */
+    text-shadow: 0 0 calc(12px * var(--pop))
+      color-mix(in oklab, var(--foreground) 28%, transparent);
+  }
+
+  /* The sheet moves itself; the browser's scroll anchoring would fight it. */
+  .tt-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overflow-anchor: none;
+  }
+
+  .tt-scroll::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tt-token {
+      /* The fill stays — it is the point — but the word stops moving. */
+      transform: none;
+      text-shadow: none;
+    }
+  }
+
+  /**
    * Lesson notes, both while they are being written and once they are read.
    *
    * The class is shared by the editor's surface and the read-only renderer, so

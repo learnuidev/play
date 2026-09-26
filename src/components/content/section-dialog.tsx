@@ -30,32 +30,45 @@ const MAX_DESCRIPTION_LENGTH = 500;
  *
  * The same dialog in both directions: a section is a title and a description,
  * and whether it exists yet is the only difference between the two modes.
+ *
+ * It can be driven either by a trigger of its own or from the outside by
+ * passing `open` — which is what lets a menu item open it. A dialog nested in a
+ * menu item fights the menu for focus, so the menu closes first and this opens
+ * on the next tick instead.
  */
 export function SectionDialog({
   spaceId,
   section,
   trigger,
+  open,
+  onOpenChange,
 }: {
   spaceId: string;
   /** Omit to create a new section. */
   section?: Section;
-  trigger: ReactNode;
+  trigger?: ReactNode;
+  /** Controlled openness. Omit to let the trigger manage it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolled, setUncontrolled] = useState(false);
   const [title, setTitle] = useState(section?.title ?? '');
   const [description, setDescription] = useState(section?.description ?? '');
+
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : uncontrolled;
+  const setOpen = (next: boolean) => (isControlled ? onOpenChange?.(next) : setUncontrolled(next));
 
   const create = useCreateSection(spaceId);
   const update = useUpdateSection(spaceId, section?.sectionId ?? '');
   const pending = create.isPending || update.isPending;
 
-  // Reopening after a failed attempt should show what was typed last time, not
-  // what the section said when the page loaded.
+  // Opening shows the section as it now is, not as it was when the page loaded.
   useEffect(() => {
-    if (!open) return;
+    if (!isOpen) return;
     setTitle(section?.title ?? '');
     setDescription(section?.description ?? '');
-  }, [open, section]);
+  }, [isOpen, section]);
 
   const trimmedTitle = title.trim();
   const titleTooShort = trimmedTitle.length > 0 && trimmedTitle.length < MIN_TITLE_LENGTH;
@@ -80,11 +93,11 @@ export function SectionDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+    <Dialog open={isOpen} onOpenChange={setOpen}>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{section ? 'Edit section' : 'New section'}</DialogTitle>
+          <DialogTitle>{section ? 'Rename section' : 'New section'}</DialogTitle>
           <DialogDescription>
             {section
               ? 'Rename this section or change what it says it covers.'
@@ -134,7 +147,7 @@ export function SectionDialog({
           </DialogClose>
           <Button type="button" onClick={submit} disabled={!canSubmit}>
             {pending && <Loader2Icon className="animate-spin" />}
-            {section ? 'Save changes' : 'Add section'}
+            {section ? 'Save' : 'Add section'}
           </Button>
         </DialogFooter>
       </DialogContent>

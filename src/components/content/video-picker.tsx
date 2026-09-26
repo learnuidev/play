@@ -6,8 +6,8 @@ import { cn, formatDuration } from '@/lib/utils';
 import { useVideos } from '@/modules/video/video.queries';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { VideoPoster } from '@/components/video/video-poster';
 import { VideoStatusBadge } from '@/components/video/status-badge';
-import { VideoThumbnail } from '@/components/video/video-thumbnail';
 import type { Video } from '@/types';
 
 /**
@@ -93,7 +93,7 @@ export function VideoPicker({
                   selected ? 'bg-accent' : 'hover:bg-muted/60',
                 )}
               >
-                <VideoThumbnail video={video} />
+                <VideoPoster video={video} className="w-16" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{video.title}</span>
                   <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">

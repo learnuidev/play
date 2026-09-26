@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { DownloadIcon, FileIcon, Loader2Icon, PaperclipIcon, Trash2Icon, UploadIcon } from 'lucide-react';
+import { FileIcon, Loader2Icon, PlusIcon, Trash2Icon } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -39,29 +39,28 @@ function FileRow({
   onDelete: () => void;
   deleting: boolean;
 }) {
-  return (
-    <div className="group flex items-center gap-3 rounded-lg border bg-background px-3 py-2">
-      <FileIcon className="size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{file.name}</p>
-        <p className="text-xs text-muted-foreground">
-          {[formatBytes(file.size), formatDate(file.createdAt)].filter(Boolean).join(' · ')}
-        </p>
-      </div>
+  const meta = [formatBytes(file.size), formatDate(file.createdAt)].filter(Boolean).join(' · ');
 
-      {file.url && (
-        <Button variant="ghost" size="icon" className="size-8" asChild>
-          <a href={file.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${file.name}`}>
-            <DownloadIcon />
-          </a>
-        </Button>
-      )}
+  return (
+    <div className="group/row flex items-center gap-3 rounded-lg py-2 pl-2 pr-1 transition-colors hover:bg-background">
+      <FileIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
+
+      <a
+        href={file.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="min-w-0 flex-1 truncate text-sm font-medium underline-offset-2 hover:underline"
+      >
+        {file.name}
+      </a>
+
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{meta}</span>
 
       {canEdit && (
         <Button
           variant="ghost"
           size="icon"
-          className="size-8 text-muted-foreground hover:text-destructive"
+          className="size-7 shrink-0 text-muted-foreground/50 opacity-0 transition-colors hover:text-destructive group-hover/row:opacity-100 max-sm:opacity-100"
           onClick={onDelete}
           disabled={deleting}
           aria-label={`Remove ${file.name}`}
@@ -122,40 +121,14 @@ export function ContentFiles({ contentId, canEdit }: { contentId: string; canEdi
   }
 
   return (
-    <div className="grid gap-3">
-      {canEdit && (
-        <div>
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(event) => void handleFiles(event.target.files)}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => inputRef.current?.click()}
-            disabled={upload.isPending}
-          >
-            {upload.isPending ? <Loader2Icon className="animate-spin" /> : <UploadIcon />}
-            {progress === null ? 'Attach files' : `Uploading… ${progress}%`}
-          </Button>
-        </div>
-      )}
-
+    <div className="grid gap-0.5">
       {isLoading ? (
-        <div className="grid gap-2">
-          <Skeleton className="h-12 rounded-lg" />
-          <Skeleton className="h-12 rounded-lg" />
+        <div className="grid gap-2 py-1">
+          <Skeleton className="h-8 rounded-lg" />
+          <Skeleton className="h-8 rounded-lg" />
         </div>
-      ) : files.length === 0 ? (
-        <p className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-6 text-sm text-muted-foreground">
-          <PaperclipIcon className="size-4" />
-          {canEdit ? 'No files attached yet.' : 'No files attached to this lesson.'}
-        </p>
       ) : (
-        <div className="grid gap-2">
+        <>
           {files.map((file) => (
             <FileRow
               key={file.fileId}
@@ -165,7 +138,37 @@ export function ContentFiles({ contentId, canEdit }: { contentId: string; canEdi
               onDelete={() => void deleteFile(file)}
             />
           ))}
-        </div>
+
+          {!canEdit && files.length === 0 && (
+            <p className="py-2 pl-2 text-sm text-muted-foreground">No files attached to this lesson.</p>
+          )}
+        </>
+      )}
+
+      {canEdit && (
+        <>
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(event) => void handleFiles(event.target.files)}
+          />
+          {/* The last line of the list, where an author expects to find it. */}
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={upload.isPending}
+            className="flex items-center gap-3 rounded-lg py-2 pl-2 text-left text-sm text-muted-foreground/70 transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
+          >
+            {upload.isPending ? (
+              <Loader2Icon className="size-3.5 shrink-0 animate-spin" />
+            ) : (
+              <PlusIcon className="size-3.5 shrink-0" />
+            )}
+            {progress === null ? 'Attach files' : `Uploading… ${progress}%`}
+          </button>
+        </>
       )}
     </div>
   );

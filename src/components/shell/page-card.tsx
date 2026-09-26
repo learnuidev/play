@@ -35,6 +35,24 @@ export function PageCard({
   );
 }
 
+/**
+ * The quiet label above a block of a page: small, uppercase, tracked.
+ *
+ * Used by the pages that are documents rather than panels — a course and one of
+ * its lessons — where structure is carried by space and hairlines instead of by
+ * a card drawn around every concern.
+ */
+export function BlockLabel({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {children}
+      </h2>
+      {action}
+    </div>
+  );
+}
+
 /** Centred icon + heading + explanation + action, as an empty panel state. */
 export function EmptyState({
   icon,

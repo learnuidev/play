@@ -35,15 +35,23 @@ export function ContentDetailsDialog({
   spaceId,
   content,
   trigger,
+  open,
+  onOpenChange,
 }: {
   orgId: string;
   spaceId: string;
   content: Content;
-  trigger: ReactNode;
+  trigger?: ReactNode;
+  /** Controlled openness. Omit to let the trigger manage it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolled, setUncontrolled] = useState(false);
   const [title, setTitle] = useState(content.title);
   const [videoId, setVideoId] = useState<string | undefined>(content.videoId);
+
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : uncontrolled;
 
   const update = useUpdateContent(content.contentId, spaceId);
 
@@ -51,13 +59,14 @@ export function ContentDetailsDialog({
   const titleTooShort = trimmedTitle.length > 0 && trimmedTitle.length < MIN_TITLE_LENGTH;
   const canSubmit = trimmedTitle.length >= MIN_TITLE_LENGTH && !update.isPending;
 
-  // Reopening shows the lesson as it now is, not as it was when the page loaded.
-  function handleOpenChange(next: boolean) {
+  // Opening shows the lesson as it now is, not as it was when the page loaded.
+  function setOpen(next: boolean) {
     if (next) {
       setTitle(content.title);
       setVideoId(content.videoId);
     }
-    setOpen(next);
+    if (isControlled) onOpenChange?.(next);
+    else setUncontrolled(next);
   }
 
   async function submit() {
@@ -77,8 +86,8 @@ export function ContentDetailsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+    <Dialog open={isOpen} onOpenChange={setOpen}>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Edit content</DialogTitle>

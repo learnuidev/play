@@ -147,12 +147,28 @@ export interface SubtitleTrackInfo {
   subtitleUrl: string;
 }
 
+/**
+ * One spoken word, with when it is said. Transcribe reports these beside the
+ * subtitle it writes; they are what lets a transcript animate word by word,
+ * which a cue's start and end cannot say on their own.
+ */
+export interface TranscriptWord {
+  /** The word, carrying its punctuation. */
+  w: string;
+  /** Start in milliseconds. */
+  s: number;
+  /** End in milliseconds. */
+  e: number;
+}
+
 export interface SubtitleResponse {
   videoId: string;
   sourceLanguage: string;
   content: string;
   tracks: SubtitleTrackInfo[];
   languages: SubtitleLanguageContent[];
+  /** Word-level timings, when the video was transcribed with them. */
+  words?: TranscriptWord[];
 }
 
 export interface SubtitleLanguageContent {
