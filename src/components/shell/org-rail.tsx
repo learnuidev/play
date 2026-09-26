@@ -1,13 +1,17 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { ClapperboardIcon, PlusIcon } from 'lucide-react';
-import { useOrganizations } from '@/modules/organization/organization.queries';
-import { cn } from '@/lib/utils';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { OrgAvatar } from './org-avatar';
+import Link from "next/link";
+import { ClapperboardIcon, PlusIcon } from "lucide-react";
+import { useOrganizations } from "@/modules/organization/organization.queries";
+import { cn } from "@/lib/utils";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { OrgAvatar } from "./org-avatar";
 
 /**
  * The narrow rail down the left edge: the product mark, then one avatar per
@@ -28,9 +32,9 @@ export function OrgRail({ activeOrgId }: { activeOrgId?: string }) {
           <Link
             href="/"
             aria-label="Play home"
-            className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity hover:opacity-90"
+            className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90"
           >
-            <ClapperboardIcon className="size-5" />
+            <ClapperboardIcon className="size-4" />
           </Link>
         </TooltipTrigger>
         <TooltipContent side="right">Play</TooltipContent>
@@ -38,10 +42,10 @@ export function OrgRail({ activeOrgId }: { activeOrgId?: string }) {
 
       <Separator className="my-1 w-8" />
 
-      <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-1">
+      <div className="px-2 flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-1">
         {isLoading
           ? Array.from({ length: 2 }).map((_, i) => (
-              <Skeleton key={i} className="size-10 rounded-xl" />
+              <Skeleton key={i} className="size-8 rounded-lg" />
             ))
           : organizations.map((organization) => {
               const active = organization.orgId === activeOrgId;
@@ -51,16 +55,18 @@ export function OrgRail({ activeOrgId }: { activeOrgId?: string }) {
                     <Link
                       href={`/o/${organization.orgId}`}
                       aria-label={organization.name}
-                      aria-current={active ? 'page' : undefined}
+                      aria-current={active ? "page" : undefined}
                       className={cn(
-                        'rounded-xl p-0.5 transition-all',
-                        active ? 'ring-2 ring-ring' : 'hover:opacity-90',
+                        "rounded-lg p-0.5 transition-all",
+                        active ? "ring-2 ring-ring" : "hover:opacity-90",
                       )}
                     >
-                      <OrgAvatar orgId={organization.orgId} name={organization.name} />
+                      <OrgAvatar name={organization.name} />
                     </Link>
                   </TooltipTrigger>
-                  <TooltipContent side="right">{organization.name}</TooltipContent>
+                  <TooltipContent side="right">
+                    {organization.name}
+                  </TooltipContent>
                 </Tooltip>
               );
             })}
@@ -71,9 +77,9 @@ export function OrgRail({ activeOrgId }: { activeOrgId?: string }) {
           <Link
             href="/organizations/new"
             aria-label="New organization"
-            className="flex size-10 items-center justify-center rounded-xl border border-dashed text-muted-foreground transition-colors hover:border-ring/60 hover:text-foreground"
+            className="flex size-8 items-center justify-center rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-ring/60 hover:text-foreground"
           >
-            <PlusIcon className="size-4" />
+            <PlusIcon className="size-3.5" />
           </Link>
         </TooltipTrigger>
         <TooltipContent side="right">New organization</TooltipContent>
