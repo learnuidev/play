@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireContentAccess } from '../../lib/access';
 import { requireUserId } from '../../lib/auth';
+import { getCompletion } from '../../lib/completions';
 import { favouriteTargetKey, isFavourited } from '../../lib/favourites';
 import { handle, ok, pathParam } from '../../lib/http';
 import { isInPlaylist } from '../../lib/playlist';
@@ -19,12 +20,17 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const userId = requireUserId(event);
   const content = await requireContentAccess(pathParam(event, 'contentId'), userId, 'read');
 
-  const [favourited, inPlaylist] = await Promise.all([
+  const [favourited, inPlaylist, completion] = await Promise.all([
     isFavourited(userId, favouriteTargetKey('CONTENT', content.contentId)),
     isInPlaylist(userId, content.contentId),
+    getCompletion(userId, content.spaceId, content.contentId),
   ]);
 
-  const viewer: ContentViewerState = { favourited, inPlaylist };
+  const viewer: ContentViewerState = {
+    favourited,
+    inPlaylist,
+    completed: Boolean(completion),
+  };
 
   return ok({ content, viewer });
 }

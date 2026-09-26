@@ -2,7 +2,8 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireContentAccess } from '../../lib/access';
 import { requireUserId } from '../../lib/auth';
 import { HttpError, handle, jsonBody, ok, pathParam } from '../../lib/http';
-import { MIN_LOOP_MS, getLoop, updateLoop, type UpdateLoopPatch } from '../../lib/loops';
+import { MIN_LOOP_MS, getLoop, toApiLoop, updateLoop, type UpdateLoopPatch } from '../../lib/loops';
+import { favouriteTargetKey, isFavourited } from '../../lib/favourites';
 import { parseLoopName, parseLoopRange } from '../../lib/validation';
 
 /** `#rrggbb` only, so the UI can put it straight into a CSS custom property. */
@@ -58,12 +59,14 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     patch.endMs = range.endMs;
   }
 
-  if (Object.keys(patch).length === 0) return ok({ loop: existing });
+  const likedByMe = await isFavourited(userId, favouriteTargetKey('LOOP', loopId));
+
+  if (Object.keys(patch).length === 0) return ok({ loop: toApiLoop(existing, likedByMe) });
 
   await updateLoop(userId, contentId, loopId, patch);
 
   const updated = await getLoop(userId, contentId, loopId);
-  return ok({ loop: updated });
+  return ok({ loop: updated ? toApiLoop(updated, likedByMe) : undefined });
 }
 
 export const handler = handle(main);

@@ -3,6 +3,7 @@ import type { Comment, Content, Favourite, FavouriteEntry, FavouriteTargetType }
 import { batchGetItems, documentClient as client, isConditionalCheckFailed } from './dynamodb';
 import { CONTENTS_TABLE } from './contents';
 import { COMMENTS_TABLE } from './comments';
+import { getLoop } from './loops';
 import { env } from './config';
 
 export const FAVOURITES_TABLE = env.favouritesTableName;
@@ -67,6 +68,40 @@ export async function removeFavourite(userId: string, targetKey: string): Promis
   }
 }
 
+/**
+ * Which targets of one kind a learner has marked, as a set of ids.
+ *
+ * Used to draw a list of loops without asking about each one: "which of these
+ * have I liked" is one query and a lookup, not one request per row.
+ */
+export async function listFavouriteTargets(
+  userId: string,
+  targetType: FavouriteTargetType,
+): Promise<Set<string>> {
+  const targets = new Set<string>();
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: FAVOURITES_TABLE,
+        KeyConditionExpression: '#userId = :userId AND begins_with(#targetKey, :prefix)',
+        ExpressionAttributeNames: { '#userId': 'userId', '#targetKey': 'targetKey' },
+        ExpressionAttributeValues: {
+          ':userId': userId,
+          ':prefix': `${targetType}#`,
+        },
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    for (const item of (res.Items ?? []) as Favourite[]) targets.add(item.targetId);
+    exclusiveStartKey = res.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return targets;
+}
+
 export interface ListFavouritesResult {
   favourites: Favourite[];
   lastEvaluatedKey?: Record<string, unknown>;
@@ -124,13 +159,28 @@ export async function resolveFavourites(favourites: Favourite[]): Promise<Favour
     .filter((f) => f.targetType === 'COMMENT' && f.contentId)
     .map((f) => ({ contentId: f.contentId as string, commentId: f.targetId }));
 
-  const [contents, comments] = await Promise.all([
+  // A loop is keyed by its owner and its id, so its like records both.
+  const loopFavourites = favourites.filter(
+    (f) => f.targetType === 'LOOP' && f.contentId && f.targetOwnerId,
+  );
+
+  const [contents, comments, loopRows] = await Promise.all([
     contentIds.length ? batchGetItems<Content>(CONTENTS_TABLE, contentIds.map((contentId) => ({ contentId }))) : [],
     commentKeys.length ? batchGetItems<Comment>(COMMENTS_TABLE, commentKeys) : [],
+    loopFavourites.length
+      ? Promise.all(
+          loopFavourites.map((f) =>
+            getLoop(f.targetOwnerId as string, f.contentId as string, f.targetId),
+          ),
+        )
+      : Promise.resolve([]),
   ]);
 
   const contentsById = new Map(contents.map((c) => [c.contentId, c]));
   const commentsById = new Map(comments.map((c) => [`${c.contentId}#${c.commentId}`, c]));
+  const loopsById = new Map(
+    loopRows.filter(Boolean).map((loop) => [`${loop!.contentId}#${loop!.loopId}`, loop!]),
+  );
 
   const entries: FavouriteEntry[] = [];
   for (const favourite of favourites) {
@@ -138,11 +188,19 @@ export async function resolveFavourites(favourites: Favourite[]): Promise<Favour
       const content = contentsById.get(favourite.targetId);
       if (!content) continue;
       entries.push({ ...favourite, content });
-    } else {
+      continue;
+    }
+
+    if (favourite.targetType === 'COMMENT') {
       const comment = commentsById.get(`${favourite.contentId}#${favourite.targetId}`);
       if (!comment) continue;
       entries.push({ ...favourite, comment });
+      continue;
     }
+
+    const loop = loopsById.get(`${favourite.contentId}#${favourite.targetId}`);
+    if (!loop) continue;
+    entries.push({ ...favourite, loop });
   }
 
   return entries;

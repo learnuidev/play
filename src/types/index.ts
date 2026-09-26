@@ -339,9 +339,9 @@ export interface ContentFile {
 }
 
 /** What a piece of content is called when a learner is looking at it. */
-export type FavouriteTargetType = 'CONTENT' | 'COMMENT';
+export type FavouriteTargetType = 'CONTENT' | 'COMMENT' | 'LOOP';
 
-export const FAVOURITE_TARGET_TYPES: FavouriteTargetType[] = ['CONTENT', 'COMMENT'];
+export const FAVOURITE_TARGET_TYPES: FavouriteTargetType[] = ['CONTENT', 'COMMENT', 'LOOP'];
 
 /**
  * One learner's favourite, over a piece of content or over a single comment.
@@ -363,11 +363,16 @@ export interface Favourite {
   /** The contentId or commentId, without the prefix. */
   targetId: string;
   /**
-   * The content a favourited comment hangs off, so a comment favourite can be
-   * read back (a comment is keyed by content *and* comment id). Absent on
-   * content favourites, which already carry their content id as the target.
+   * The content a favourited comment or loop hangs off, so it can be read back:
+   * a comment is keyed by content *and* comment id, and a loop's key needs the
+   * content it belongs to as well.
    */
   contentId?: string;
+  /**
+   * Who owns a favourited loop. A loop is keyed by its owner and its id, so a
+   * like has to record whose loop it was in order to reach it.
+   */
+  targetOwnerId?: string;
   createdAt: number;
 }
 
@@ -375,6 +380,7 @@ export interface Favourite {
 export interface FavouriteEntry extends Favourite {
   content?: Content;
   comment?: Comment;
+  loop?: ContentLoop;
 }
 
 /**
@@ -442,6 +448,30 @@ export interface CommentThread {
 export interface ContentViewerState {
   favourited: boolean;
   inPlaylist: boolean;
+  /** Marked as done by this learner. */
+  completed: boolean;
+}
+
+/**
+ * A lesson a learner has marked as done.
+ *
+ * Progress, and nothing more: it records that somebody finished something, not
+ * that they were assessed on it or that anyone checked. Marking a lesson done is
+ * the learner's own business, which is why they can undo it as easily as they
+ * did it.
+ */
+export interface LessonCompletion {
+  /** Cognito `sub` of the learner. Partition key. */
+  userId: string;
+  /**
+   * Sort key: `{spaceId}#{contentId}`. One partition per learner, so what they
+   * have finished in a course is a single `begins_with` query — which is what a
+   * progress bar over a course needs, and what a per-lesson lookup is built from.
+   */
+  spaceKey: string;
+  spaceId: string;
+  contentId: string;
+  completedAt: number;
 }
 
 /**
@@ -472,6 +502,12 @@ export interface ContentLoop {
   startMs: number;
   /** End of the loop, in milliseconds. Always after `startMs`. */
   endMs: number;
+  /**
+   * How many people have liked it. Kept on the row rather than counted on read,
+   * for the same reason a comment's favourites are: the list shows it for every
+   * loop at once.
+   */
+  likeCount: number;
   createdAt: number;
   updatedAt: number;
 }

@@ -3,7 +3,7 @@ import { ulid } from 'ulid';
 import { requireContentAccess } from '../../lib/access';
 import { requireUserId } from '../../lib/auth';
 import { HttpError, handle, jsonBody, ok, pathParam } from '../../lib/http';
-import { MIN_LOOP_MS, loopKey, putLoop } from '../../lib/loops';
+import { MIN_LOOP_MS, loopKey, putLoop, toApiLoop } from '../../lib/loops';
 import { parseLoopName, parseLoopRange } from '../../lib/validation';
 import type { ContentLoop } from '../../types';
 
@@ -50,13 +50,15 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     name,
     ...(color ? { color: color.toLowerCase() } : {}),
     ...range,
+    likeCount: 0,
     createdAt: now,
     updatedAt: now,
   };
 
   await putLoop(loop);
 
-  return ok({ loop }, 201);
+  // Nobody likes their own loop twice: a loop you just made has no likes yet.
+  return ok({ loop: toApiLoop(loop, false) }, 201);
 }
 
 export const handler = handle(main);

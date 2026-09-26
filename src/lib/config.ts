@@ -17,6 +17,7 @@ export const env = {
   playlistTableName: required('PLAYLIST_TABLE', process.env.PLAYLIST_TABLE),
   commentsTableName: required('COMMENTS_TABLE', process.env.COMMENTS_TABLE),
   contentLoopsTableName: required('CONTENT_LOOPS_TABLE', process.env.CONTENT_LOOPS_TABLE),
+  completionsTableName: required('COMPLETIONS_TABLE', process.env.COMPLETIONS_TABLE),
   bucket: required('VIDEOS_BUCKET', process.env.VIDEOS_BUCKET),
   cloudfrontDomain: required('CLOUDFRONT_DOMAIN', process.env.CLOUDFRONT_DOMAIN),
   cloudfrontKeyPairId: required('CLOUDFRONT_KEY_PAIR_ID', process.env.CLOUDFRONT_KEY_PAIR_ID),

@@ -49,6 +49,7 @@ provider:
     PLAYLIST_TABLE: !Ref PlaylistTable
     COMMENTS_TABLE: !Ref CommentsTable
     CONTENT_LOOPS_TABLE: !Ref ContentLoopsTable
+    COMPLETIONS_TABLE: !Ref CompletionsTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
@@ -136,6 +137,7 @@ provider:
             - !GetAtt CommentsTable.Arn
             - !Sub "${CommentsTable.Arn}/index/*"
             - !GetAtt ContentLoopsTable.Arn
+            - !GetAtt CompletionsTable.Arn
         - Effect: Allow
           Action:
             - s3:GetObject
@@ -614,6 +616,44 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  # Progress: what a learner has finished. Addressed through the lesson, keyed
+  # by the learner.
+  complete-content:
+    handler: src/functions/contents/complete-content.handler
+    events:
+      - http:
+          path: contents/{contentId}/completion
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  uncomplete-content:
+    handler: src/functions/contents/uncomplete-content.handler
+    events:
+      - http:
+          path: contents/{contentId}/completion
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  like-loop:
+    handler: src/functions/loops/like-loop.handler
+    events:
+      - http:
+          path: contents/{contentId}/loops/{loopId}/like
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  unlike-loop:
+    handler: src/functions/loops/unlike-loop.handler
+    events:
+      - http:
+          path: contents/{contentId}/loops/{loopId}/like
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   list-comments:
     handler: src/functions/comments/list-comments.handler
     events:
@@ -1023,10 +1063,47 @@ resources:
             AttributeType: S
           - AttributeName: loopKey
             AttributeType: S
+          - AttributeName: contentId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
         KeySchema:
           - AttributeName: userId
             KeyType: HASH
           - AttributeName: loopKey
+            KeyType: RANGE
+        # Loops are shared with the course, so the lesson needs a view of them
+        # that is not one learner's partition. The base table stays keyed by the
+        # learner — that is what makes "mine" a query — and this is the other
+        # direction: every loop on a lesson, whoever made it.
+        GlobalSecondaryIndexes:
+          - IndexName: ContentCreatedIndex
+            KeySchema:
+              - AttributeName: contentId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # What a learner has finished. Partitioned by the learner and sorted by
+    # `{spaceId}#{contentId}`, so progress through one course is a single
+    # `begins_with` query and a lesson's state is one lookup inside it. No index:
+    # nobody reads these except their owner, and their owner reads them a course
+    # at a time.
+    CompletionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: spaceKey
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: spaceKey
             KeyType: RANGE
 
     VideosBucket:
@@ -1436,3 +1513,6 @@ resources:
     ContentLoopsTableName:
       Description: Learner content loops DynamoDB table name
       Value: !Ref ContentLoopsTable
+    CompletionsTableName:
+      Description: Learner lesson completions DynamoDB table name
+      Value: !Ref CompletionsTable
