@@ -148,7 +148,12 @@ provider:
             - !Sub "${PlaylistTable.Arn}/index/*"
             - !GetAtt CommentsTable.Arn
             - !Sub "${CommentsTable.Arn}/index/*"
+            # The indexes are separate resources as far as IAM is concerned, and
+            # querying a table's index is a `Query` against the index — not
+            # against the table. A table granted without its indexes is a table
+            # whose listings work and whose lookups do not.
             - !GetAtt ContentLoopsTable.Arn
+            - !Sub "${ContentLoopsTable.Arn}/index/*"
             - !GetAtt CompletionsTable.Arn
         - Effect: Allow
           Action:
@@ -588,10 +593,9 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
-  # The discussion on a piece of content. Comments are addressed under their
-  # content because that is the pair the table is keyed by.
-  # Loops — a learner's named stretches of a lesson's video, for hearing a
-  # piece again. Addressable only through their owner.
+  # Loops — named stretches of a lesson's video, for hearing a piece again.
+  # Shared with the course; only the learner who made one may move or delete it,
+  # which the key enforces rather than a check.
   create-loop:
     handler: src/functions/loops/create-loop.handler
     events:
@@ -666,6 +670,8 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  # The discussion on a piece of content. Comments are addressed under their
+  # content because that is the pair the table is keyed by.
   list-comments:
     handler: src/functions/comments/list-comments.handler
     events:
@@ -1061,11 +1067,11 @@ resources:
           - AttributeName: commentId
             KeyType: RANGE
 
-    # A learner's loops on a lesson. Partitioned by the learner and sorted by
-    # `{contentId}#{loopId}`, so "the loops on this lesson" is one `begins_with`
-    # query and a loop can only ever be addressed through the person who made
-    # it. No index: nobody reads these except their owner, and their owner reads
-    # them one lesson at a time.
+    # Loops on a lesson: named stretches of the video, shared with the course.
+    # Partitioned by the learner and sorted by `{contentId}#{loopId}`, so "mine"
+    # is one `begins_with` query and a loop can only ever be *changed* through
+    # the person who made it — which is what makes "only its maker may move it"
+    # a property of the key rather than a check somebody has to remember.
     ContentLoopsTable:
       Type: AWS::DynamoDB::Table
       Properties:
