@@ -63,7 +63,8 @@ function probeVideo(file: File): Promise<VideoMeta | null> {
   });
 }
 
-export function UploadForm() {
+/** The organization is fixed by the route the form is rendered on. */
+export function UploadForm({ organizationId }: { organizationId: string }) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -101,6 +102,7 @@ export function UploadForm() {
       const created = await create.mutateAsync({
         title: title.trim(),
         description: description.trim(),
+        organizationId,
         fileName: file.name,
         contentType: file.type || 'application/octet-stream',
         size: file.size,
@@ -130,7 +132,7 @@ export function UploadForm() {
         xhr.send(file);
       });
 
-      router.push(`/studio/${created.video.videoId}`);
+      router.push(`/o/${organizationId}/videos/${created.video.videoId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
       setUploading(false);

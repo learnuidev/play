@@ -54,8 +54,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  listVideos: (status?: VideoStatus) =>
-    request<ListVideosResponse>(`/videos${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  /**
+   * Lists videos. Without `organizationId` this is the caller's own uploads;
+   * with it, the organization's whole library (any member can read it).
+   */
+  listVideos: (status?: VideoStatus, organizationId?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (organizationId) params.set('organizationId', organizationId);
+    const query = params.toString();
+    return request<ListVideosResponse>(`/videos${query ? `?${query}` : ''}`);
+  },
 
   getVideo: (videoId: string) => request<{ video: Video }>(`/videos/${videoId}`),
 

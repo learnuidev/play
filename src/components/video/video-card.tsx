@@ -18,13 +18,19 @@ function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function VideoCard({ video }: { video: Video }) {
+/**
+ * `orgId` comes from the route rather than `video.organizationId`, so a video
+ * created before organizations existed (and not yet backfilled) still links
+ * into the community being browsed.
+ */
+export function VideoCard({ video, orgId }: { video: Video; orgId: string }) {
   const thumbnailReady = !!video.thumbnailKey;
   const { data: thumbnail } = useThumbnail(video.videoId, thumbnailReady);
+  const href = `/o/${orgId}/videos/${video.videoId}`;
 
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-ring/40 hover:shadow-xl">
-      <Link href={`/studio/${video.videoId}`} className="relative aspect-video overflow-hidden bg-zinc-900">
+      <Link href={href} className="relative aspect-video overflow-hidden bg-zinc-900">
         {thumbnail ? (
           <img
             src={thumbnail.thumbnailUrl}
@@ -45,7 +51,7 @@ export function VideoCard({ video }: { video: Video }) {
 
       <div className="flex flex-1 flex-col gap-2 p-4">
         <Link
-          href={`/studio/${video.videoId}`}
+          href={href}
           className="line-clamp-1 text-sm font-semibold transition-colors hover:underline"
         >
           {video.title}
@@ -60,11 +66,11 @@ export function VideoCard({ video }: { video: Video }) {
 
         <div className="mt-2 flex items-center gap-1.5">
           <Button variant="secondary" size="sm" className="flex-1" asChild>
-            <Link href={`/studio/${video.videoId}`}>Open</Link>
+            <Link href={href}>Open</Link>
           </Button>
           {video.status === 'READY' && (
             <Button variant="ghost" size="icon" aria-label="Preview" asChild>
-              <Link href={`/studio/${video.videoId}/preview`}>
+              <Link href={`${href}/preview`}>
                 <EyeIcon />
               </Link>
             </Button>

@@ -56,7 +56,7 @@ export function OrganizationForm() {
         description: description.trim(),
       });
       toast.success(`${organization.name} created`);
-      router.push(`/studio/organizations/${organization.orgId}`);
+      router.push(`/o/${organization.orgId}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create organization';
       setError(message);
@@ -116,7 +116,7 @@ export function OrganizationForm() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex items-center justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={() => router.push('/studio/organizations')}>
+        <Button type="button" variant="ghost" onClick={() => router.push('/organizations')}>
           Cancel
         </Button>
         <Button type="submit" disabled={create.isPending || !trimmedName || tooShort}>

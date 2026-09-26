@@ -33,17 +33,18 @@ export default function AuthCallbackPage() {
   const [error, setError] = useState<string | null>(null);
   const [isStuck, setIsStuck] = useState(false);
 
-  // Once the tokens are stored, the session flips to authenticated.
+  // Once the tokens are stored, the session flips to authenticated. `/` resolves
+  // the community to open (your first organization, or create one).
   useEffect(() => {
     if (authStatus === 'authenticated') {
-      router.replace('/studio');
+      router.replace('/');
     }
   }, [authStatus, router]);
 
   useEffect(() => {
     const unsubscribe = Hub.listen('auth', ({ payload }) => {
       if (payload.event === 'signInWithRedirect') {
-        router.replace('/studio');
+        router.replace('/');
       } else if (payload.event === 'signInWithRedirect_failure') {
         setError(errorMessage(payload.data));
       }

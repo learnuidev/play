@@ -29,6 +29,12 @@ export const AUDIO_STATUS_LABELS: Record<AudioStatus, string> = {
 
 export interface Video {
   videoId: string;
+  /**
+   * Organization the video belongs to. Absent only on videos uploaded before
+   * organizations existed and not yet backfilled (see the backend's
+   * `scripts/backfill-video-organizations.js`).
+   */
+  organizationId?: string;
   ownerId: string;
   title: string;
   description: string;
@@ -75,6 +81,8 @@ export const TRANSLATION_LANGUAGES: TranslationLanguage[] = [
 export interface CreateVideoPayload {
   title: string;
   description?: string;
+  /** Organization the video belongs to. Every video must have one. */
+  organizationId: string;
   fileName: string;
   contentType: string;
   size: number;

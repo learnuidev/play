@@ -25,7 +25,7 @@ export function OrganizationCard({ organization }: { organization: OrganizationS
         </div>
         <div className="min-w-0 flex-1">
           <Link
-            href={`/studio/organizations/${organization.orgId}`}
+            href={`/o/${organization.orgId}`}
             className="line-clamp-1 text-sm font-semibold transition-colors hover:underline"
           >
             {organization.name}
@@ -44,7 +44,7 @@ export function OrganizationCard({ organization }: { organization: OrganizationS
           Created {formatDate(organization.createdAt)}
         </span>
         <Button variant="secondary" size="sm" asChild>
-          <Link href={`/studio/organizations/${organization.orgId}`}>Open</Link>
+          <Link href={`/o/${organization.orgId}`}>Open</Link>
         </Button>
       </div>
     </article>

@@ -11,14 +11,13 @@ import { useThumbnail } from "@/modules/thumbnail/thumbnail.queries";
 import { parseVtt } from "@/lib/vtt";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StudioPageHeader } from "@/components/studio/page-header";
-import { VideoStatusBadge } from "@/components/studio/status-badge";
+import { VideoStatusBadge } from "@/components/video/status-badge";
 import { AudioPlayer } from "@/components/audio-player";
 import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
 import { SubtitleTranscript } from "@/components/subtitle-transcript";
 
 export default function PreviewPage() {
-  const { videoId } = useParams<{ videoId: string }>();
+  const { orgId, videoId } = useParams<{ orgId: string; videoId: string }>();
   const { data: videoRes, isError, error } = useVideo(videoId);
   const video = videoRes?.video;
   const isReady = video?.status === "READY";
@@ -115,46 +114,33 @@ export default function PreviewPage() {
   );
 
   return (
-    <div className="flex h-svh flex-col">
-      <StudioPageHeader
-        title={video?.title ?? "Preview"}
-        description={isReady ? "Final video preview" : undefined}
-        actions={
-          <>
-            {video && <VideoStatusBadge status={video.status} />}
-            <Button size="sm" variant="outline" asChild>
-              <Link href={`/studio/${videoId}`}>
-                <ArrowLeftIcon />
-                Back
-              </Link>
-            </Button>
-          </>
-        }
-      />
-
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl pt-6">
-          {isError && (
-            <p className="mb-4 text-sm text-destructive">
-              {error instanceof Error
-                ? error.message
-                : "Failed to load preview"}
-            </p>
-          )}
-
-          {video && video.status === "READY" && (
-            <div className="mb-4 grid gap-1">
-              <h2 className="text-base font-semibold">{video.title}</h2>
-              {video.description && (
-                <p className="text-sm text-muted-foreground">
-                  {video.description}
-                </p>
-              )}
-            </div>
-          )}
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-semibold">{video?.title ?? "Preview"}</h1>
+          <p className="truncate text-xs text-muted-foreground">
+            {isReady ? "Final video preview" : "This video is still processing."}
+          </p>
         </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {video && <VideoStatusBadge status={video.status} />}
+          <Button size="sm" variant="outline" asChild>
+            <Link href={`/o/${orgId}/videos/${videoId}`}>
+              <ArrowLeftIcon />
+              Back
+            </Link>
+          </Button>
+        </div>
+      </div>
 
-        <div className="sticky top-0 z-20 bg-background pb-4 pt-2">
+      <div className="grid gap-4">
+        {isError && (
+          <p className="text-sm text-destructive">
+            {error instanceof Error ? error.message : "Failed to load preview"}
+          </p>
+        )}
+
+        <div className="sticky top-0 z-20 bg-muted/30 pb-4 pt-2">
           {!video ? (
             <Skeleton className="mx-auto aspect-video w-full max-w-5xl rounded-2xl" />
           ) : video.status !== "READY" ? (

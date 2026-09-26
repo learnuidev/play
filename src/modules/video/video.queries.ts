@@ -4,7 +4,8 @@ import type { VideoStatus } from '@/types';
 
 export const videoKeys = {
   all: ['videos'] as const,
-  list: (status: VideoStatus | 'ALL' = 'ALL') => ['videos', status] as const,
+  list: (status: VideoStatus | 'ALL' = 'ALL', organizationId?: string) =>
+    ['videos', organizationId ?? 'mine', status] as const,
   detail: (videoId: string) => ['video', videoId] as const,
   stream: (videoId: string) => ['stream', videoId] as const,
   audio: (videoId: string) => ['audio', videoId] as const,
@@ -12,10 +13,15 @@ export const videoKeys = {
 
 const POLL_INTERVAL_MS = 5000;
 
-export function useVideos(status: VideoStatus | 'ALL' = 'ALL') {
+/**
+ * Lists videos for the studio. Passing `organizationId` switches the list from
+ * "my uploads" to that organization's shared library.
+ */
+export function useVideos(status: VideoStatus | 'ALL' = 'ALL', organizationId?: string) {
   return useQuery({
-    queryKey: videoKeys.list(status),
-    queryFn: () => api.listVideos(status === 'ALL' ? undefined : status),
+    queryKey: videoKeys.list(status, organizationId),
+    queryFn: () =>
+      api.listVideos(status === 'ALL' ? undefined : status, organizationId),
     refetchInterval: (query) => {
       const videos = query.state.data?.videos ?? [];
       return videos.some((v) => v.status === 'UPLOADING' || v.status === 'PROCESSING')
