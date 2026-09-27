@@ -1184,3 +1184,123 @@ export interface CatalogCourseResponse {
   course: CatalogCourse;
   sections: CatalogSection[];
 }
+
+/**
+ * API keys — the way somebody outside these two apps calls the API.
+ *
+ * Everything else in this file describes a request one of our own screens makes
+ * with a signed-in person's token behind it. A key is the other kind of caller:
+ * a script, a partner's backend, a customer's pipeline, none of which can
+ * complete a sign-in. It authenticates with one header and reaches a small,
+ * read-only surface under `/v1`.
+ */
+
+/**
+ * One key, as its owner sees it.
+ *
+ * The secret is deliberately absent, and not because this shape is trimmed for
+ * display: the API keeps only a hash of the secret, so the full key exists once
+ * — in the response that created it — and cannot be read back afterwards.
+ */
+export interface ApiKey {
+  /** ULID. Public: it identifies the key, and it is what revokes one. */
+  keyId: string;
+  /** What the key is for, as its owner named it. */
+  name: string;
+  /**
+   * The beginning of the secret, e.g. `play_sk_9f2c1a`. Enough to tell two keys
+   * apart in a list, and not enough to use one.
+   */
+  prefix: string;
+  createdAt: number;
+  /**
+   * The last time the key was presented, written at most every few minutes so
+   * that authenticating is not a write on every request.
+   */
+  lastUsedAt?: number;
+  /** Set once the key is revoked. A revoked key stays visible, and stops working. */
+  revokedAt?: number;
+  /**
+   * The organization the key was made for, when its creator named one. It is
+   * what an admin's list reads, and what decides whether the key can read that
+   * organization's courses as well as the public catalog.
+   */
+  organizationId?: string;
+  organizationName?: string;
+}
+
+/**
+ * A key as an organization's admin sees it: the key, and who made it.
+ *
+ * Separate from `ApiKey` because the extra fields are why the shape exists —
+ * an admin looking at a list of keys nobody can attribute cannot decide which
+ * one to cut off.
+ */
+export interface OrganizationApiKey extends ApiKey {
+  /** Cognito `sub` of the person who created the key. */
+  userId: string;
+  /** Their email at the time, when the API knows one. */
+  userEmail?: string;
+}
+
+export interface CreateApiKeyPayload {
+  /** What the key is for, e.g. `Nightly reporting`. 2–60 characters. */
+  name: string;
+  /**
+   * The organization to make the key for, when the caller wants one. Any active
+   * member may name the organization they are making it for; the key then
+   * appears in that organization's list, where its admins can revoke it.
+   */
+  organizationId?: string;
+}
+
+/**
+ * The one response that carries the secret.
+ *
+ * `secret` is the whole key and the only time it is ever transmitted: it is
+ * shown once, and a caller that loses it makes another key.
+ */
+export interface CreateApiKeyResponse {
+  key: ApiKey;
+  secret: string;
+}
+
+export interface ListApiKeysResponse {
+  keys: ApiKey[];
+  /**
+   * Present only when the caller holds more keys than one page. The page asks
+   * for the API's ceiling rather than for twenty, and says so when even that is
+   * not the whole list — a keys screen that quietly showed some of them would be
+   * a screen you cannot audit your own access from.
+   */
+  nextToken?: string;
+}
+
+export interface ListOrganizationApiKeysResponse {
+  keys: OrganizationApiKey[];
+  nextToken?: string;
+}
+
+/** The key that was revoked, as it now stands. */
+export interface RevokeApiKeyResponse {
+  key: ApiKey;
+}
+
+/** The organization's key that was revoked, as it now stands. */
+export interface RevokeOrganizationApiKeyResponse {
+  key: OrganizationApiKey;
+}
+
+/**
+ * The identity a presented key acts as, which is what `GET /v1/me` answers.
+ *
+ * The one call that says whether a key works at all, and the one worth making
+ * from a new integration before anything else is wired up.
+ */
+export interface ApiKeyIdentityResponse {
+  key: ApiKey;
+  owner: {
+    /** Cognito `sub` of the key's owner — the identity the key acts as. */
+    userId: string;
+  };
+}

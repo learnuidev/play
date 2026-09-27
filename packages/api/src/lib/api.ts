@@ -20,12 +20,15 @@ import type {
   CreateSpaceResponse,
   CreateVideoPayload,
   CreateVideoResponse,
+  CreateApiKeyPayload,
+  CreateApiKeyResponse,
   FavouriteResponse,
   GrantRewardPayload,
   InviteMemberPayload,
   InviteMemberResponse,
   InviteSpaceMemberPayload,
   InviteSpaceMemberResponse,
+  ListApiKeysResponse,
   ListCatalogResponse,
   ListCohortsResponse,
   ListCommentsResponse,
@@ -38,6 +41,7 @@ import type {
   ListMyCoursesResponse,
   ListMyRewardsResponse,
   ListMySpaceInvitationsResponse,
+  ListOrganizationApiKeysResponse,
   ListOrgMembersResponse,
   ListOrganizationsResponse,
   ListPlaylistResponse,
@@ -52,6 +56,8 @@ import type {
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
   PlaylistResponse,
+  RevokeApiKeyResponse,
+  RevokeOrganizationApiKeyResponse,
   RevokeRewardGrantResponse,
   RewardGrantResponse,
   RewardResponse,
@@ -586,6 +592,43 @@ export const api = {
 
   unfavouriteComment: (contentId: string, commentId: string) =>
     request<FavouriteResponse>(`/contents/${contentId}/comments/${commentId}/favourite`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * API keys: the way somebody outside these two apps calls the API.
+   *
+   * The list asks for the API's largest page rather than its default twenty.
+   * A key list is something you audit, and one that stopped at twenty without
+   * saying so would be a screen that hides the key you were looking for.
+   */
+  listApiKeys: () => request<ListApiKeysResponse>('/me/api-keys?limit=100'),
+
+  /**
+   * Makes a key. The response carries the secret, and it is the only time the
+   * API will ever hand one over: it keeps a hash, so nothing can read the key
+   * back — a caller that loses it revokes it and makes another.
+   */
+  createApiKey: (payload: CreateApiKeyPayload) =>
+    request<CreateApiKeyResponse>('/me/api-keys', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /** Cuts off one of the caller's own keys. The key's row is kept, revoked. */
+  revokeApiKey: (keyId: string) =>
+    request<RevokeApiKeyResponse>(`/me/api-keys/${keyId}`, { method: 'DELETE' }),
+
+  /**
+   * Every key made for an organization, whoever made it. An admin's list: keys
+   * outlive the people who made them, and somebody has to be able to cut one off.
+   */
+  listOrganizationApiKeys: (orgId: string) =>
+    request<ListOrganizationApiKeysResponse>(`/organizations/${orgId}/api-keys?limit=100`),
+
+  /** Cuts off one of the organization's keys, whoever made it. */
+  revokeOrganizationApiKey: (orgId: string, keyId: string) =>
+    request<RevokeOrganizationApiKeyResponse>(`/organizations/${orgId}/api-keys/${keyId}`, {
       method: 'DELETE',
     }),
 };

@@ -3,8 +3,10 @@
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import Link from 'next/link';
 import {
+  BookOpenIcon,
   BuildingIcon,
   GraduationCapIcon,
+  KeyRoundIcon,
   LogOutIcon,
   MailPlusIcon,
   UserIcon,
@@ -56,6 +58,23 @@ export function AccountMenu() {
           <Link href="/organizations">
             <BuildingIcon />
             Your organizations
+          </Link>
+        </DropdownMenuItem>
+        {/* The credentials for calling the API, and the reference for what they
+            reach. Here rather than in a sidebar section because neither belongs
+            to a community: a key is the person's own, and it is the same screen
+            whether they are in one organization or none. */}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/api-keys">
+            <KeyRoundIcon />
+            API keys
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/docs">
+            <BookOpenIcon />
+            API reference
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

@@ -1,4 +1,5 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
+import type { ApiKeyCaller } from '../types';
 import { HttpError } from './http';
 
 interface AuthorizerClaims {
@@ -52,4 +53,33 @@ export function displayNameOf(user: AuthUser): string {
  */
 export function requireUserId(event: APIGatewayProxyEvent): string {
   return requireUser(event).userId;
+}
+
+/**
+ * The key a caller presented, as the API-key authorizer resolved it.
+ *
+ * The other half of `requireUser`: a route behind the Cognito authorizer learns
+ * who is calling from the token's claims, and a route behind the key authorizer
+ * learns it from the context the authorizer returned. Everything the key
+ * authorizes in a handler reads this and nothing else — the identity, and the
+ * organization the key was made for.
+ *
+ * Not reaching this at all is the normal case for a missing key: API Gateway
+ * refuses a request that carries no `x-api-key` before the function is invoked,
+ * so this guard is here for the request that arrives with an empty context
+ * rather than for the one that arrives with no key.
+ */
+export function requireApiKeyCaller(event: APIGatewayProxyEvent): ApiKeyCaller {
+  const context = event.requestContext.authorizer as
+    | Record<string, string | undefined>
+    | undefined;
+
+  const keyId = context?.keyId;
+  const userId = context?.userId;
+  if (!keyId || !userId) {
+    throw new HttpError(401, 'Unauthorized');
+  }
+
+  const organizationId = context?.organizationId;
+  return { keyId, userId, ...(organizationId ? { organizationId } : {}) };
 }

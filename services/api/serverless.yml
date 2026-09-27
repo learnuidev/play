@@ -35,6 +35,19 @@ custom:
     name: cognito-authorizer
     type: COGNITO_USER_POOLS
     arn: !GetAtt CognitoUserPool.Arn
+  # The authorizer behind `/v1`: the routes a caller reaches with an API key
+  # rather than with a token.
+  #
+  # `type: request` because the credential is a header we look up ourselves
+  # rather than a token API Gateway already knows how to validate. The identity
+  # source is the header the docs promise, which is also what API Gateway keys
+  # its cache on — and the cache is off (`resultTtlInSeconds: 0`) so that
+  # revoking a key takes effect on the next call rather than within the hour.
+  apiKeyAuthorizer:
+    name: api-key-authorizer
+    type: request
+    identitySource: method.request.header.x-api-key
+    resultTtlInSeconds: 0
   # Google sign-in (optional). The credentials live in SSM Parameter Store so
   # they stay out of the repo and out of shell history — write them with
   # scripts/set-google-oauth.sh. When they are missing, the Google identity
@@ -160,6 +173,7 @@ provider:
     COHORT_MEMBERS_TABLE: !Ref CohortMembersTable
     SPACE_REWARDS_TABLE: !Ref SpaceRewardsTable
     REWARD_GRANTS_TABLE: !Ref RewardGrantsTable
+    API_KEYS_TABLE: !Ref ApiKeysTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
@@ -286,6 +300,18 @@ provider:
             - !GetAtt ContentLoopsTable.Arn
             - !Sub "${ContentLoopsTable.Arn}/index/*"
             - !GetAtt CompletionsTable.Arn
+        # API keys: the credentials a caller outside this product authenticates
+        # with, and the identity the authorizer resolves one into.
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+          Resource:
+            - !GetAtt ApiKeysTable.Arn
+            - !Sub "${ApiKeysTable.Arn}/index/*"
         - Effect: Allow
           Action:
             - s3:GetObject
@@ -1209,6 +1235,112 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  # API keys — what somebody outside these two apps authenticates with.
+  #
+  # Making and revoking one is ordinary account management: it is the caller's
+  # own key, so it needs nothing beyond being signed in. Reading an
+  # organization's keys is an admin's business, which is why those two routes are
+  # addressed under the organization.
+  create-api-key:
+    handler: src/functions/api-keys/create-api-key.handler
+    events:
+      - http:
+          path: me/api-keys
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-api-keys:
+    handler: src/functions/api-keys/list-api-keys.handler
+    events:
+      - http:
+          path: me/api-keys
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  revoke-api-key:
+    handler: src/functions/api-keys/revoke-api-key.handler
+    events:
+      - http:
+          path: me/api-keys/{keyId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-organization-api-keys:
+    handler: src/functions/api-keys/list-organization-api-keys.handler
+    events:
+      - http:
+          # Every key made for this organization, whoever made it. An admin's
+          # list, and the reason a key can name an organization.
+          path: organizations/{orgId}/api-keys
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  revoke-organization-api-key:
+    handler: src/functions/api-keys/revoke-organization-api-key.handler
+    events:
+      - http:
+          path: organizations/{orgId}/api-keys/{keyId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # The authorizer itself. It has no HTTP event: API Gateway invokes it on behalf
+  # of the routes below, and it is never reachable as an endpoint of its own.
+  api-key-authorizer:
+    handler: src/functions/auth/api-key-authorizer.handler
+
+  # The public API: `/v1`. Read-only, addressed by a key, and the surface the
+  # docs page describes.
+  #
+  # These are the only routes in the service authorized by something other than
+  # a Cognito token, and they are deliberately few: a curated surface someone can
+  # integrate against and be held to, rather than every handler this service has
+  # opened to a second kind of caller.
+  get-api-key-identity:
+    handler: src/functions/public/get-api-key-identity.handler
+    events:
+      - http:
+          # What the presented key is, and what it reaches. The first call any
+          # new integration makes.
+          path: v1/me
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
+  list-public-courses:
+    handler: src/functions/public/list-public-courses.handler
+    events:
+      - http:
+          path: v1/courses
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
+  get-public-course:
+    handler: src/functions/public/get-public-course.handler
+    events:
+      - http:
+          path: v1/courses/{spaceId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
+  list-organization-courses:
+    handler: src/functions/public/list-organization-courses.handler
+    events:
+      - http:
+          # An organization's courses whether or not they are published, for a
+          # key made for that organization. The one read a key has that the
+          # public catalog does not.
+          path: v1/organizations/{orgId}/courses
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60
@@ -1821,6 +1953,63 @@ resources:
               - AttributeName: userId
                 KeyType: HASH
               - AttributeName: grantedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # API keys — the credentials a caller outside this product authenticates
+    # with.
+    #
+    # The key's own id is the table key rather than its hash, so that everything
+    # the studio does with a key — listing it, attributing it, revoking it — is a
+    # read of the row it names. The hash has an index of its own because the
+    # *authorizer* is the other way round: it holds a secret and nothing else,
+    # and needs the key that secret belongs to.
+    ApiKeysTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: keyId
+            AttributeType: S
+          - AttributeName: keyHash
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: organizationId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: keyId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          # The hash a presented secret is looked up by. The only index read on
+          # the authentication path, and the reason an unknown secret costs one
+          # query rather than a walk through every key ever made.
+          - IndexName: KeyHashIndex
+            KeySchema:
+              - AttributeName: keyHash
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          # The keys one person has made.
+          - IndexName: UserCreatedIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          # The keys made for one organization, whoever made them. Sparse: only
+          # a key whose creator named an organization carries the attribute, so
+          # this index holds the organization's keys and nothing else.
+          - IndexName: OrganizationCreatedIndex
+            KeySchema:
+              - AttributeName: organizationId
+                KeyType: HASH
+              - AttributeName: createdAt
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL

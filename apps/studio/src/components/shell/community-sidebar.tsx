@@ -3,12 +3,15 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  BookOpenIcon,
   BuildingIcon,
   ChevronDownIcon,
-  LinkIcon,
+  GraduationCapIcon,
+  HomeIcon,
   PlusIcon,
   SettingsIcon,
+  UsersIcon,
+  VideoIcon,
+  type LucideIcon,
 } from 'lucide-react';
 import { useOrganization } from '@api/modules/organization/organization.queries';
 import { useMyCourses } from '@api/modules/space-member/space-member.queries';
@@ -29,8 +32,25 @@ import { OrgAvatar } from './org-avatar';
 const VISIBLE_SPACES = 8;
 
 /**
- * The community's navigation panel: which organization you are in, the spaces
- * inside it, and secondary links.
+ * The organization's sections, in the order they are worked in: what is
+ * happening, the videos you shoot, the courses you build, who is in the
+ * organization, and how it is set up.
+ *
+ * The top bar offers four of these as a segmented control and leaves settings
+ * out, because a row you read at a glance holds four and not five. Here they are
+ * a list, which is what a sidebar is for: somewhere all of it is written down.
+ */
+const SECTIONS: { segment: string; label: string; icon: LucideIcon }[] = [
+  { segment: '', label: 'Home', icon: HomeIcon },
+  { segment: 'videos', label: 'Videos', icon: VideoIcon },
+  { segment: 'spaces', label: 'Spaces', icon: GraduationCapIcon },
+  { segment: 'members', label: 'Members', icon: UsersIcon },
+  { segment: 'settings', label: 'Organization settings', icon: SettingsIcon },
+];
+
+/**
+ * The community's navigation panel: which organization you are in, the
+ * organization's sections, and the spaces inside it.
  *
  * Sections that have no backing feature yet say so rather than offering
  * controls that do nothing.
@@ -119,9 +139,40 @@ export function CommunitySidebar({ orgId }: { orgId: string }) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-3 pb-3">
+        {/* The organization's sections. A guest is refused every one of them —
+            see below — so offering them would be offering a row of refusals. */}
+        {!guest && (
+          <nav aria-label="Organization sections" className="grid gap-1">
+            {SECTIONS.map((section) => {
+              const href = section.segment ? `${base}/${section.segment}` : base;
+              // Home is only active on the bare route, so a deeper section wins:
+              // `/o/x/spaces` is Spaces, not "Home and Spaces".
+              const active = section.segment
+                ? pathname === href || pathname.startsWith(`${href}/`)
+                : pathname === base;
+              return (
+                <Link
+                  key={section.label}
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-sm transition-colors',
+                    active
+                      ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                      : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                  )}
+                >
+                  <section.icon className="size-4 shrink-0" />
+                  <span className="truncate">{section.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        )}
+
         <section className="grid gap-1">
           <h2 className="px-2.5 text-xs font-medium text-muted-foreground">
-            {guest ? 'Your courses' : 'Spaces'}
+            {guest ? 'Your courses' : 'Your spaces'}
           </h2>
 
           {spacesLoading && !guest ? (
@@ -180,31 +231,6 @@ export function CommunitySidebar({ orgId }: { orgId: string }) {
             </Link>
           )}
         </section>
-
-        {/* The library and the settings are the organization's, and a guest is
-            refused both. Offering them would be offering a refusal. */}
-        {!guest && (
-        <section className="grid gap-1">
-          <h2 className="flex items-center gap-1.5 px-2.5 text-xs font-medium text-muted-foreground">
-            <LinkIcon className="size-3" />
-            Links
-          </h2>
-          <Link
-            href={`${base}/videos`}
-            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            <BookOpenIcon className="size-4 shrink-0" />
-            <span className="truncate">Video library</span>
-          </Link>
-          <Link
-            href={`${base}/settings`}
-            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          >
-            <SettingsIcon className="size-4 shrink-0" />
-            <span className="truncate">Organization settings</span>
-          </Link>
-        </section>
-        )}
       </div>
     </aside>
   );

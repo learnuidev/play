@@ -112,18 +112,20 @@ that keep it that way.
 The app is a **community shell**, modelled on the three-column community layout:
 
 ```
-┌────┬──────────────────┬──────────────────────────────────────┐
-│    │ Vishal's Circle ▾│  Home  Videos  Spaces  Members    ◐ ● │
-│ ●  ├──────────────────┼──────────────────────────────────────┤
-│ ●  │ Spaces           │ ┌──────────────────────────────────┐ │
-│ ●  │  ● Film Studies  │ │ Spaces                           │ │
-│ ○  │  ● Photography   │ │                                  │ │
-│    │  + New space     │ │   [space cards, or empty state]  │ │
-│    │                  │ │                                  │ │
-│ +  │ Links            │ └──────────────────────────────────┘ │
-│    │  Video library   │                                      │
-│    │  Settings        │                                      │
-└────┴──────────────────┴──────────────────────────────────────┘
+┌────┬──────────────────────┬──────────────────────────────────────┐
+│    │ Vishal's Circle ▾    │  Home  Videos  Spaces  Members    ◐ ● │
+│ ●  ├──────────────────────┼──────────────────────────────────────┤
+│ ●  │ Home                 │ ┌──────────────────────────────────┐ │
+│ ●  │ Videos               │ │ Spaces                           │ │
+│ ○  │ Spaces               │ │                                  │ │
+│    │ Members              │ │   [space cards, or empty state]  │ │
+│ +  │ Organization settings│ │                                  │ │
+│    │                      │ └──────────────────────────────────┘ │
+│    │ Your spaces          │                                      │
+│    │  ● Film Studies      │                                      │
+│    │  ● Photography       │                                      │
+│    │  + New space         │                                      │
+└────┴──────────────────────┴──────────────────────────────────────┘
  rail    community nav          tabbed main area
 ```
 
@@ -132,11 +134,15 @@ The app is a **community shell**, modelled on the three-column community layout:
   are monochrome on purpose — `--primary` follows the theme — so no organization
   out-shouts another; the colour a *space* is drawn in is the space's own.
 - **The community nav** (`components/shell/community-sidebar.tsx`) shows which
-  organization you are in, the spaces inside it (each with its accent dot, capped
-  at eight with an "All N spaces" link beyond that, and a "New space" link for
-  admins and editors), and secondary links.
+  organization you are in, the organization's five sections — Home, Videos,
+  Spaces, Members and Organization settings, the four the tab bar carries plus
+  the one it leaves out — and then the spaces themselves (each with its accent
+  dot, capped at eight with an "All N spaces" link beyond that, and a "New space"
+  link for admins and editors), under a heading of their own so the section link
+  and the list are not read as the same thing.
 - **The main area** (`components/shell/org-tabs.tsx`, `page-card.tsx`) is a tab
-  bar over a card per page.
+  bar over a card per page — except on a course's own page and in a lesson, where
+  the page speaks for itself and the bar stays out of it.
 - **The Members tab** (`app/o/[orgId]/members/page.tsx`) is the roster over the
   role reference. Inviting is a modal over the page
   (`components/organization/invite-member-dialog.tsx`) rather than a route:
@@ -146,9 +152,14 @@ The app is a **community shell**, modelled on the three-column community layout:
   because somebody who belongs nowhere yet has no organization page to be on
   ([Members](#members)).
 
-A lesson is the one route that is not this shape: it drops the rail, the
-community nav and the tab bar, and fills the window with the video and the
-lesson's own panel — [The classroom](#the-classroom), below.
+Two routes are not this shape. A lesson drops the rail, the community nav and
+the tab bar and fills the window with the video and the lesson's own panel —
+[The classroom](#the-classroom), below. A course's own page keeps the rail and
+the community nav but drops the tab bar, because it has a header and a tab strip
+of its own: the bar above them would be a second answer to "where am I", and on a
+course that keeps its own members it would be the same word twice on one screen.
+Both decisions are the shell's, taken from `lib/routes.ts`'s `lessonRoute` and
+`spaceRoute`, so the bar and the page cannot disagree about which routes they are.
 
 A space's own page is the one place that is not a card per concern: it is the
 course outline, a block per section with the lessons filed under it, and the
@@ -400,8 +411,8 @@ organization to use — you upload into the community you are already in.
 Two things in the reference layout were deliberately left out rather than faked:
 the search / notifications / messages / bookmark icons in the top bar, and the
 "Add link" affordance in the sidebar. Neither has a backing feature, so the top
-bar carries the theme toggle and the account menu instead, and "Links" holds real
-destinations.
+bar carries the theme toggle and the account menu instead, and the sidebar's
+links are the organization's own sections: every one of the five opens a page.
 
 ## Prerequisites
 

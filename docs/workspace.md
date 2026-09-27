@@ -109,6 +109,12 @@ and hands the classroom the window. Each app decides that in one place, from its
 own `lessonRoute(pathname)`, so the frame and the page cannot disagree about
 which pages are lessons.
 
+The studio makes one more exception, for the same reason: `OrgTabs` also stays
+out of a course's own page (`spaceRoute`), which brings a header and a strip of
+tabs of its own — an organization bar above those would be a second answer to
+"where am I", and would put the word *Members* on screen twice. The rule lives in
+`lib/routes.ts` beside `lessonRoute`, not in the bar.
+
 `<Classroom spaceId contentId />` takes what it is showing, whether the reader may
 edit it (`canEdit`), the organization to pick videos from (`orgId`, studio only)
 and a `LearningRoutes` object that says where a course and a lesson live. It puts
@@ -230,3 +236,41 @@ A new route is two things: a handler under `src/functions/**`, and a `functions:
 entry in `serverless.yml` with its path, method and `authorizer`. Leaving the
 authorizer off is how the two public catalog routes are public, and it is the
 only place in the service that happens on purpose.
+
+## The public API and API keys
+
+Everything in this service used to be called by one of our own two apps, with a
+Cognito token behind it. `/v1` is the other kind of caller: a script, a partner's
+backend, a customer's pipeline — something that cannot complete a sign-in — and
+it authenticates with an API key in an `x-api-key` header.
+
+The pieces, and where they live:
+
+| What | Where |
+| --- | --- |
+| The key's row, its hash, and the lookup by secret | `services/api/src/lib/api-keys.ts` |
+| The header-to-identity step | `services/api/src/functions/auth/api-key-authorizer.ts` |
+| The public surface itself | `services/api/src/functions/public/*` |
+| Making, listing and revoking keys | `services/api/src/functions/api-keys/*` |
+| The screen that issues them | `apps/studio/src/app/api-keys` |
+| The reference | `apps/studio/src/app/docs`, described by `apps/studio/src/lib/api-reference.ts` |
+
+Four rules worth keeping:
+
+- **A key is never stored, only its hash.** The secret exists once, in the
+  response that creates it. Nothing can read one back, which is why "copy it now"
+  is the shape of that dialog rather than a nicety.
+- **`/v1` is read-only and deliberately small.** It is a surface somebody can
+  integrate against and be held to, not every handler in the service opened to a
+  second kind of caller. Adding to it is a decision, not a route.
+- **The authorizer caches nothing** (`resultTtlInSeconds: 0`). Revocation takes
+  effect on the next request, and the price — one read per call — is what
+  identifying a caller costs everywhere else here.
+- **A bad key is a Deny policy, not a thrown error.** API Gateway has three
+  documented answers here: a Deny policy is a 403, a thrown error is a 500, and
+  a missing `x-api-key` is a 401 from the gateway itself, because the route
+  names that header as its identity source. Only the first two are ours to
+  choose, and 403 is the one that means what happened.
+- **The docs page is data.** A changed response is one object in
+  `lib/api-reference.ts`, and the page, the examples and the cURL commands all
+  come from it.

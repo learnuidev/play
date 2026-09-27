@@ -934,3 +934,95 @@ export interface CatalogCourseResponse {
   course: CatalogCourse;
   sections: CatalogSection[];
 }
+
+/**
+ * API keys — how somebody outside this product calls the API.
+ *
+ * Everything else in this service is called by one of our own two apps, which
+ * sign in with Cognito and carry a token minted for a person. A key is the other
+ * kind of caller: a script, a partner's backend, a customer's data pipeline —
+ * something that has no person behind it and cannot complete a sign-in.
+ *
+ * The row is what is *stored*, so it carries the hash and never the secret. The
+ * secret exists once, in the response to the request that created it, and there
+ * is no way to read it back: the only thing this service keeps is a SHA-256 of
+ * it, which is what makes a leak of the table a leak of nothing usable.
+ */
+export interface ApiKeyRecord {
+  /** ULID, the table key. Public: it identifies the key and revokes it. */
+  keyId: string;
+  /** What the key is for, as its owner named it. */
+  name: string;
+  /**
+   * The first characters of the secret, e.g. `play_sk_9f2c1a`. Kept so a list
+   * can show which key is which — several keys for one account look identical
+   * without it, and the alternative is storing the secret itself.
+   */
+  prefix: string;
+  /**
+   * Hex SHA-256 of the whole secret. The lookup the authorizer does, and the
+   * only representation of the key this service holds.
+   */
+  keyHash: string;
+  /** Cognito `sub` of whoever created it. */
+  userId: string;
+  /** Their email at the time, so an admin's list can say who made a key. */
+  userEmail?: string;
+  /**
+   * The organization the key was made for, when its creator named one.
+   *
+   * It is what an admin's list reads — "the keys belonging to this
+   * organization" — and it is also the key's *reach*: a key scoped to an
+   * organization may read that organization's courses, whether or not they are
+   * published. Absent means the key reaches only the public catalog.
+   */
+  organizationId?: string;
+  /** The organization's name at creation, so a list needs no second read. */
+  organizationName?: string;
+  createdAt: number;
+  /** The last time the key was presented, written at most every few minutes. */
+  lastUsedAt?: number;
+  /**
+   * When the key stopped working. A revoked key is kept rather than deleted:
+   * "this key was cut off on the 3rd" is a question somebody asks, and a row
+   * that vanished answers it with nothing.
+   */
+  revokedAt?: number;
+}
+
+/**
+ * A key as its own owner sees it, and as the API hands it out.
+ *
+ * The hash is not on it, and neither is the owner: the caller *is* the owner,
+ * which is why the same shape is what the library in each app draws from.
+ */
+export interface ApiKey {
+  keyId: string;
+  name: string;
+  prefix: string;
+  createdAt: number;
+  lastUsedAt?: number;
+  revokedAt?: number;
+  organizationId?: string;
+  organizationName?: string;
+}
+
+/**
+ * A key as an organization's admin sees it: the key, and who made it.
+ *
+ * The extra two fields are the point of the shape being separate at all — a
+ * roster of keys nobody can attribute is a roster nobody can act on.
+ */
+export interface OrganizationApiKey extends ApiKey {
+  userId: string;
+  userEmail?: string;
+}
+
+/** What a presented key is allowed to act as, read from the authorizer. */
+export interface ApiKeyCaller {
+  keyId: string;
+  /** Cognito `sub` of the key's owner — the identity the key acts as. */
+  userId: string;
+  /** The organization the key was made for, when it has one. */
+  organizationId?: string;
+}

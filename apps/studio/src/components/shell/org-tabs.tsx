@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@ui/lib/utils';
-import { lessonRoute } from '@/lib/routes';
+import { lessonRoute, spaceRoute } from '@/lib/routes';
 import { ThemeToggle } from '@ui/components/theme-toggle';
 import { AccountMenu } from './account-menu';
 
@@ -23,16 +23,25 @@ const TABS = [
  * are is a property of the page you are on and reads better as one control than
  * as four destinations. The bar itself is translucent and bare: everything under
  * it is the point.
+ *
+ * Two routes it stays out of, both for the same reason — the page is already
+ * saying where you are, and a bar over it would be saying something else:
+ *
+ * - **A lesson**, which takes the whole window: it is watched and read rather
+ *   than navigated around, and a row offering Home, Videos, Spaces and Members
+ *   above a video is chrome nobody asked for. The sidebar already shows the
+ *   course it belongs to, and that is the way back.
+ * - **A course's own page**, which brings its own header and its own strip of
+ *   tabs (Overview, Content, Members, Cohorts, Rewards). Two controls with the
+ *   same word in them — "Members" in the bar and "Members" on the page — are two
+ *   answers to one question, and the page's is the more specific one. The
+ *   sidebar is where the organization's sections are on that page.
  */
 export function OrgTabs({ orgId }: { orgId: string }) {
   const pathname = usePathname();
   const base = `/o/${orgId}`;
 
-  // A lesson takes the whole window — it is watched and read rather than
-  // navigated around, and a row offering Home, Videos, Spaces and Members above
-  // a video is chrome nobody asked for. The sidebar already shows the course it
-  // belongs to, and that is the way back.
-  if (lessonRoute(pathname)) return null;
+  if (lessonRoute(pathname) || spaceRoute(pathname)) return null;
 
   return (
     <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-4 border-b border-border/40 bg-background/70 px-4 backdrop-blur-xl">
