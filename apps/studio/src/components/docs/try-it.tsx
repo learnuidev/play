@@ -135,6 +135,7 @@ export function TryIt({ endpoint }: { endpoint: ApiEndpoint }) {
   const responseLabel = result
     ? `${result.status} · ${result.ms} ms · application/json`
     : 'Response';
+  const hasBody = result !== null && (result.json !== undefined || (result.text ?? '').length > 0);
 
   return (
     <section className="grid gap-3 rounded-2xl border border-border/60 bg-muted/30 p-4">
@@ -239,6 +240,8 @@ export function TryIt({ endpoint }: { endpoint: ApiEndpoint }) {
 
       {result && (
         <div className="grid gap-2">
+          {/* A delete answers with a status and nothing else, and an empty code
+              block reads as a failed request rather than a finished one. */}
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={cn(
@@ -255,15 +258,17 @@ export function TryIt({ endpoint }: { endpoint: ApiEndpoint }) {
               </span>
             )}
           </div>
-          <CodeBlock
-            label={responseLabel}
-            code={
-              result.json !== undefined
-                ? JSON.stringify(result.json, null, 2)
-                : (result.text ?? '')
-            }
-            className="bg-background"
-          />
+          {hasBody ? (
+            <CodeBlock
+              label={responseLabel}
+              code={result.json !== undefined ? JSON.stringify(result.json, null, 2) : (result.text ?? '')}
+              className="bg-background"
+            />
+          ) : (
+            <p className="rounded-2xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
+              No body — the request succeeded and there is nothing to read back.
+            </p>
+          )}
         </div>
       )}
     </section>

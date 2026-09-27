@@ -140,8 +140,19 @@ export function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
 
         <section className="grid gap-3">
           <FieldHeading>Response</FieldHeading>
-          <CodeBlock code={endpoint.responseExample} label="200 OK · application/json" />
-          <FieldList fields={endpoint.responseFields} />
+          {endpoint.responseExample ? (
+            <>
+              <CodeBlock
+                code={endpoint.responseExample}
+                label={`${endpoint.responseStatus} · application/json`}
+              />
+              {endpoint.responseFields && <FieldList fields={endpoint.responseFields} />}
+            </>
+          ) : (
+            <p className="rounded-2xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
+              {endpoint.responseStatus} — no body. The status is the whole answer.
+            </p>
+          )}
         </section>
       </div>
     </article>
