@@ -293,6 +293,13 @@ time it is spoken over.
 - **Scrolling it yourself pauses the follow** for a few seconds rather than
   fighting you, and it picks itself up again once you stop — with a "back to the
   current line" button for when you would rather not wait.
+- **The sheet ends where the transcript ends.** The reading anchor is a fixed
+  height from the top of the panel, and parking a *line* there needs scrollable
+  room beneath it; parking the last line there needs a screenful of room beneath
+  it, which is a blank page a reader can scroll into. So the room below is one
+  anchor tall, the transcript stops a margin past its last line, and over the
+  final screenful the lines settle towards the bottom as they are spoken the way
+  any document ends.
 - **Tapping a word seeks to that word.** Looking something up is not a seek, and
   neither is reading ahead.
 

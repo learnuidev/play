@@ -78,13 +78,26 @@ import { findActiveLine, groupIntoParagraphs, type TranscriptLine } from '@learn
 const ANCHOR_PX = 56;
 
 /**
- * Room kept above and below, so the first and last line can both reach the
- * anchor. Both are derived from it, so the three cannot drift apart.
+ * Room kept above and below the words, so the first line — and the last — have
+ * somewhere to sit.
+ *
+ * Both are one anchor tall, and the symmetry is the point: the sheet ends a
+ * margin below its last line rather than a screenful below it. A bottom spacer
+ * the height of the stage would let the *last* line reach the anchor as well as
+ * every other line does, which is why it was there — but it does that by adding
+ * a blank page under the transcript, and a reader who scrolls to the end of the
+ * words then finds the page still going, with nothing on it.
+ *
+ * The two cannot both be had: parking the last line where the other lines are
+ * read *requires* scrollable emptiness beneath it, and emptiness beneath it is
+ * exactly what "scrolled past the end" looks like. So the transcript ends where
+ * it ends, and the cost is at the end — over the last screenful of lines there
+ * is not enough below them to hold the anchor, so they settle towards the bottom
+ * as they are spoken, the way any document ends.
  */
+
 const topSpacer = { height: ANCHOR_PX };
-// The stage's own height less the anchor: any less and the last line could not
-// be scrolled up to where every other line is read.
-const bottomSpacer = { height: `calc(100% - ${ANCHOR_PX}px)` };
+const bottomSpacer = { height: ANCHOR_PX };
 
 /** Reading `scrollTop` forces a style flush, so it is trusted for a few frames. */
 const RESYNC_FRAMES = 12;
