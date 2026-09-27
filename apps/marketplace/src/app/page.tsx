@@ -31,15 +31,6 @@ export default function CatalogPage() {
    */
   const [draft, setDraft] = useState('');
   const [search, setSearch] = useState('');
-  /**
-   * Whether the URL has been read yet.
-   *
-   * A shared link carries its search in the URL, and a URL can only be read in
-   * the browser — so the first frame after hydration does not yet know what is
-   * being shown. Until it does, the heading says nothing rather than something
-   * untrue.
-   */
-  const [restored, setRestored] = useState(false);
   /** Which community's courses are being shown, or all of them. */
   const [community, setCommunity] = useState(ALL);
 
@@ -76,7 +67,6 @@ export default function CatalogPage() {
       setDraft(shared);
       setSearch(shared);
     }
-    setRestored(true);
   }, []);
 
   useEffect(() => {
@@ -130,9 +120,9 @@ export default function CatalogPage() {
           <SectionHeading
             title={search ? `Results for “${search}”` : 'All courses'}
             detail={headingDetail(courses.length, visible.length, community)}
-            // The question is known as soon as it is asked; the number of
-            // answers is not, and neither is known before the URL has been read.
-            loading={!restored || isLoading || isPlaceholderData}
+            // The count is the only half that waits: it belongs to an answer
+            // that has not arrived, while the question was asked a moment ago.
+            loading={isLoading || isPlaceholderData}
           />
         )}
 
@@ -264,24 +254,25 @@ function Hero({
 /**
  * What the heading says on the right: how many courses are on screen.
  *
- * A dash rather than nothing while the first answer is on its way, and rather
- * than "0 courses" when there is nothing to count — a zero is a fact, and before
- * the catalog has arrived there is no fact to state yet.
+ * Nothing at all when there is nothing to count. A search that matches nothing
+ * says so underneath, in a sentence; "0 courses" beside the title would be the
+ * same fact told twice, once as a number.
  */
 function headingDetail(total: number, shown: number, community: string): string {
   if (total === 0) return '';
 
-  const count = community === ALL ? `${shown} course${shown === 1 ? '' : 's'}` : `${shown} from ${community}`;
-  return count;
+  return community === ALL
+    ? `${shown} course${shown === 1 ? '' : 's'}`
+    : `${shown} from ${community}`;
 }
 
 /**
  * A quiet heading over a grid, with what is in it on the right.
  *
- * While the answer is on its way both halves are placeholders rather than text:
- * the count would otherwise be the previous search's, which is a number that
- * looks like an answer and is not one. Each placeholder is the height of the
- * line it stands in, so the grid below it does not move when they are replaced.
+ * The title says what is being looked at — a search the moment it is asked for,
+ * the catalog otherwise — and does not wait for anything to arrive. The count
+ * does wait: it belongs to an answer that is still on its way, and the previous
+ * answer's number is one that looks like an answer and is not one.
  */
 function SectionHeading({
   title,
@@ -294,13 +285,11 @@ function SectionHeading({
 }) {
   return (
     <div className="mb-5 flex items-baseline justify-between gap-4">
-      {loading ? (
-        <Skeleton className="h-7 w-40 sm:h-8" />
-      ) : (
-        <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h2>
-      )}
+      <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h2>
 
       {loading ? (
+        // The height of the line it stands in, so the grid below does not move
+        // when the number arrives.
         <Skeleton className="h-5 w-16" />
       ) : (
         <p className="shrink-0 text-sm text-muted-foreground">{detail}</p>
