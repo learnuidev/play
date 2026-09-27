@@ -337,6 +337,13 @@ a palette of emoji for the sentence itself.
   different things, and only one of them appears. Deleting a comment that has
   answers empties it and leaves the row, so the replies keep the comment they
   were written under and the thread still reads as one.
+- **A comment is authorized like the lesson it is on, not like the organization
+  that owns it.** Reading one, hearting one, and editing or deleting your own all
+  ask whether you may read the lesson — a discussion is part of a classroom, and
+  the people in a classroom are the people taking the course, who belong to the
+  course and often to nothing else. Moderating somebody else's comment is still
+  an admin's or editor's role in the organization, and the video a lesson plays
+  is authorized the same way.
 - **`@1:12` points at a moment** (`lib/timecode.ts`). A time written after an `@`
   — `@1:12`, `@00:01:12`, and a fraction of a second after either — is drawn in
   the sentence's own type and in the blue of a link, and tapping it puts the

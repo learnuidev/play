@@ -271,10 +271,21 @@ export async function requireRewardAccess(
 }
 
 /**
- * Loads a comment and authorizes the caller against the organization that owns
- * the content it is on. Comments are addressed by both ids, because the pair is
- * what the table is keyed by — there is no index that would answer by comment
- * id alone, and none is needed while a comment is always read under its content.
+ * Loads a comment and authorizes the caller against it.
+ *
+ * Reading is authorized through the *lesson* the comment is on rather than
+ * through the organization that owns it — the same question
+ * `requireContentAccess` answers, and for the same reason: a discussion is part
+ * of a classroom, and the people in a classroom are the people taking the
+ * course, who belong to the course and often to nothing else. Authorizing a
+ * read against the organization meant a learner could write a reply (which goes
+ * through the lesson) and then be refused when they tried to favourite it.
+ *
+ * Moderating one is still the organization's business.
+ *
+ * Comments are addressed by both ids, because the pair is what the table is
+ * keyed by — there is no index that would answer by comment id alone, and none
+ * is needed while a comment is always read under its content.
  */
 export async function requireCommentAccess(
   contentId: string,
@@ -285,7 +296,12 @@ export async function requireCommentAccess(
   const comment = await getComment(contentId, commentId);
   if (!comment) throw new HttpError(404, 'Comment not found');
 
-  await requireOrganizationAccess(userId, comment.organizationId, action);
+  if (action === 'write') {
+    await requireOrganizationAccess(userId, comment.organizationId, action);
+    return comment;
+  }
+
+  await requireContentAccess(contentId, userId, 'read');
   return comment;
 }
 
@@ -293,7 +309,9 @@ export async function requireCommentAccess(
  * Authorizes a change only the author of a comment may make.
  *
  * Reading the organization is not enough to edit someone else's words: a course
- * editor curates a discussion, they do not speak in it.
+ * editor curates a discussion, they do not speak in it. What the author needs is
+ * to be able to read the lesson they wrote on — which is a course membership,
+ * not an organization one.
  */
 export async function requireCommentAuthor(
   contentId: string,
@@ -303,7 +321,7 @@ export async function requireCommentAuthor(
   const comment = await getComment(contentId, commentId);
   if (!comment) throw new HttpError(404, 'Comment not found');
 
-  await requireOrganizationAccess(userId, comment.organizationId, 'read');
+  await requireContentAccess(contentId, userId, 'read');
   if (comment.authorId !== userId) {
     throw new HttpError(403, 'Only the author can change this comment');
   }
@@ -314,9 +332,9 @@ export async function requireCommentAuthor(
  * Authorizes taking a comment down: its author, or an admin or editor of the
  * organization moderating the discussion.
  *
- * The author is checked against reading access because they are acting on their
- * own words; anyone else has to hold a write role, which is what keeps a viewer
- * from deleting other people's comments.
+ * The author is checked against being able to read what they wrote on because
+ * they are acting on their own words; anyone else has to hold a write role,
+ * which is what keeps a viewer from deleting other people's comments.
  */
 export async function requireCommentModerator(
   contentId: string,
@@ -327,7 +345,7 @@ export async function requireCommentModerator(
   if (!comment) throw new HttpError(404, 'Comment not found');
 
   if (comment.authorId === userId) {
-    await requireOrganizationAccess(userId, comment.organizationId, 'read');
+    await requireContentAccess(contentId, userId, 'read');
     return comment;
   }
 
