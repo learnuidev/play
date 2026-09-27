@@ -96,6 +96,11 @@ provider:
     COMMENTS_TABLE: !Ref CommentsTable
     CONTENT_LOOPS_TABLE: !Ref ContentLoopsTable
     COMPLETIONS_TABLE: !Ref CompletionsTable
+    SPACE_MEMBERS_TABLE: !Ref SpaceMembersTable
+    COHORTS_TABLE: !Ref CohortsTable
+    COHORT_MEMBERS_TABLE: !Ref CohortMembersTable
+    SPACE_REWARDS_TABLE: !Ref SpaceRewardsTable
+    REWARD_GRANTS_TABLE: !Ref RewardGrantsTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
@@ -150,6 +155,29 @@ provider:
           Resource:
             - !GetAtt SpacesTable.Arn
             - !Sub "${SpacesTable.Arn}/index/*"
+        # Who a space is for, and what it offers them: its members, the cohorts
+        # they are grouped into, its rewards, and the grants those rewards have
+        # been handed over as.
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:BatchGetItem
+            - dynamodb:TransactWriteItems
+          Resource:
+            - !GetAtt SpaceMembersTable.Arn
+            - !Sub "${SpaceMembersTable.Arn}/index/*"
+            - !GetAtt CohortsTable.Arn
+            - !Sub "${CohortsTable.Arn}/index/*"
+            - !GetAtt CohortMembersTable.Arn
+            - !Sub "${CohortMembersTable.Arn}/index/*"
+            - !GetAtt SpaceRewardsTable.Arn
+            - !Sub "${SpaceRewardsTable.Arn}/index/*"
+            - !GetAtt RewardGrantsTable.Arn
+            - !Sub "${RewardGrantsTable.Arn}/index/*"
         # What a space holds: its sections, the content filed under them, and the
         # files attached to that content.
         - Effect: Allow
@@ -528,6 +556,215 @@ functions:
       - http:
           path: spaces/{spaceId}/thumbnail
           method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-space:
+    handler: src/functions/spaces/update-space.handler
+    events:
+      - http:
+          path: spaces/{spaceId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-space-stats:
+    handler: src/functions/spaces/get-space-stats.handler
+    events:
+      - http:
+          # What a course adds up to: its students, sections, lessons, quizzes.
+          path: spaces/{spaceId}/stats
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # Who a course is for. Membership is the course's own — an invitation here
+  # names an email address and grants this course, not the organization — so the
+  # roster, the invitations, and the claiming of one all live under the space.
+  list-space-members:
+    handler: src/functions/space-members/list-members.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/members
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  invite-space-member:
+    handler: src/functions/space-members/invite-member.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/members
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-space-member:
+    handler: src/functions/space-members/update-member.handler
+    events:
+      - http:
+          # A member is addressed by their own id — an email address while their
+          # invitation is outstanding, hence the encoding the client does.
+          path: spaces/{spaceId}/members/{userId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  remove-space-member:
+    handler: src/functions/space-members/remove-member.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/members/{userId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  resend-space-invitation:
+    handler: src/functions/space-members/resend-invitation.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/members/{userId}/invitation
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  accept-space-invitation:
+    handler: src/functions/space-members/accept-invitation.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/invitation
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-my-space-invitations:
+    handler: src/functions/space-members/list-my-invitations.handler
+    events:
+      - http:
+          # The signed-in user's own offers, across every course. The one read
+          # somebody who belongs nowhere yet can make.
+          path: me/space-invitations
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # Cohorts — the groups a course's members are run in.
+  list-cohorts:
+    handler: src/functions/cohorts/list-cohorts.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/cohorts
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  create-cohort:
+    handler: src/functions/cohorts/create-cohort.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/cohorts
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-cohort:
+    handler: src/functions/cohorts/update-cohort.handler
+    events:
+      - http:
+          path: cohorts/{cohortId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  delete-cohort:
+    handler: src/functions/cohorts/delete-cohort.handler
+    events:
+      - http:
+          path: cohorts/{cohortId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  add-cohort-member:
+    handler: src/functions/cohorts/add-member.handler
+    events:
+      - http:
+          path: cohorts/{cohortId}/members/{userId}
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  remove-cohort-member:
+    handler: src/functions/cohorts/remove-member.handler
+    events:
+      - http:
+          path: cohorts/{cohortId}/members/{userId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # Rewards — what a course hands over for reaching a milestone.
+  list-rewards:
+    handler: src/functions/rewards/list-rewards.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/rewards
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  create-reward:
+    handler: src/functions/rewards/create-reward.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/rewards
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-reward:
+    handler: src/functions/rewards/update-reward.handler
+    events:
+      - http:
+          path: rewards/{rewardId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  delete-reward:
+    handler: src/functions/rewards/delete-reward.handler
+    events:
+      - http:
+          path: rewards/{rewardId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  grant-reward:
+    handler: src/functions/rewards/grant-reward.handler
+    events:
+      - http:
+          path: rewards/{rewardId}/grants
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  revoke-reward-grant:
+    handler: src/functions/rewards/revoke-grant.handler
+    events:
+      - http:
+          path: rewards/{rewardId}/grants/{userId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-my-rewards:
+    handler: src/functions/rewards/list-my-rewards.handler
+    events:
+      - http:
+          # What the signed-in learner has earned, across every course.
+          path: me/rewards
+          method: get
           cors: true
           authorizer: ${self:custom.authorizer}
 
@@ -1264,6 +1501,174 @@ resources:
           - AttributeName: spaceKey
             KeyType: RANGE
 
+    # Who is in a course. Keyed by course and person — the same shape as an
+    # organization's roster, and deliberately a different table: a course's
+    # members are not the organization's, and somebody can take one course
+    # without being in the organization around it.
+    #
+    # `InviteEmailIndex` is what lets an invited person find their own offer.
+    # While an invitation is outstanding the row is keyed by the address it was
+    # sent to, which the table's own key cannot invert; `UserSpaceIndex` is the
+    # other direction — the courses one person is in.
+    SpaceMembersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: spaceId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: invitedEmail
+            AttributeType: S
+          - AttributeName: joinedAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: spaceId
+            KeyType: HASH
+          - AttributeName: userId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: UserSpaceIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: joinedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: InviteEmailIndex
+            KeySchema:
+              - AttributeName: invitedEmail
+                KeyType: HASH
+              - AttributeName: joinedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # The groups a course's members are run in. Party per course and ordered by
+    # creation; the membership itself is the table below, so a cohort is a label
+    # a member may wear several of.
+    CohortsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: cohortId
+            AttributeType: S
+          - AttributeName: spaceId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: cohortId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: SpaceCreatedIndex
+            KeySchema:
+              - AttributeName: spaceId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # Cohort membership: many-to-many between a cohort and a course member.
+    # `UserCohortIndex` answers "which groups am I in"; the table's own key
+    # answers "who is in this one".
+    CohortMembersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: cohortId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: addedAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: cohortId
+            KeyType: HASH
+          - AttributeName: userId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: UserCohortIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: addedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # What a course offers for reaching a milestone. The definition is the
+    # course's and the grants are the learners' — separate tables, because
+    # editing a milestone must not rewrite what somebody already earned.
+    SpaceRewardsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: rewardId
+            AttributeType: S
+          - AttributeName: spaceId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: rewardId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: SpaceCreatedIndex
+            KeySchema:
+              - AttributeName: spaceId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # One reward held by one member. Keyed by reward and person, which makes
+    # "held once per person" a property of the key: a milestone crossed twice
+    # cannot issue a second coupon. The two indexes are the two ways this is
+    # read — everything a course has given out, and everything a learner holds.
+    RewardGrantsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: rewardId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: spaceId
+            AttributeType: S
+          - AttributeName: grantedAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: rewardId
+            KeyType: HASH
+          - AttributeName: userId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: SpaceGrantedIndex
+            KeySchema:
+              - AttributeName: spaceId
+                KeyType: HASH
+              - AttributeName: grantedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: UserGrantedIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: grantedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
     VideosBucket:
       Type: AWS::S3::Bucket
       DeletionPolicy: Retain
@@ -1678,3 +2083,18 @@ resources:
     CompletionsTableName:
       Description: Learner lesson completions DynamoDB table name
       Value: !Ref CompletionsTable
+    SpaceMembersTableName:
+      Description: Course membership DynamoDB table name
+      Value: !Ref SpaceMembersTable
+    CohortsTableName:
+      Description: Course cohorts DynamoDB table name
+      Value: !Ref CohortsTable
+    CohortMembersTableName:
+      Description: Cohort membership DynamoDB table name
+      Value: !Ref CohortMembersTable
+    SpaceRewardsTableName:
+      Description: Course rewards DynamoDB table name
+      Value: !Ref SpaceRewardsTable
+    RewardGrantsTableName:
+      Description: Reward grants DynamoDB table name
+      Value: !Ref RewardGrantsTable

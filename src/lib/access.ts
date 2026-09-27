@@ -1,11 +1,24 @@
 import { getContent } from './contents';
 import { getComment } from './comments';
+import { getCohort } from './cohorts';
 import { getVideo } from './dynamodb';
 import { HttpError } from './http';
 import { getMembership } from './organizations';
+import { getReward } from './rewards';
 import { getSection } from './sections';
+import { isSpaceMember } from './space-members';
 import { getSpace } from './spaces';
-import type { Comment, Content, OrgMember, OrgRole, Section, Space, Video } from '../types';
+import type {
+  Cohort,
+  Comment,
+  Content,
+  OrgMember,
+  OrgRole,
+  Section,
+  Space,
+  SpaceReward,
+  Video,
+} from '../types';
 
 /** Roles that may create, change, or delete what an organization owns. */
 const WRITE_ROLES: OrgRole[] = ['ADMIN', 'EDITOR'];
@@ -92,7 +105,15 @@ export async function requireVideoAccess(
  * Loads a space and authorizes the caller against the organization that owns it.
  *
  * Unlike a video, a space has no personal-owner escape hatch: it is always
- * organization property, so access is exactly membership of that organization.
+ * organization property, so writing is exactly membership of that organization.
+ *
+ * Reading is deliberately wider. A course is the one thing in this API that can
+ * be offered to somebody who has no business in the organization around it — a
+ * guest instructor, a customer taking one course — and a course membership that
+ * granted nothing would be an invitation to a locked room. So a `read` is
+ * allowed for an active member of the organization *or* an active member of the
+ * course itself; a `write` is the organization's, and a course member who is not
+ * in the organization is a reader.
  */
 export async function requireSpaceAccess(
   spaceId: string,
@@ -102,8 +123,36 @@ export async function requireSpaceAccess(
   const space = await getSpace(spaceId);
   if (!space) throw new HttpError(404, 'Space not found');
 
-  await requireOrganizationAccess(userId, space.organizationId, action);
+  if (action === 'read') {
+    await assertSpaceRead(space.spaceId, space.organizationId, userId);
+    return space;
+  }
+
+  await requireOrganizationAccess(userId, space.organizationId, 'write');
   return space;
+}
+
+/**
+ * Whether the caller may read what a course holds.
+ *
+ * Split out because a section and a piece of content are read through their own
+ * ids and carry only the space they belong to; both paths want this same
+ * question answered, and answering it in one place is what keeps a course's
+ * members and its organization's members from drifting apart in what they see.
+ */
+async function assertSpaceRead(
+  spaceId: string,
+  organizationId: string,
+  userId: string,
+): Promise<void> {
+  const membership = await getMembership(organizationId, userId);
+  if (membership?.status === 'ACTIVE') return;
+
+  if (await isSpaceMember(spaceId, userId)) return;
+
+  // A missing organization and a non-membership answer the same way (403) on
+  // purpose: it keeps the API from revealing which organization ids exist.
+  throw new HttpError(403, 'Forbidden');
 }
 
 /**
@@ -122,7 +171,12 @@ export async function requireSectionAccess(
   const section = await getSection(sectionId);
   if (!section) throw new HttpError(404, 'Section not found');
 
-  await requireOrganizationAccess(userId, section.organizationId, action);
+  if (action === 'read') {
+    await assertSpaceRead(section.spaceId, section.organizationId, userId);
+    return section;
+  }
+
+  await requireOrganizationAccess(userId, section.organizationId, 'write');
   return section;
 }
 
@@ -139,8 +193,46 @@ export async function requireContentAccess(
   const content = await getContent(contentId);
   if (!content) throw new HttpError(404, 'Content not found');
 
-  await requireOrganizationAccess(userId, content.organizationId, action);
+  if (action === 'read') {
+    await assertSpaceRead(content.spaceId, content.organizationId, userId);
+    return content;
+  }
+
+  await requireOrganizationAccess(userId, content.organizationId, 'write');
   return content;
+}
+
+/**
+ * Loads a cohort and authorizes the caller against the course it groups.
+ *
+ * A cohort carries its space and its organization, so this is the course's own
+ * access rule rather than a second one: whoever may read the course may see who
+ * is in each of its groups, and whoever may change it may move people between
+ * them.
+ */
+export async function requireCohortAccess(
+  cohortId: string,
+  userId: string,
+  action: AccessAction,
+): Promise<Cohort> {
+  const cohort = await getCohort(cohortId);
+  if (!cohort) throw new HttpError(404, 'Cohort not found');
+
+  await requireSpaceAccess(cohort.spaceId, userId, action);
+  return cohort;
+}
+
+/** Loads a reward and authorizes the caller against the course offering it. */
+export async function requireRewardAccess(
+  rewardId: string,
+  userId: string,
+  action: AccessAction,
+): Promise<SpaceReward> {
+  const reward = await getReward(rewardId);
+  if (!reward) throw new HttpError(404, 'Reward not found');
+
+  await requireSpaceAccess(reward.spaceId, userId, action);
+  return reward;
 }
 
 /**

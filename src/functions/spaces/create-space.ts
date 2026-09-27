@@ -3,21 +3,17 @@ import { ulid } from 'ulid';
 import { requireOrganizationAccess } from '../../lib/access';
 import { requireUser } from '../../lib/auth';
 import { HttpError, handle, ok } from '../../lib/http';
+import { parseDripIntervalDays, parseStartAt } from '../../lib/space-schedule';
 import { putSpace } from '../../lib/spaces';
-import { DEFAULT_DRIP_INTERVAL_DAYS, SPACE_TYPES } from '../../types';
+import { SPACE_TYPES } from '../../types';
 import type { Space, SpaceType } from '../../types';
 
 const MIN_TITLE_LENGTH = 2;
 const MAX_TITLE_LENGTH = 80;
 const MAX_DESCRIPTION_LENGTH = 500;
-const MIN_DRIP_INTERVAL_DAYS = 1;
-const MAX_DRIP_INTERVAL_DAYS = 365;
 
 /** `#rrggbb` only: a value the UI can put straight into a CSS custom property. */
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
-
-/** A date-only string, which is what an `<input type="date">` submits. */
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 interface CreateSpaceBody {
   title?: string;
@@ -26,39 +22,6 @@ interface CreateSpaceBody {
   color?: string;
   startAt?: number | string;
   dripIntervalDays?: number;
-}
-
-/**
- * Accepts epoch milliseconds or an ISO date/date-time. A date-only value is
- * pinned to UTC midnight rather than the server's local midnight, so the day a
- * scheduled space starts does not depend on where the Lambda runs.
- */
-function parseStartAt(value: number | string | undefined): number {
-  if (value === undefined || value === null || value === '') {
-    throw new HttpError(400, 'startAt is required for a scheduled space');
-  }
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new HttpError(400, 'startAt must be a valid date');
-    return value;
-  }
-
-  const trimmed = value.trim();
-  const parsed = Date.parse(DATE_ONLY_PATTERN.test(trimmed) ? `${trimmed}T00:00:00.000Z` : trimmed);
-  if (!Number.isFinite(parsed)) {
-    throw new HttpError(400, 'startAt must be an ISO date or epoch milliseconds');
-  }
-  return parsed;
-}
-
-function parseDripIntervalDays(value: number | undefined): number {
-  if (value === undefined) return DEFAULT_DRIP_INTERVAL_DAYS;
-  if (!Number.isInteger(value) || value < MIN_DRIP_INTERVAL_DAYS || value > MAX_DRIP_INTERVAL_DAYS) {
-    throw new HttpError(
-      400,
-      `dripIntervalDays must be a whole number between ${MIN_DRIP_INTERVAL_DAYS} and ${MAX_DRIP_INTERVAL_DAYS}`,
-    );
-  }
-  return value;
 }
 
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {

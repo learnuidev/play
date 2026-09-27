@@ -252,6 +252,25 @@ export interface SpaceThumbnailInfo {
   expiresAt: number;
 }
 
+/**
+ * A course invitation addressed to the caller's own email address, as the API
+ * hands it out: the offer, and enough of the course to decide about it.
+ *
+ * No membership is involved — the caller has none yet, which is the whole point
+ * — so this is not the roster shape. The organization is named because a course
+ * is a course *from* somewhere, and an offer with no context is one nobody can
+ * weigh.
+ */
+export interface MySpaceInvitation {
+  spaceId: string;
+  spaceTitle: string;
+  orgId: string;
+  organizationName: string;
+  role: SpaceMemberRole;
+  invitedBy?: string;
+  invitedAt: number;
+}
+
 export interface OrgMember {
   orgId: string;
   /**
@@ -532,6 +551,240 @@ export interface LessonCompletion {
   spaceId: string;
   contentId: string;
   completedAt: number;
+}
+
+/**
+ * How a person is attached to a course.
+ *
+ * An organization's roles answer "what may you change in this organization";
+ * these answer "what are you to this course", which is a different question with
+ * a different answer: a viewer of the organization can be the instructor of one
+ * course and a student in the next.
+ *
+ * - `STUDENT`    — taking the course. The people a course's student count is.
+ * - `ASSISTANT`  — helping run it: sees the roster, reads everything.
+ * - `INSTRUCTOR` — runs it: the same as an assistant, and named as the owner.
+ */
+export type SpaceMemberRole = 'STUDENT' | 'ASSISTANT' | 'INSTRUCTOR';
+
+export const SPACE_MEMBER_ROLES: SpaceMemberRole[] = ['STUDENT', 'ASSISTANT', 'INSTRUCTOR'];
+
+/**
+ * A membership of a course.
+ *
+ * Keyed by the course and the person, exactly like an organization membership,
+ * so "who is in this course" is one query rather than a filter over the
+ * organization. Deliberately *not* the organization's roster: a course is taken
+ * by people who may have no business in the organization around it, which is
+ * what makes a course invitation an address rather than a membership.
+ */
+export interface SpaceMember {
+  /** Partition key: the course. */
+  spaceId: string;
+  /**
+   * Sort key: the Cognito `sub` — or, while `status` is `INVITED`, the email
+   * address the invitation was sent to. Accepting rewrites the row under the
+   * real `sub`, so an invitation is never an identity.
+   */
+  userId: string;
+  /** Denormalized from the space, so a member authorizes in one hop. */
+  organizationId: string;
+  role: SpaceMemberRole;
+  status: OrgMemberStatus;
+  /** Email of the member, when known. */
+  email?: string;
+  /** The address the invitation named. Only ever on an `INVITED` row. */
+  invitedEmail?: string;
+  /** Cognito `sub` of whoever added them. */
+  invitedBy?: string;
+  /** When the membership began, or when the invitation was sent. */
+  joinedAt: number;
+}
+
+/**
+ * A group of a course's members: a cohort.
+ *
+ * Cohorts are how a course runs for more than one intake at once — a September
+ * group and a January one, or a team inside a company — without the course being
+ * copied. Membership is many-to-many and lives in its own table, because a
+ * cohort is a label a member may wear several of and because adding somebody to
+ * one must not rewrite the membership row beside it.
+ */
+export interface Cohort {
+  /** ULID, the table key. */
+  cohortId: string;
+  /** The course it groups members of. A cohort never exists outside one. */
+  spaceId: string;
+  /** Denormalized from the space, for the same reason as on a member. */
+  organizationId: string;
+  /** Required, 2–80 characters (whitespace collapsed). */
+  name: string;
+  /** Optional, ≤ 500 characters. */
+  description: string;
+  /** When this cohort's run begins, epoch ms. Absent means no schedule. */
+  startAt?: number;
+  /** When it ends, epoch ms. Absent means open-ended. */
+  endAt?: number;
+  /** Members in it, kept on the row so a list can show it without a query each. */
+  memberCount: number;
+  /** Cognito `sub` of the user who created it. */
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One membership of a cohort: the course member it groups. */
+export interface CohortMember {
+  /** Partition key: the cohort. */
+  cohortId: string;
+  /** Sort key: the course member's `sub`. */
+  userId: string;
+  /** Denormalized, so a cohort membership authorizes without walking up. */
+  spaceId: string;
+  /** Cognito `sub` of the user who put them in it. */
+  addedBy: string;
+  addedAt: number;
+}
+
+/** A cohort together with the members in it, as the page reads it. */
+export interface CohortWithMembers extends Cohort {
+  memberIds: string[];
+}
+
+/**
+ * What a reward *is*, which is also how it is handed over.
+ *
+ * - `COUPON`    — a code, generated per grant, that a store or a checkout takes.
+ * - `GIFT_CARD` — the same code, for a stated amount and currency.
+ * - `CUSTOM`    — something a course does by hand; the reward carries what to do.
+ */
+export type RewardKind = 'COUPON' | 'GIFT_CARD' | 'CUSTOM';
+
+export const REWARD_KINDS: RewardKind[] = ['COUPON', 'GIFT_CARD', 'CUSTOM'];
+
+/**
+ * What a learner has to do to earn a reward.
+ *
+ * - `LESSONS_COMPLETED` — a number of the course's lessons marked done.
+ * - `PERCENT_COMPLETE`  — a share of the course's lessons, so the same reward
+ *   reads the same on a ten-lesson course and a hundred-lesson one.
+ */
+export type RewardMilestoneType = 'LESSONS_COMPLETED' | 'PERCENT_COMPLETE';
+
+export const REWARD_MILESTONE_TYPES: RewardMilestoneType[] = [
+  'LESSONS_COMPLETED',
+  'PERCENT_COMPLETE',
+];
+
+export interface RewardMilestone {
+  type: RewardMilestoneType;
+  /** Lessons, or a percentage of the course. Always ≥ 1. */
+  value: number;
+}
+
+/**
+ * A reward a course offers for reaching a milestone.
+ *
+ * The definition is the course's; the grants are the learners'. Keeping them
+ * apart is what makes a reward editable after it has been earned — raising the
+ * bar for the next person does not take back what somebody already holds.
+ */
+export interface SpaceReward {
+  /** ULID, the table key. */
+  rewardId: string;
+  /** The course that offers it. */
+  spaceId: string;
+  /** Denormalized from the space, for the same reason as on a member. */
+  organizationId: string;
+  /** Required, 2–80 characters (whitespace collapsed). */
+  name: string;
+  /** Optional, ≤ 500 characters. */
+  description: string;
+  kind: RewardKind;
+  milestone: RewardMilestone;
+  /** Face value in cents. Only meaningful on a gift card. */
+  amountCents?: number;
+  /** ISO-4217 code, e.g. `USD`. Only meaningful on a gift card. */
+  currency?: string;
+  /** Prefix generated coupon codes carry, e.g. `FILM101`. */
+  codePrefix?: string;
+  /** What to do to claim it, for a reward a course hands over by hand. */
+  instructions?: string;
+  /**
+   * How many may be granted in total. Absent means as many as are earned —
+   * which is what a milestone reward usually is, since the milestone is the
+   * limit.
+   */
+  grantLimit?: number;
+  /** Whether it is currently being earned. A paused reward is kept, not deleted. */
+  active: boolean;
+  /** Grants made, kept on the row so the list shows it without a query each. */
+  grantCount: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Where a grant has got to.
+ *
+ * A grant is the record that somebody holds a reward: it is written when a
+ * milestone is reached or when an instructor hands one over, and it stops being
+ * in force either because it was used (`REDEEMED`) or because it was taken back
+ * (`REVOKED`).
+ */
+export type RewardGrantStatus = 'ISSUED' | 'REDEEMED' | 'REVOKED';
+
+export const REWARD_GRANT_STATUSES: RewardGrantStatus[] = ['ISSUED', 'REDEEMED', 'REVOKED'];
+
+/** One reward, held by one member. */
+export interface RewardGrant {
+  /** Partition key: the reward. */
+  rewardId: string;
+  /**
+   * Sort key: the member's Cognito `sub`. A reward is held once per person,
+   * which the key says for free — reaching a milestone twice does not issue two
+   * coupons.
+   */
+  userId: string;
+  /** Denormalized, so a course's grants are one query and a grant authorizes. */
+  spaceId: string;
+  organizationId: string;
+  /** The code the member redeems, on the kinds that carry one. */
+  code?: string;
+  status: RewardGrantStatus;
+  /**
+   * Who issued it: an instructor's `sub`, or `SYSTEM` when a milestone did.
+   * Kept because "who gave this out" is the first question asked of a reward
+   * somebody says they did not earn.
+   */
+  grantedBy: string;
+  /** What the member had done at the moment it was granted, as the proof. */
+  progress?: number;
+  /** Free text an instructor may attach, e.g. where a gift card was sent. */
+  note?: string;
+  grantedAt: number;
+  redeemedAt?: number;
+  updatedAt: number;
+}
+
+/** A grant together with the member it belongs to, as a list reads it. */
+export interface RewardGrantWithMember extends RewardGrant {
+  /** The member's email, when the course roster knows one. */
+  email?: string;
+}
+
+/**
+ * A reward the caller holds, with everything needed to act on it: the grant, the
+ * reward's own definition, and where it came from.
+ *
+ * A code on its own is a string nobody can do anything with; "10% off, from
+ * Introduction to Film, for finishing five lessons" is a reward.
+ */
+export interface MyReward extends RewardGrant {
+  reward: SpaceReward;
+  spaceTitle: string;
+  orgId: string;
 }
 
 /**

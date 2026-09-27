@@ -1,7 +1,7 @@
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { env } from './config';
 import type { MailDelivery } from './members';
-import type { OrgRole } from '../types';
+import type { OrgRole, SpaceMemberRole } from '../types';
 
 /**
  * Sends the invitation emails.
@@ -144,5 +144,97 @@ export async function sendInvitationEmail(input: SendInvitationEmailInput): Prom
       // was never granted `ses:SendEmail`.
       error: `${name}: ${message}`,
     };
+  }
+}
+
+export interface SendSpaceInvitationEmailInput {
+  /** Address the invitation names. */
+  to: string;
+  /** Course the invitation is for. */
+  spaceTitle: string;
+  /** Organization the course belongs to, named so the offer has a context. */
+  organizationName: string;
+  /** Role they were invited with. */
+  role: SpaceMemberRole;
+  /** Who sent it. */
+  invitedBy: string;
+  /** Where the recipient claims it, signed in as `to`. */
+  inviteUrl: string;
+}
+
+/**
+ * Sends a course invitation.
+ *
+ * Deliberately a second letter rather than a parameter on the first: an
+ * organization invitation is an offer to join the organization, and a course
+ * invitation is an offer to take one course — possibly from outside it. Saying
+ * "you have been invited to join Acme Learning" to somebody who will only ever
+ * see one course would be a promise the acceptance does not keep.
+ */
+export async function sendSpaceInvitationEmail(
+  input: SendSpaceInvitationEmailInput,
+): Promise<MailDelivery> {
+  if (!mailConfigured()) {
+    return {
+      sent: false,
+      error: 'No sending address is configured for this deployment, so nothing was emailed.',
+    };
+  }
+
+  const subject = `${input.invitedBy} invited you to ${input.spaceTitle} on Play`;
+  const role = input.role.toLowerCase();
+
+  const text = [
+    `${input.invitedBy} invited you to take ${input.spaceTitle} on Play as ${role}.`,
+    '',
+    `Open this link and sign in with ${input.to} to accept:`,
+    input.inviteUrl,
+    '',
+    `${input.spaceTitle} is a course from ${input.organizationName}.`,
+    'If you were not expecting this, you can ignore this email.',
+  ].join('\n');
+
+  const html = `<div style="margin:0;padding:24px;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#18181b">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;padding:32px">
+    <p style="margin:0 0 8px;font-size:15px;line-height:1.6">${escapeHtml(input.invitedBy)} invited you to take</p>
+    <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3">${escapeHtml(input.spaceTitle)}</h1>
+    <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#52525b">
+      You have been invited as <strong>${escapeHtml(role)}</strong>, a course from ${escapeHtml(input.organizationName)}.
+    </p>
+    <a href="${escapeHtml(input.inviteUrl)}" style="display:inline-block;background:#18181b;color:#fafafa;text-decoration:none;padding:12px 20px;border-radius:8px;font-size:15px;font-weight:600">Accept invitation</a>
+    <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#71717a">
+      Sign in with <strong>${escapeHtml(input.to)}</strong> — that is the address the invitation was sent to.
+      Nothing in the course is visible to you until you accept.
+    </p>
+    <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#a1a1aa">
+      If you were not expecting this, you can ignore this email.
+    </p>
+  </div>
+</div>`;
+
+  try {
+    await client.send(
+      new SendEmailCommand({
+        FromEmailAddress: env.mailFromAddress,
+        Destination: { ToAddresses: [input.to] },
+        Content: {
+          Simple: {
+            Subject: { Data: subject, Charset: 'UTF-8' },
+            Body: {
+              Text: { Data: text, Charset: 'UTF-8' },
+              Html: { Data: html, Charset: 'UTF-8' },
+            },
+          },
+        },
+      }),
+    );
+
+    return { sent: true, from: env.mailFromAddress };
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'UnknownError';
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Course invitation email failed', { to: input.to, name, message });
+
+    return { sent: false, from: env.mailFromAddress, error: `${name}: ${message}` };
   }
 }
