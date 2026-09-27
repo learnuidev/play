@@ -196,7 +196,10 @@ export default function SpacePage() {
           <p className="mt-1.5 text-sm text-muted-foreground">{spaceScheduleLabel(space)}</p>
 
           {space.description && (
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            // The width of the header it sits under, rather than a reading
+            // measure: this is the course's own blurb, and a column narrower
+            // than the title above it reads as a layout that gave up halfway.
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
               {space.description}
             </p>
           )}
