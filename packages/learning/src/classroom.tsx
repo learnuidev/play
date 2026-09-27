@@ -34,7 +34,12 @@ import { usePlayingNext } from "@learning/hooks/use-playing-next";
 import { useTranscriptLines } from "@learning/hooks/use-transcript-lines";
 import { Button } from "@ui/components/ui/button";
 import { Skeleton } from "@ui/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ui/components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@ui/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -62,7 +67,11 @@ import { NotesEditor } from "@learning/components/content/notes-editor";
 import { isEmptyNotes } from "@learning/components/content/notes";
 import { NotesView } from "@learning/components/content/notes-view";
 import { PlayingNext } from "@learning/components/content/playing-next";
-import { VideoPlayer, type SubtitleTrack, type VideoPlayerHandle } from "@learning/components/video-player";
+import {
+  VideoPlayer,
+  type SubtitleTrack,
+  type VideoPlayerHandle,
+} from "@learning/components/video-player";
 import { VideoStatusBadge } from "@learning/components/video/status-badge";
 import {
   useContent,
@@ -921,11 +930,14 @@ function ClassroomBody({
             leaves the lesson, the other finishes it. */}
         <Button
           variant={completed ? "outline" : "default"}
-          size="sm"
+          size="lg"
+          // A pill, and the only one on the page: it is the lesson's one
+          // decision — you are done here — and a shape of its own is what says
+          // so without a second colour saying it.
           className={
             completed
-              ? "shrink-0 gap-1.5 border-emerald-600/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:text-emerald-200"
-              : "shrink-0 gap-1.5"
+              ? "shrink-0 gap-1.5 rounded-full border-emerald-600/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:text-emerald-200"
+              : "shrink-0 gap-1.5 rounded-full"
           }
           onClick={() =>
             completion.mutate(completed, {
