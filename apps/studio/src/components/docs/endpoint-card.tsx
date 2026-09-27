@@ -3,6 +3,7 @@ import { cn } from '@ui/lib/utils';
 import { API_AUTH_LABELS, type ApiEndpoint, type ApiField } from '@/lib/api-reference';
 import { curlFor } from '@/lib/api-example';
 import { CodeBlock } from './code-block';
+import { TryIt } from './try-it';
 
 /**
  * The method, as a colour and a word.
@@ -105,6 +106,11 @@ export function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
       </header>
 
       <div className="grid gap-8 px-6 py-6">
+        {/* The playground comes first, and above the reference rather than under
+            it: the reason somebody scrolls to one of these is usually to find
+            out what it answers, and the answer to that is a Send button. */}
+        <TryIt endpoint={endpoint} />
+
         {endpoint.parameters && endpoint.parameters.length > 0 && (
           <section className="grid gap-3">
             <FieldHeading>Parameters</FieldHeading>

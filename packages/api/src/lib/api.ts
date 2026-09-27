@@ -92,8 +92,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
  * without an id token when the session has lapsed, so both are "not signed in"
  * here rather than errors — asking a public endpoint who you are is allowed to
  * have no answer.
+ *
+ * Exported because it is not only these requests that need one: the API
+ * reference's playground calls the API directly, and a token it fetched its own
+ * way would be a second answer to "who is signed in".
  */
-async function idTokenOrNull(): Promise<string | null> {
+export async function authTokenOrNull(): Promise<string | null> {
   try {
     const session = await fetchAuthSession();
     return session.tokens?.idToken?.toString() ?? null;
@@ -136,7 +140,7 @@ async function request<T>(
   init: RequestInit = {},
   auth: AuthMode = 'required',
 ): Promise<T> {
-  const token = auth === 'none' ? null : await idTokenOrNull();
+  const token = auth === 'none' ? null : await authTokenOrNull();
 
   if (auth === 'required' && !token) {
     throw new ApiError(401, 'Not authenticated');

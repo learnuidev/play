@@ -47,15 +47,22 @@ function indentAfterFirstLine(json: string): string {
     .join('\n');
 }
 
-/** The path with its `{placeholders}` replaced by the documented example values. */
-export function interpolatedPath(endpoint: ApiEndpoint): string {
+/** The path with its `{placeholders}` filled in. */
+export function interpolatedPath(
+  endpoint: ApiEndpoint,
+  /**
+   * Values to use, by parameter name. Anything absent falls back to the
+   * documented example, which is what the reference prints beside the field and
+   * therefore what a reader expects to see in the command above it.
+   */
+  values: Record<string, string> = {},
+): string {
   return (endpoint.parameters ?? [])
     .filter((parameter) => parameter.in === 'path')
-    .reduce(
-      (path, parameter) =>
-        path.replace(`{${parameter.name}}`, parameter.example ?? `{${parameter.name}}`),
-      endpoint.path,
-    );
+    .reduce((path, parameter) => {
+      const value = values[parameter.name] ?? parameter.example ?? `{${parameter.name}}`;
+      return path.replace(`{${parameter.name}}`, encodeURIComponent(value));
+    }, endpoint.path);
 }
 
 /** The body the example sends: every documented field, at its example value. */

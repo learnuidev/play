@@ -1431,6 +1431,38 @@ resources:
       - !Not [!Equals ["${self:custom.auth.googleClientSecret}", ""]]
 
   Resources:
+    # The responses API Gateway produces *itself* — an authorizer rejecting a
+    # request, a throttle, a missing header — are generated before any Lambda
+    # runs, so they carry none of the CORS headers `lib/http` puts on ours. A
+    # browser calling the public API therefore saw an opaque network failure
+    # where the answer it needed was a 401 or a 403, which matters most to the
+    # one caller most likely to be reading it: somebody testing a new key from
+    # the docs page.
+    #
+    # Declared here rather than through `provider.apiGateway.gatewayResponses`,
+    # which this service's configuration mode silently ignores: it produced no
+    # `AWS::ApiGateway::GatewayResponse` resource at all, and no error either.
+    #
+    # It applies to the whole REST API, the signed-in routes included, where a
+    # Cognito authorizer's 401 now reaches the app's own fetch rather than being
+    # hidden behind a CORS failure.
+    GatewayResponseDefault4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        RestApiId: !Ref ApiGatewayRestApi
+        ResponseType: DEFAULT_4XX
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+
+    GatewayResponseDefault5XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        RestApiId: !Ref ApiGatewayRestApi
+        ResponseType: DEFAULT_5XX
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+
     VideosTable:
       Type: AWS::DynamoDB::Table
       Properties:

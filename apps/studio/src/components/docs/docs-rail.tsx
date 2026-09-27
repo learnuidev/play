@@ -22,6 +22,7 @@ export function DocsRail() {
       >
         <ul className="grid gap-0.5">
           <RailLink href="#overview">Overview</RailLink>
+          <RailLink href="#try-it">Try it here</RailLink>
           <RailLink href="#quickstart">Quickstart</RailLink>
           <RailLink href="#authentication">Authentication</RailLink>
         </ul>

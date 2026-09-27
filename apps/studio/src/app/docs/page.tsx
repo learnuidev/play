@@ -10,9 +10,11 @@ import { Badge } from '@ui/components/ui/badge';
 import { Button } from '@ui/components/ui/button';
 import { CopyButton } from '@/components/copy-button';
 import { CodeBlock } from '@/components/docs/code-block';
+import { CredentialPanel } from '@/components/docs/credential-panel';
 import { DocsHeader } from '@/components/docs/docs-header';
 import { DocsRail } from '@/components/docs/docs-rail';
 import { EndpointCard } from '@/components/docs/endpoint-card';
+import { PlaygroundProvider } from '@/components/docs/playground-context';
 import { API_BASE_URL, API_BASE_URL_IS_CONFIGURED } from '@/lib/api-base';
 import { curlFor } from '@/lib/api-example';
 import {
@@ -51,198 +53,215 @@ export default function ApiDocsPage() {
       <div className="mx-auto flex w-full max-w-6xl items-start gap-10 px-6">
         <DocsRail />
 
-        <main className="min-w-0 flex-1 py-10">
-          <section id="overview" className="scroll-mt-24">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="font-medium">
-                v1
-              </Badge>
-              <span className="text-sm text-muted-foreground">Read-only, by API key</span>
-            </div>
+        {/* The credential the whole page's playboxes run on lives in one
+            provider, so a key is given once rather than once per endpoint. */}
+        <PlaygroundProvider>
+          <main className="min-w-0 flex-1 py-10">
+            <section id="overview" className="scroll-mt-24">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="font-medium">
+                  v1
+                </Badge>
+                <span className="text-sm text-muted-foreground">Read-only, by API key</span>
+              </div>
 
-            <h1 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">
-              Read Play from your own code.
-            </h1>
-            <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
-              The same catalog a creator publishes to, and the same syllabus their learners read —
-              reachable by a script, a partner&rsquo;s backend, or a nightly export with one header
-              and no sign-in.
-            </p>
+              <h1 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">
+                Read Play from your own code.
+              </h1>
+              <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
+                The same catalog a creator publishes to, and the same syllabus their learners read —
+                reachable by a script, a partner&rsquo;s backend, or a nightly export with one header
+                and no sign-in.
+              </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-card-foreground">
-              <span className="text-xs text-muted-foreground">Base URL</span>
-              <code className="min-w-0 flex-1 truncate font-mono text-sm">{API_BASE_URL}</code>
-              {API_BASE_URL_IS_CONFIGURED ? (
-                <CopyButton value={API_BASE_URL} label="Copy" />
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  Set <span className="font-mono">NEXT_PUBLIC_API_URL</span> to your deployment
-                </span>
-              )}
-            </div>
+              <div className="mt-8 flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-card-foreground">
+                <span className="text-xs text-muted-foreground">Base URL</span>
+                <code className="min-w-0 flex-1 truncate font-mono text-sm">{API_BASE_URL}</code>
+                {API_BASE_URL_IS_CONFIGURED ? (
+                  <CopyButton value={API_BASE_URL} label="Copy" />
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    Set <span className="font-mono">NEXT_PUBLIC_API_URL</span> to your deployment
+                  </span>
+                )}
+              </div>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
-              <Fact
-                icon={<KeyRoundIcon className="size-4" />}
-                title="One header"
-                body="Send x-api-key on every call. No tokens, no refresh, no sign-in flow."
-              />
-              <Fact
-                icon={<ShieldCheckIcon className="size-4" />}
-                title="Read-only"
-                body="A key reads courses and catalog. It cannot write, publish, or change anything."
-              />
-              <Fact
-                icon={<ZapIcon className="size-4" />}
-                title="Revoked means revoked"
-                body="Nothing is cached in front of the key check, so a revoked key stops on the next call."
-              />
-            </div>
-          </section>
-
-          <section id="quickstart" className="mt-16 scroll-mt-24">
-            <h2 className="text-2xl font-semibold tracking-tight">Quickstart</h2>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Three steps, and the third one tells you whether it worked.
-            </p>
-
-            <div className="mt-6 grid gap-6">
-              <Step step={1} title="Make a key">
-                <p className="text-sm text-muted-foreground">
-                  In the studio, under your account menu. The secret is shown once — we keep a hash
-                  of it, so copy it somewhere safe before you close the dialog.
-                </p>
-                <Button asChild variant="secondary" size="sm" className="mt-3 w-fit">
-                  <Link href="/api-keys">
-                    <KeyRoundIcon />
-                    Go to API keys
-                    <ArrowRightIcon />
-                  </Link>
-                </Button>
-              </Step>
-
-              <Step step={2} title="Put it in your environment">
-                <CodeBlock label="Shell" code={`export PLAY_API_KEY="play_sk_…"`} />
-                <p className="mt-3 text-sm text-muted-foreground">
-                  An environment variable rather than a literal, so the key stays out of your source
-                  code, your shell history and your screenshots.
-                </p>
-              </Step>
-
-              <Step step={3} title="Ask who you are">
-                <CodeBlock label="cURL" code={quickstartCurl} />
-                <p className="mt-3 text-sm text-muted-foreground">
-                  A <span className="font-mono">200</span> comes back with the key&rsquo;s name, when
-                  it was last used, and the organization it reaches — which is the one thing that
-                  decides whether the organization endpoints below will answer.
-                </p>
-              </Step>
-            </div>
-          </section>
-
-          <section id="authentication" className="mt-16 scroll-mt-24">
-            <h2 className="text-2xl font-semibold tracking-tight">Authentication</h2>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Every call under <span className="font-mono">/v1</span> is authenticated by one header
-              and nothing else. There is no signing step, no expiry and no refresh: the key either
-              works or it has been revoked.
-            </p>
-
-            <div className="mt-6 overflow-hidden rounded-3xl border border-border/60 bg-card text-card-foreground shadow-sm">
-              <pre className="overflow-x-auto px-5 py-4 font-mono text-xs leading-relaxed">
-{`GET /v1/courses HTTP/1.1
-Host: ${API_BASE_URL.replace(/^https?:\/\//, '')}
-x-api-key: play_sk_9f2c1a4b7d8e0f1a2b3c4d5e6f7a8b9c`}
-              </pre>
-            </div>
-
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <Fact
-                icon={<BracesIcon className="size-4" />}
-                title="The secret is stored as a hash"
-                body="We keep a SHA-256 of the key and never the key itself. Nobody — not an admin, not support — can read one back, so a lost key is replaced rather than recovered."
-              />
-              <Fact
-                icon={<ShieldCheckIcon className="size-4" />}
-                title="A key acts as its owner"
-                body="Every read is attributed to the person who made it, and to the organization it was made for. Revoking it, by them or by that organization's admins, ends it."
-              />
-              <Fact
-                icon={<KeyRoundIcon className="size-4" />}
-                title="Managing keys takes a session"
-                body="The endpoints that create and revoke keys are called with a signed-in session token, not with a key. A key cannot mint another key."
-              />
-              <Fact
-                icon={<ZapIcon className="size-4" />}
-                title="Nothing is cached"
-                body="The authorizer is invoked on every request, so revocation takes effect immediately rather than within the hour a caching authorizer would take."
-              />
-            </div>
-          </section>
-
-          {API_ENDPOINT_GROUPS.map((group) => (
-            <section key={group.id} id={group.id} className="mt-16 scroll-mt-24">
-              <h2 className="text-2xl font-semibold tracking-tight">{group.title}</h2>
-              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{group.description}</p>
-
-              <div className="mt-6 grid gap-6">
-                {group.endpoints.map((endpoint) => (
-                  <EndpointCard key={endpoint.id} endpoint={endpoint} />
-                ))}
+              <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                <Fact
+                  icon={<KeyRoundIcon className="size-4" />}
+                  title="One header"
+                  body="Send x-api-key on every call. No tokens, no refresh, no sign-in flow."
+                />
+                <Fact
+                  icon={<ShieldCheckIcon className="size-4" />}
+                  title="Read-only"
+                  body="A key reads courses and catalog. It cannot write, publish, or change anything."
+                />
+                <Fact
+                  icon={<ZapIcon className="size-4" />}
+                  title="Revoked means revoked"
+                  body="Nothing is cached in front of the key check, so a revoked key stops on the next call."
+                />
               </div>
             </section>
-          ))}
 
-          <section id="errors" className="mt-16 scroll-mt-24">
-            <h2 className="text-2xl font-semibold tracking-tight">Errors</h2>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Anything the endpoint itself refuses comes back as JSON with the status in both places
-              a client looks: the response code, and a body it can print.
-            </p>
-
-            <div className="mt-6 grid gap-6">
-              <CodeBlock label="403 Forbidden · application/json" code={API_ERROR_EXAMPLE} />
-
-              <dl className="divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/60 bg-card text-card-foreground">
-                {API_ERRORS.map((error) => (
-                  <div key={error.status} className="flex items-start gap-4 px-5 py-3.5">
-                    <dt className="w-10 shrink-0 font-mono text-sm font-medium">{error.status}</dt>
-                    <dd className="text-sm text-muted-foreground">{error.meaning}</dd>
-                  </div>
-                ))}
-              </dl>
+            {/* The credentials come before the endpoints, because the keys under
+                /v1 are dead without one — and the endpoints that manage keys
+                need nothing but the session this page already has. */}
+            <div className="mt-16">
+              <CredentialPanel />
             </div>
-          </section>
 
-          <section id="conventions" className="mt-16 scroll-mt-24 pb-16">
-            <h2 className="text-2xl font-semibold tracking-tight">Conventions</h2>
-            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Four things that are true of every endpoint here.
-            </p>
+          <section id="quickstart" className="mt-16 scroll-mt-24">
+              <h2 className="text-2xl font-semibold tracking-tight">Quickstart</h2>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                Three steps, and the third one tells you whether it worked.
+              </p>
 
-            <dl className="mt-6 divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/60 bg-card text-card-foreground">
-              <Convention title="Paging">
-                Lists come back with a <Code>nextToken</Code>. Pass it back as the{' '}
-                <Code>nextToken</Code> query parameter to read the next page, and stop when it is
-                absent. It is opaque — it encodes the last row read, so changing it does not mean
-                what you might hope.
-              </Convention>
-              <Convention title="Timestamps">
-                Every time in this API is epoch milliseconds in UTC, as a number. Nothing is a
-                formatted date string, because a client that has to parse one has to guess a locale.
-              </Convention>
-              <Convention title="What is public">
-                A course appears in the catalog when its author publishes it. Reading one that has
-                not been published answers <Code>404</Code> rather than <Code>403</Code>, so the
-                catalog never reports which course ids exist in private.
-              </Convention>
-              <Convention title="Versioning">
-                Everything is under <Code>/v1</Code>. Within a version, changes are additive — a new
-                field, a new endpoint — and nothing that exists today is renamed or removed.
-              </Convention>
-            </dl>
-          </section>
+              <div className="mt-6 grid gap-6">
+                <Step step={1} title="Make a key">
+                  <p className="text-sm text-muted-foreground">
+                    In the studio, under your account menu. The secret is shown once — we keep a hash
+                    of it, so copy it somewhere safe before you close the dialog.
+                  </p>
+                  <Button asChild variant="secondary" size="sm" className="mt-3 w-fit">
+                    <Link href="/api-keys">
+                      <KeyRoundIcon />
+                      Go to API keys
+                      <ArrowRightIcon />
+                    </Link>
+                  </Button>
+                </Step>
+
+                <Step step={2} title="Put it in your environment">
+                  <CodeBlock label="Shell" code={`export PLAY_API_KEY="play_sk_…"`} />
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    An environment variable rather than a literal, so the key stays out of your source
+                    code, your shell history and your screenshots.
+                  </p>
+                </Step>
+
+                <Step step={3} title="Ask who you are">
+                  <CodeBlock label="cURL" code={quickstartCurl} />
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    A <span className="font-mono">200</span> comes back with the key&rsquo;s name, when
+                    it was last used, and the organization it reaches — which is the one thing that
+                    decides whether the organization endpoints below will answer.
+                  </p>
+                </Step>
+              </div>
+            </section>
+
+            <section id="authentication" className="mt-16 scroll-mt-24">
+              <h2 className="text-2xl font-semibold tracking-tight">Authentication</h2>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                Every call under <span className="font-mono">/v1</span> is authenticated by one header
+                and nothing else. There is no signing step, no expiry and no refresh: the key either
+                works or it has been revoked.
+              </p>
+
+              <div className="mt-6 overflow-hidden rounded-3xl border border-border/60 bg-card text-card-foreground shadow-sm">
+                <pre className="overflow-x-auto px-5 py-4 font-mono text-xs leading-relaxed">
+  {`GET /v1/courses HTTP/1.1
+  Host: ${API_BASE_URL.replace(/^https?:\/\//, '')}
+  x-api-key: play_sk_9f2c1a4b7d8e0f1a2b3c4d5e6f7a8b9c`}
+                </pre>
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <Fact
+                  icon={<BracesIcon className="size-4" />}
+                  title="The secret is stored as a hash"
+                  body="We keep a SHA-256 of the key and never the key itself. Nobody — not an admin, not support — can read one back, so a lost key is replaced rather than recovered."
+                />
+                <Fact
+                  icon={<ShieldCheckIcon className="size-4" />}
+                  title="A key acts as its owner"
+                  body="Every read is attributed to the person who made it, and to the organization it was made for. Revoking it, by them or by that organization's admins, ends it."
+                />
+                <Fact
+                  icon={<KeyRoundIcon className="size-4" />}
+                  title="Managing keys takes a session"
+                  body="The endpoints that create and revoke keys are called with a signed-in session token, not with a key. A key cannot mint another key."
+                />
+                <Fact
+                  icon={<ZapIcon className="size-4" />}
+                  title="Nothing is cached"
+                  body="The authorizer is invoked on every request, so revocation takes effect immediately rather than within the hour a caching authorizer would take."
+                />
+              </div>
+            </section>
+
+            {API_ENDPOINT_GROUPS.map((group) => (
+              <section key={group.id} id={group.id} className="mt-16 scroll-mt-24">
+                <h2 className="text-2xl font-semibold tracking-tight">{group.title}</h2>
+                <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{group.description}</p>
+
+                <div className="mt-6 grid gap-6">
+                  {group.endpoints.map((endpoint) => (
+                    <EndpointCard key={endpoint.id} endpoint={endpoint} />
+                  ))}
+                </div>
+              </section>
+            ))}
+
+            <section id="errors" className="mt-16 scroll-mt-24">
+              <h2 className="text-2xl font-semibold tracking-tight">Errors</h2>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                Anything the endpoint itself refuses comes back as JSON with the status in both places
+                a client looks: the response code, and a body it can print.
+              </p>
+
+              <div className="mt-6 grid gap-6">
+                <CodeBlock label="403 Forbidden · application/json" code={API_ERROR_EXAMPLE} />
+
+                <dl className="divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/60 bg-card text-card-foreground">
+                  {API_ERRORS.map((error) => (
+                    <div key={error.status} className="flex items-start gap-4 px-5 py-3.5">
+                      <dt className="w-10 shrink-0 font-mono text-sm font-medium">{error.status}</dt>
+                      <dd className="text-sm text-muted-foreground">{error.meaning}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </section>
+
+            <section id="conventions" className="mt-16 scroll-mt-24 pb-16">
+              <h2 className="text-2xl font-semibold tracking-tight">Conventions</h2>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                Four things that are true of every endpoint here.
+              </p>
+
+              <dl className="mt-6 divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/60 bg-card text-card-foreground">
+                <Convention title="Paging">
+                  Lists come back with a <Code>nextToken</Code>. Pass it back as the{' '}
+                  <Code>nextToken</Code> query parameter to read the next page, and stop when it is
+                  absent. It is opaque — it encodes the last row read, so changing it does not mean
+                  what you might hope.
+                </Convention>
+                <Convention title="Timestamps">
+                  Every time in this API is epoch milliseconds in UTC, as a number. Nothing is a
+                  formatted date string, because a client that has to parse one has to guess a locale.
+                </Convention>
+                <Convention title="What is public">
+                  A course appears in the catalog when its author publishes it. Reading one that has
+                  not been published answers <Code>404</Code> rather than <Code>403</Code>, so the
+                  catalog never reports which course ids exist in private.
+                </Convention>
+                <Convention title="Versioning">
+                  Everything is under <Code>/v1</Code>. Within a version, changes are additive — a new
+                  field, a new endpoint — and nothing that exists today is renamed or removed.
+                </Convention>
+                <Convention title="Cross-origin">
+                  Every response carries <Code>Access-Control-Allow-Origin: *</Code>, the ones API
+                  Gateway produces before a function runs included — which is what lets this page&rsquo;s
+                  Send buttons read a 401 or a 403 instead of it arriving as an unexplained network
+                  failure. The API is readable from any origin by design; the key is what limits it.
+                </Convention>
+              </dl>
+            </section>
         </main>
+        </PlaygroundProvider>
       </div>
     </div>
   );
