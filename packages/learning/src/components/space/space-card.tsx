@@ -2,14 +2,14 @@
 
 import Link from 'next/link';
 import { CalendarClockIcon, CirclePlayIcon } from 'lucide-react';
-import type { Space } from '@play/types';
+import type { CourseSummary } from '@play/types';
 import { formatDate } from '@ui/lib/utils';
 import { useSpaceThumbnail } from '@api/modules/space/space.queries';
 import { SpaceAvatar, spaceAccentColor } from './space-avatar';
 import { SpaceTypeBadge } from './space-type-badge';
 
 /** How a space's schedule reads in a card or a header line. */
-export function spaceScheduleLabel(space: Space): string {
+export function spaceScheduleLabel(space: CourseSummary): string {
   if (space.type !== 'SCHEDULED') return 'Starts whenever a member enrolls';
   if (space.startAt === undefined) return 'No start date set';
   const every = space.dripIntervalDays
@@ -31,14 +31,28 @@ export function spaceScheduleLabel(space: Space): string {
 export function SpaceCard({
   href,
   space,
+  coverUrl,
   footer,
 }: {
   href: string;
-  space: Space;
+  space: CourseSummary;
+  /**
+   * The cover, when the caller already has it.
+   *
+   * The studio reads a course's cover from the space's own thumbnail endpoint,
+   * which wants a token; the marketplace is handed a signed URL inside the
+   * catalog response, because the people reading *it* have not signed in. A
+   * card given one does not ask again.
+   */
+  coverUrl?: string;
   /** A badge or a line of its own under the course's own details. */
   footer?: React.ReactNode;
 }) {
-  const { data: cover } = useSpaceThumbnail(space.spaceId, Boolean(space.thumbnailKey));
+  const { data: fetched } = useSpaceThumbnail(
+    space.spaceId,
+    Boolean(space.thumbnailKey) && !coverUrl,
+  );
+  const cover = coverUrl ? { thumbnailUrl: coverUrl } : fetched;
   const accent = spaceAccentColor(space);
   const scheduled = space.type === 'SCHEDULED';
 

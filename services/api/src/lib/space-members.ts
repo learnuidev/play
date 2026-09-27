@@ -407,3 +407,54 @@ export async function sendSpaceInvitationFor(input: {
     inviteUrl: spaceInvitationUrl(input.invitation.organizationId, input.invitation.spaceId),
   });
 }
+
+/** Thrown when somebody registers for a course they are already in. */
+export class AlreadyEnrolledError extends Error {
+  constructor(userId: string) {
+    super(`${userId} is already in this course`);
+    this.name = 'AlreadyEnrolledError';
+  }
+}
+
+/**
+ * Puts somebody in a course because they asked to be.
+ *
+ * This is the one membership nobody was invited to: the course is listed in the
+ * marketplace, the caller read it and registered. They join as a student —
+ * registering is taking a course, and the roles that run one are given by
+ * whoever runs it — and the write is conditional on the row being absent so
+ * that registering twice, or two tabs registering at once, leaves the first
+ * membership alone rather than rewriting it.
+ */
+export async function enrollInSpace(input: {
+  spaceId: string;
+  organizationId: string;
+  userId: string;
+  /** The caller's verified address, when their account has one. */
+  email?: string;
+}): Promise<SpaceMember> {
+  const member: SpaceMember = {
+    spaceId: input.spaceId,
+    userId: input.userId,
+    organizationId: input.organizationId,
+    role: 'STUDENT',
+    status: 'ACTIVE',
+    ...(input.email ? { email: input.email } : {}),
+    joinedAt: Date.now(),
+  };
+
+  try {
+    await client.send(
+      new PutCommand({
+        TableName: SPACE_MEMBERS_TABLE,
+        Item: member,
+        ConditionExpression: 'attribute_not_exists(userId)',
+      }),
+    );
+  } catch (err) {
+    if (isConditionalCheckFailed(err)) throw new AlreadyEnrolledError(input.userId);
+    throw err;
+  }
+
+  return member;
+}

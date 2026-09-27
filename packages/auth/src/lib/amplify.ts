@@ -10,8 +10,22 @@ const userPoolId = process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID;
 const userPoolClientId = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
 const oauthDomain = process.env.NEXT_PUBLIC_COGNITO_DOMAIN;
 
-/** Where the app runs when no explicit origin is configured (local dev). */
-const DEFAULT_APP_ORIGIN = 'http://localhost:3000';
+/**
+ * Where this app is running.
+ *
+ * Read from the browser rather than fixed, because there are two apps now: the
+ * studio serves on 3000 and the marketplace on 3001, both against the same user
+ * pool, and a hardcoded origin would send the marketplace's sign-in round trip
+ * back to the studio. The backend registers both origins as callback URLs.
+ *
+ * The fallback is what a server render has instead of a location, and it is only
+ * ever used for the URLs Amplify is configured with before the page is alive —
+ * sign-in itself always happens in the browser.
+ */
+const APP_ORIGIN =
+  typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'http://localhost:3000';
 
 /** Path the backend registers as a Cognito callback URL. */
 export const oauthCallbackPath = '/auth/callback';
@@ -41,11 +55,11 @@ export const isGoogleSignInEnabled =
 
 const oauthRedirectSignIn = parseUrlList(
   process.env.NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_IN,
-  `${DEFAULT_APP_ORIGIN}${oauthCallbackPath}`,
+  `${APP_ORIGIN}${oauthCallbackPath}`,
 );
 const oauthRedirectSignOut = parseUrlList(
   process.env.NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_OUT,
-  DEFAULT_APP_ORIGIN,
+  APP_ORIGIN,
 );
 
 if (isAuthConfigured) {

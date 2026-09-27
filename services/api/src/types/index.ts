@@ -238,6 +238,15 @@ export interface Space {
   dripIntervalDays?: number;
   /** Cover image key: spaces/{spaceId}/cover-{timestamp}.{ext} */
   thumbnailKey?: string;
+  /**
+   * Whether the course is listed in the marketplace catalog.
+   *
+   * Absent means private, which is what every course is until its author says
+   * otherwise: publishing is a decision, not a default, and a course written
+   * for one team should not appear in a public catalog because nobody thought
+   * to hide it.
+   */
+  listed?: boolean;
   /** Cognito `sub` of the user who created it. */
   createdBy: string;
   createdAt: number;
@@ -837,4 +846,91 @@ export interface ContentLoop {
   likeCount: number;
   createdAt: number;
   updatedAt: number;
+}
+
+/**
+ * The marketplace catalog.
+ *
+ * A course is *listed* when its author says so, and a listed course is what
+ * somebody who has never heard of the organization behind it can find, read
+ * about, and register for. Everything here is public: it is served without a
+ * token, to a visitor who has not signed in, so it carries what a course looks
+ * like from the outside and nothing about the people in it.
+ */
+
+/**
+ * The part of a course a card draws.
+ *
+ * Split out from `Space` because the studio's card and the marketplace's card
+ * are the same card, and the marketplace must not have to be handed a whole
+ * `Space` — with its `createdBy` and its internal timestamps — to draw one.
+ * A `Space` satisfies this structurally; so does a catalog course.
+ */
+export interface CourseSummary {
+  spaceId: string;
+  title: string;
+  description: string;
+  type: SpaceType;
+  /** Custom accent colour, `#rrggbb`. Absent means the UI derives one. */
+  color?: string;
+  startAt?: number;
+  dripIntervalDays?: number;
+  thumbnailKey?: string;
+}
+
+/**
+ * A course as the catalog lists it: the course, who it is from, and how much of
+ * it there is.
+ *
+ * The counts are read rather than stored — a section and a lesson are each one
+ * `COUNT` query over an index the course already has — because a counter that
+ * is maintained by hand is a number that eventually lies about the course on
+ * the page whose whole job is to describe it.
+ */
+export interface CatalogCourse extends CourseSummary {
+  organizationId: string;
+  organizationName: string;
+  /**
+   * A signed URL for the course's cover, when it has one.
+   *
+   * Served with the course rather than fetched from the thumbnail endpoint,
+   * which wants a token: a catalog read by people who have not signed in cannot
+   * use an endpoint that refuses them, and a card with no cover is a card
+   * nobody clicks.
+   */
+  thumbnailUrl?: string;
+  sectionCount: number;
+  lessonCount: number;
+  studentCount: number;
+  createdAt: number;
+}
+
+export interface ListCatalogResponse {
+  courses: CatalogCourse[];
+  nextToken?: string;
+}
+
+/**
+ * One lesson of a listed course, as the catalog shows it.
+ *
+ * `hasVideo` rather than `videoId`: the outline says what is in the course, and
+ * a video's id is not the reader's business until they are a member — the
+ * stream is behind its own authorization.
+ */
+export interface CatalogLesson {
+  contentId: string;
+  title: string;
+  hasVideo: boolean;
+}
+
+export interface CatalogSection {
+  sectionId: string;
+  title: string;
+  lessons: CatalogLesson[];
+}
+
+/** One listed course in full: what it is, and what is in it. */
+export interface CatalogCourseResponse {
+  course: CatalogCourse;
+  sections: CatalogSection[];
 }

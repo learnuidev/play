@@ -377,6 +377,13 @@ export interface Space {
   /** Days between section unlocks. Only meaningful on scheduled spaces. */
   dripIntervalDays?: number;
   thumbnailKey?: string;
+  /**
+   * Whether the course is listed in the marketplace catalog.
+   *
+   * Absent means private, which is what every course is until its author says
+   * otherwise.
+   */
+  listed?: boolean;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -432,6 +439,8 @@ export interface UpdateSpacePayload {
   /** A date-only string or epoch ms; only meaningful on a scheduled course. */
   startAt?: number | string;
   dripIntervalDays?: number;
+  /** Whether the course appears in the marketplace catalog. */
+  listed?: boolean;
 }
 
 /** What the overview's four cards read. */
@@ -1115,4 +1124,59 @@ export interface ListLoopsResponse {
 
 export interface LoopResponse {
   loop: ContentLoop;
+}
+
+/**
+ * The marketplace catalog, as the API serves it to anybody — signed in or not.
+ *
+ * A listed course is public: what it is called, who it is from, how much of it
+ * there is, and what its sections hold. The lessons themselves are not, which
+ * is why `CatalogLesson` says only whether a lesson has a video to play.
+ */
+
+/** The part of a course a card draws, in either app. */
+export interface CourseSummary {
+  spaceId: string;
+  title: string;
+  description: string;
+  type: SpaceType;
+  /** Custom accent colour, `#rrggbb`. Absent means the UI derives one. */
+  color?: string;
+  startAt?: number;
+  dripIntervalDays?: number;
+  thumbnailKey?: string;
+}
+
+export interface CatalogCourse extends CourseSummary {
+  organizationId: string;
+  organizationName: string;
+  /** A signed URL for the course's cover, when it has one. */
+  thumbnailUrl?: string;
+  sectionCount: number;
+  lessonCount: number;
+  studentCount: number;
+  createdAt: number;
+}
+
+export interface ListCatalogResponse {
+  courses: CatalogCourse[];
+  nextToken?: string;
+}
+
+export interface CatalogLesson {
+  contentId: string;
+  title: string;
+  hasVideo: boolean;
+}
+
+export interface CatalogSection {
+  sectionId: string;
+  title: string;
+  lessons: CatalogLesson[];
+}
+
+/** One listed course in full: what it is, and what is in it. */
+export interface CatalogCourseResponse {
+  course: CatalogCourse;
+  sections: CatalogSection[];
 }

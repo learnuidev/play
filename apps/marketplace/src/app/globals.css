@@ -1,0 +1,502 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* The shared packages are outside this app, so Tailwind has to be told to read
+   them: without this the classes only the packages use — the lesson panel, the
+   course cards — are never generated, and the app renders unstyled where it
+   matters most. */
+@source "../../../../packages/ui/src";
+@source "../../../../packages/learning/src";
+
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer components {
+  /**
+   * The animated transcript: a page of prose whose ink arrives as it is spoken.
+   *
+   * The whole animation is here as plain CSS, driven by two custom properties
+   * that a frame loop writes onto each word — `--p`, how much of the word has
+   * been said, and `--pop`, the swell of the word being said right now. Nothing
+   * goes through a re-render, which is what lets a transcript of several
+   * hundred words animate at frame rate.
+   */
+  .tt-stage {
+    /* Said and not yet said. The unsaid words are the page's own ink, thinned,
+       so the sheet reads as one colour being filled in rather than two. */
+    --tt-said: var(--foreground);
+    --tt-unsaid: color-mix(in oklab, var(--foreground) 26%, transparent);
+  }
+
+  /**
+   * The page fades out at the bottom rather than ending at a hard line. There is
+   * deliberately no fade at the top: the line being said is parked just under the
+   * tabs, and fading the top would thin the very words arriving.
+   *
+   * A cover over the last tenth of the sheet, and *not* a `mask-image` on the
+   * sheet itself, which is what it used to be. A mask on a scroll container is
+   * not a free effect: it makes the container's paint opaque to incremental
+   * invalidation, so the frame loop writing a word's fill — or a scroll of one
+   * pixel — repaints the whole sheet, several hundred words of clipped shader
+   * and blurred glow at a time. A cover costs one gradient over a strip.
+   *
+   * It paints the colour the sheet is drawn on, so that what fades is the text
+   * and not a visible band: the panel is a card of its own on a wide screen, and
+   * below that it is the shell's column — the page's background under a third of
+   * a tint of `--muted`. Those two are declarations made in the lesson page and
+   * in `app-shell.tsx`, so this has to follow them.
+   */
+  .tt-fade {
+    --tt-panel: color-mix(in oklab, var(--muted) 30%, var(--background));
+    /* The last tenth of the sheet — the strip the mask used to fade. Held here
+       rather than as an arbitrary height on the element, so the cover is one
+       thing in one place. */
+    height: 10%;
+    background-image: linear-gradient(to bottom, transparent, var(--tt-panel));
+  }
+
+  @media (min-width: 1024px) {
+    .tt-fade {
+      --tt-panel: var(--card);
+    }
+  }
+
+  .tt-para {
+    font-size: 20px;
+    line-height: 1.75;
+    letter-spacing: -0.005em;
+    text-wrap: pretty;
+  }
+
+  @media (min-width: 640px) {
+    .tt-para {
+      font-size: 22px;
+    }
+  }
+
+  /* The gap that makes a paragraph a paragraph; the leading inside one is the
+     line-height above. */
+  .tt-para + .tt-para {
+    margin-top: 1.4em;
+  }
+
+  /**
+   * A word at rest, which is nearly every word on the sheet.
+   *
+   * Plain ink: no gradient, no `background-clip: text`, no shadow, no
+   * transform. This is the whole performance story of the transcript. The fill
+   * is a glyph run rasterised through a clipped shader, a blurred glow and a
+   * transform — cheap for the twenty words of one line, and ruinous for the
+   * several hundred words that are on screen at once, every time the sheet is
+   * repainted (and a scroll of a sheet this tall *is* a repaint). Nothing is
+   * lost by the plain state: an unswept word was only ever painted the flat
+   * `--tt-unsaid` colour anyway. Only the line being said pays, in `.tt-live`.
+   */
+  .tt-token {
+    display: inline-block;
+    color: var(--tt-unsaid);
+    /* The recede is animated; the fill is written per frame and must not be
+       interpolated a second time on top of that. */
+    transition:
+      filter 320ms ease,
+      opacity 320ms ease;
+  }
+
+  /**
+   * What has been said, out of focus.
+   *
+   * The fill says where the playhead is; this says where the reader is, and the
+   * two are the same place only while the sheet is following. Softening the
+   * words the playhead has already crossed leaves one line sharp — the one being
+   * said — so the page reads as a page being read rather than a wall of
+   * finished text with a moving edge in the middle of it.
+   *
+   * Blur and not a fade alone, because the transcript's own ink arrives as a
+   * fill: a quarter-tone grey would read as "not yet said" at a glance, which is
+   * the opposite of the truth. Blur cannot be mistaken for either state, and it
+   * cleans up to sharp the moment a seek puts the playhead back over the line.
+   *
+   * Kept to a pixel and a half and half opacity: enough that the eye drops it,
+   * not so much that scrolling up to re-read something is a squint.
+   *
+   * This is the rule for a single line of the paragraph the playhead is in,
+   * where the reader sees the sharp line and the soft ones around it at once.
+   * A paragraph the playhead has left is softened as a whole — see below —
+   * because there the line-by-line version costs a filtered surface per word
+   * to produce exactly the same picture.
+   */
+  .tt-token.tt-past {
+    color: var(--tt-said);
+    filter: blur(1.5px);
+    opacity: 0.5;
+  }
+
+  /**
+   * A paragraph the playhead has left: every line of it is behind the reader,
+   * so it softens in one piece.
+   *
+   * One blurred surface per paragraph instead of one per word — a filtered
+   * element is painted into its own buffer, and a whole transcript of them,
+   * repainted per frame, is what makes this panel cost more than the video
+   * beside it. The picture is the same: the lines were already blurred
+   * individually, so the swap is invisible (which is why the swap is also not
+   * animated) while the work drops by roughly the number of words in a line.
+   */
+  .tt-para-past {
+    filter: blur(1.5px);
+    opacity: 0.5;
+  }
+
+  /* The block owns the blur now, so a word inside it must not add a second
+     one — and must not *animate* the removal of the first, which would read as
+     the paragraph dimming twice on its way out. */
+  .tt-para-past .tt-token {
+    color: var(--tt-said);
+    filter: none;
+    opacity: 1;
+    transition: none;
+  }
+
+  /**
+   * The line being said, and the only one that pays for the fill.
+   *
+   * A fill front travelling across the glyph: the gradient's hard stop is the
+   * playhead, so the word darkens left to right as it is said. Alongside it,
+   * deliberately barely there: a 2% swell and three quarters of a pixel of
+   * lift, anchored below the baseline so the word grows upwards (anything
+   * stronger reads as the text jumping while you are reading it), and a glow
+   * that rides the fill front — transparent until a word is actually being
+   * said, so a resting word costs nothing to paint.
+   */
+  .tt-live .tt-token {
+    --p: 0;
+    --pop: 0;
+    background-image: linear-gradient(
+      to right,
+      var(--tt-said) calc(var(--p) * 100%),
+      var(--tt-unsaid) 0
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    transform: translate3d(0, calc(var(--pop) * -0.75px), 0)
+      scale(calc(1 + var(--pop) * 0.02));
+    transform-origin: 50% 85%;
+    text-shadow: 0 0 calc(12px * var(--pop))
+      color-mix(in oklab, var(--foreground) 28%, transparent);
+  }
+
+  /* The sheet moves itself; the browser's scroll anchoring would fight it. */
+  .tt-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    overflow-anchor: none;
+  }
+
+  .tt-scroll::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tt-live .tt-token {
+      /* The fill stays — it is the point — but the word stops moving. */
+      transform: none;
+      text-shadow: none;
+    }
+  }
+
+  /**
+   * The bar that owns a loop while it is being chosen.
+   *
+   * A short rise and fade, the same gesture the next-lesson card makes, so the
+   * two never look like different kinds of interruption.
+   */
+  .loop-bar {
+    animation: loop-bar-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* It settles down into place under the video, a few pixels from where it
+     belongs rather than from anywhere else on the page. */
+  @keyframes loop-bar-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, -4px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .loop-bar {
+      animation-duration: 1ms;
+    }
+  }
+
+  /**
+   * The next lesson arriving over the end of this one.
+   *
+   * Up and in, never sideways: a card that slides in from the edge reads as
+   * something being pushed at you, while one that rises into place at the
+   * corner it lives in arrives at the edge of attention and waits there.
+   */
+  .playing-next {
+    animation: playing-next-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes playing-next-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .playing-next {
+      animation-duration: 1ms;
+    }
+
+    .play-next-bar {
+      transition: none;
+    }
+  }
+
+  /**
+   * Lesson notes, both while they are being written and once they are read.
+   *
+   * The class is shared by the editor's surface and the read-only renderer, so
+   * what an author sees while typing is what a learner sees later — without a
+   * typography plugin, whose defaults would restyle the rest of the app's prose
+   * along with it.
+   */
+  .prose-notes {
+    color: var(--foreground);
+    line-height: 1.7;
+  }
+
+  .prose-notes > * + * {
+    margin-top: 0.75rem;
+  }
+
+  .prose-notes h1,
+  .prose-notes h2,
+  .prose-notes h3 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1.25rem;
+  }
+
+  .prose-notes h1 {
+    font-size: 1.25rem;
+  }
+  .prose-notes h2 {
+    font-size: 1.125rem;
+  }
+  .prose-notes h3 {
+    font-size: 1rem;
+  }
+
+  .prose-notes ul,
+  .prose-notes ol {
+    padding-left: 1.25rem;
+  }
+
+  .prose-notes ul {
+    list-style: disc;
+  }
+  .prose-notes ol {
+    list-style: decimal;
+  }
+
+  .prose-notes li + li {
+    margin-top: 0.25rem;
+  }
+
+  .prose-notes blockquote {
+    border-left: 2px solid var(--border);
+    padding-left: 0.75rem;
+    color: var(--muted-foreground);
+  }
+
+  .prose-notes code {
+    background: var(--muted);
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-size: 0.875em;
+  }
+
+  .prose-notes pre {
+    background: var(--muted);
+    padding: 0.75rem;
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+  }
+
+  .prose-notes pre code {
+    background: none;
+    padding: 0;
+  }
+
+  .prose-notes a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .config-missing {
+    max-width: 640px;
+    margin: 80px auto;
+    padding: 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--foreground);
+  }
+
+  .config-missing h1 {
+    margin: 0 0 8px;
+    font-size: 1.25rem;
+  }
+
+  .config-missing code {
+    background: var(--muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+}

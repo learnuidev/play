@@ -3,35 +3,40 @@
  * Fetches the backend CloudFormation stack outputs (deployed with Serverless
  * Framework) and writes the required NEXT_PUBLIC_* values to `.env.local`.
  *
- * Usage:
- *   node scripts/get-env.js [options]
+ * Both apps read the same stack: one user pool, one API, one bucket. They differ
+ * only in where they run, and the redirect URLs Cognito needs are derived from
+ * the browser's own origin — so this script writes the same file into either app
+ * and the only thing that changes is the port the app serves on.
+ *
+ * Usage (from an app's own directory, or through `npm run get-env` at the root):
+ *   node ../../scripts/get-env.mjs [options]
  *
  * Options:
  *   --profile=<name>     AWS profile to use          (default: yoserverless)
  *   --stage=<name>       Backend stage               (default: dev)
  *   --stack-name=<name>  Full CloudFormation stack   (default: play-backend-<stage>)
  *   --region=<name>      AWS region                  (default: us-east-1)
- *   --out=<path>         Output file                 (default: ./.env.local)
+ *   --out=<path>         Output file                 (default: ./.env.local of the current directory)
  *   --help               Show this help
  */
 
-const { execFileSync } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 
 const args = process.argv.slice(2);
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(
     [
-      "Usage: node scripts/get-env.js [options]",
+      "Usage: node ../../scripts/get-env.mjs [options]",
       "",
       "Options:",
       "  --profile=<name>     AWS profile to use          (default: yoserverless)",
       "  --stage=<name>       Backend stage               (default: dev)",
       "  --stack-name=<name>  Full CloudFormation stack   (default: play-backend-<stage>)",
       "  --region=<name>      AWS region                  (default: us-east-1)",
-      "  --out=<path>         Output file                 (default: ./.env.local)",
+      "  --out=<path>         Output file                 (default: ./.env.local, in the current directory)",
       "  --help               Show this help",
     ].join("\n"),
   );
@@ -60,7 +65,7 @@ const region = getArg(
   "region",
   process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1",
 );
-const outFile = getArg("out", path.join(__dirname, "..", ".env.local"));
+const outFile = getArg("out", path.resolve(process.cwd(), ".env.local"));
 
 function run(cmd, argv) {
   try {

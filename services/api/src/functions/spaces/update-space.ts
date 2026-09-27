@@ -20,6 +20,8 @@ interface UpdateSpaceBody {
   color?: unknown;
   startAt?: unknown;
   dripIntervalDays?: unknown;
+  /** Whether the course appears in the marketplace catalog. */
+  listed?: unknown;
 }
 
 /**
@@ -101,6 +103,11 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     // to remove, and writing a removal anyway would be a write nobody asked for.
     patch.startAt = null;
     patch.dripIntervalDays = null;
+  }
+
+  if (body.listed !== undefined) {
+    if (typeof body.listed !== 'boolean') throw new HttpError(400, 'listed must be a boolean');
+    patch.listed = body.listed;
   }
 
   await updateSpace(spaceId, patch);

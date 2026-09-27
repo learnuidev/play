@@ -142,3 +142,34 @@ export async function nextSectionPosition(spaceId: string): Promise<number> {
   const last = (res.Items ?? [])[0] as Section | undefined;
   return (last?.position ?? 0) + 1;
 }
+
+/**
+ * How many sections a space has.
+ *
+ * A count rather than a list, for the same reason the student count is one: the
+ * catalog says "12 lessons in 3 sections" on a card, and shipping every section
+ * to the handler to be counted there would be a page of rows for a number.
+ */
+export async function countSectionsInSpace(spaceId: string): Promise<number> {
+  let count = 0;
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: SECTIONS_TABLE,
+        IndexName: SPACE_POSITION_INDEX,
+        KeyConditionExpression: '#spaceId = :spaceId',
+        ExpressionAttributeNames: { '#spaceId': 'spaceId' },
+        ExpressionAttributeValues: { ':spaceId': spaceId },
+        Select: 'COUNT',
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    count += res.Count ?? 0;
+    exclusiveStartKey = res.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return count;
+}

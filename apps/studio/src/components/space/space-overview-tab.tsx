@@ -35,6 +35,7 @@ import { Label } from '@ui/components/ui/label';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { Textarea } from '@ui/components/ui/textarea';
 import { BlockLabel } from '@/components/shell/page-card';
+import { SpaceMarketplaceCard } from '@/components/space/space-marketplace-card';
 
 // Mirrors the server-side limits, so the form fails fast instead of round-tripping.
 const MIN_TITLE_LENGTH = 2;
@@ -454,6 +455,10 @@ export function SpaceOverviewTab({ space, canEdit }: { space: Space; canEdit: bo
           <CourseDetailsForm space={space} canEdit={canEdit} />
         </div>
       </section>
+
+      {/* Last, because publishing is the end of writing a course rather than
+          another field to fill in on the way through it. */}
+      <SpaceMarketplaceCard space={space} canEdit={canEdit} />
     </div>
   );
 }

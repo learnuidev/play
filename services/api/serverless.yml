@@ -45,9 +45,12 @@ custom:
   # Serverless v4's variable parser splits a fallback on commas and reads each
   # part as another provider, so an inline `http://a,http://b` default fails with
   # "Provider 'http is not supported".
+  #
+  # Both apps are here: the studio signs in on 3000 and the marketplace on 3001,
+  # and Cognito refuses any redirect it was not told about.
   authDefaults:
-    callbackUrls: "http://localhost:3000/auth/callback,http://localhost:3000"
-    logoutUrls: "http://localhost:3000"
+    callbackUrls: "http://localhost:3000/auth/callback,http://localhost:3000,http://localhost:3001/auth/callback,http://localhost:3001"
+    logoutUrls: "http://localhost:3000,http://localhost:3001"
   auth:
     googleClientId: ${ssm:/play/auth/google-client-id, ''}
     googleClientSecret: ${ssm:/play/auth/google-client-secret, ''}
@@ -630,6 +633,47 @@ functions:
           # What a course adds up to: its students, sections, lessons, quizzes.
           path: spaces/{spaceId}/stats
           method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # The marketplace catalog: what the studio publishes, served to people who
+  # are not signed in and may never be. These two routes deliberately carry no
+  # authorizer — a catalog behind a login is a catalog nobody reads — and they
+  # expose only what a course says about itself in public.
+  list-catalog-courses:
+    handler: src/functions/catalog/list-courses.handler
+    events:
+      - http:
+          path: catalog/courses
+          method: get
+          cors: true
+
+  get-catalog-course:
+    handler: src/functions/catalog/get-course.handler
+    events:
+      - http:
+          path: catalog/courses/{spaceId}
+          method: get
+          cors: true
+
+  # Registering for a listed course, and dropping out of one. The membership is
+  # the course's own, so both live under the space beside the invitations that
+  # create the same row by another route.
+  enroll-in-space:
+    handler: src/functions/spaces/enroll.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/enrollment
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  leave-space:
+    handler: src/functions/spaces/leave.handler
+    events:
+      - http:
+          path: spaces/{spaceId}/enrollment
+          method: delete
           cors: true
           authorizer: ${self:custom.authorizer}
 
@@ -1344,6 +1388,12 @@ resources:
             AttributeType: S
           - AttributeName: createdAt
             AttributeType: N
+          # Only a listed course carries `catalogKey`, which is what makes the
+          # catalog index sparse: it holds the published courses and nothing
+          # else, so the marketplace's front page is a query rather than a scan
+          # of every course in the service with a filter on top.
+          - AttributeName: catalogKey
+            AttributeType: S
         KeySchema:
           - AttributeName: spaceId
             KeyType: HASH
@@ -1354,6 +1404,17 @@ resources:
           - IndexName: OrganizationCreatedIndex
             KeySchema:
               - AttributeName: organizationId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          # The catalog, newest first. Added to a table that already exists:
+          # CloudFormation creates a global secondary index in place, so this
+          # appears without the table — and the courses in it — being replaced.
+          - IndexName: CatalogCreatedIndex
+            KeySchema:
+              - AttributeName: catalogKey
                 KeyType: HASH
               - AttributeName: createdAt
                 KeyType: RANGE

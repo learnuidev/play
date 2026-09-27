@@ -3,7 +3,9 @@
  *
  * One line per module beside it, so a new file is a new export and nothing else.
  */
+export * from './components/oauth-callback';
 export * from './components/query-provider';
+export * from './hooks/use-signed-in';
 export * from './hooks/use-viewer';
 export * from './lib/amplify';
 export * from './providers';

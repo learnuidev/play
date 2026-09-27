@@ -5,6 +5,7 @@
  */
 export * from './lib/api';
 export * from './lib/upload';
+export * from './modules/catalog/catalog.queries';
 export * from './modules/cohort/cohort.queries';
 export * from './modules/content/completion.queries';
 export * from './modules/content/content.queries';

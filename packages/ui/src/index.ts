@@ -3,6 +3,7 @@
  *
  * One line per module beside it, so a new file is a new export and nothing else.
  */
+export * from './components/theme-toggle';
 export * from './components/ui/badge';
 export * from './components/ui/button';
 export * from './components/ui/card';

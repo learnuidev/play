@@ -1,0 +1,34 @@
+{
+  "name": "play-marketplace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Play Marketplace — where learners find courses, register for one, and take its lessons.",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "typecheck": "tsc --noEmit",
+    "get-env": "node ../../scripts/get-env.mjs"
+  },
+  "dependencies": {
+    "@play/api": "*",
+    "@play/auth": "*",
+    "@play/learning": "*",
+    "@play/types": "*",
+    "@play/ui": "*",
+    "@tanstack/react-query": "^5.101.4",
+    "aws-amplify": "^6.7.0",
+    "lucide-react": "^1.31.0",
+    "next": "^14.2.15",
+    "next-themes": "^0.4.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sonner": "^2.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.15",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.4"
+  }
+}

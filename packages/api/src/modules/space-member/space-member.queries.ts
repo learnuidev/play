@@ -14,12 +14,17 @@ export const spaceMemberKeys = {
  *
  * Read by the shell rather than by a page: a course can be taken by somebody who
  * belongs to no organization, and for them this is the only navigation there is.
+ *
+ * `enabled` exists for the marketplace, which renders for people who have not
+ * signed in: asking this question anonymously is a 401, and a landing page must
+ * not open with a failed request behind it.
  */
-export function useMyCourses() {
+export function useMyCourses(enabled = true) {
   return useQuery({
     queryKey: spaceMemberKeys.mine(),
     queryFn: () => api.listMyCourses(),
     staleTime: 30 * 1000,
+    enabled,
   });
 }
 

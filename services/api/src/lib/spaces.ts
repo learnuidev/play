@@ -13,6 +13,20 @@ export const SPACES_TABLE = env.spacesTableName;
  */
 const ORG_CREATED_INDEX = 'OrganizationCreatedIndex';
 
+/**
+ * GSI on the spaces table: every course the marketplace lists, newest first.
+ *
+ * Keyed by a constant that only a listed course carries rather than by the
+ * `listed` flag itself, because a boolean cannot be a partition key and a filter
+ * over every space in the table would be a scan wearing a query's clothes. A
+ * course that leaves the catalog loses the attribute, and with it its place in
+ * the index.
+ */
+const CATALOG_CREATED_INDEX = 'CatalogCreatedIndex';
+
+/** The one value `catalogKey` ever holds. */
+const CATALOG_KEY = 'LISTED';
+
 export async function putSpace(space: Space): Promise<void> {
   await client.send(new PutCommand({ TableName: SPACES_TABLE, Item: space }));
 }
@@ -48,6 +62,8 @@ export interface UpdateSpacePatch {
   /** `null` clears the start date, which is what a self-paced course has none of. */
   startAt?: number | null;
   dripIntervalDays?: number | null;
+  /** Whether the course appears in the marketplace catalog. */
+  listed?: boolean;
 }
 
 /**
@@ -84,6 +100,21 @@ export async function updateSpace(spaceId: string, patch: UpdateSpacePatch): Pro
     names['#type'] = 'type';
     values[':type'] = patch.type;
     set += ', #type = :type';
+  }
+
+  // Listing a course writes the index's own key beside the flag, and unlisting
+  // removes both: the index holds courses, not flags, so "not listed" is being
+  // absent from it rather than being present and marked false.
+  if (patch.listed !== undefined) {
+    names['#listed'] = 'listed';
+    names['#catalogKey'] = 'catalogKey';
+    if (patch.listed) {
+      values[':listed'] = true;
+      values[':catalogKey'] = CATALOG_KEY;
+      set += ', #listed = :listed, #catalogKey = :catalogKey';
+    } else {
+      removes.push('#listed', '#catalogKey');
+    }
   }
 
   for (const [field, value] of [
@@ -134,6 +165,33 @@ export async function listSpacesByOrganization(
       KeyConditionExpression: '#organizationId = :organizationId',
       ExpressionAttributeNames: { '#organizationId': 'organizationId' },
       ExpressionAttributeValues: { ':organizationId': organizationId },
+      ScanIndexForward: false,
+      Limit: opts.limit,
+      ExclusiveStartKey: opts.exclusiveStartKey,
+    }),
+  );
+
+  return {
+    spaces: (res.Items ?? []) as Space[],
+    lastEvaluatedKey: res.LastEvaluatedKey,
+  };
+}
+
+/**
+ * Courses the marketplace lists, newest first.
+ *
+ * One query, not a scan: everything in this index is a listed course, so the
+ * catalog's page is exactly what DynamoDB hands back and no filtering happens
+ * on this side.
+ */
+export async function listListedSpaces(opts: ListSpacesOptions): Promise<ListSpacesResult> {
+  const res = await client.send(
+    new QueryCommand({
+      TableName: SPACES_TABLE,
+      IndexName: CATALOG_CREATED_INDEX,
+      KeyConditionExpression: '#catalogKey = :catalogKey',
+      ExpressionAttributeNames: { '#catalogKey': 'catalogKey' },
+      ExpressionAttributeValues: { ':catalogKey': CATALOG_KEY },
       ScanIndexForward: false,
       Limit: opts.limit,
       ExclusiveStartKey: opts.exclusiveStartKey,

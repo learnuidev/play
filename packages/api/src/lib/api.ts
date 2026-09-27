@@ -1,6 +1,7 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
   AudioResponse,
+  CatalogCourseResponse,
   CohortResponse,
   Comment,
   ContentFileResponse,
@@ -25,6 +26,7 @@ import type {
   InviteMemberResponse,
   InviteSpaceMemberPayload,
   InviteSpaceMemberResponse,
+  ListCatalogResponse,
   ListCohortsResponse,
   ListCommentsResponse,
   ListContentFilesResponse,
@@ -77,14 +79,34 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '';
 
-async function idToken(): Promise<string> {
-  const session = await fetchAuthSession();
-  const token = session.tokens?.idToken?.toString();
-  if (!token) {
-    throw new Error('Not authenticated');
+/**
+ * The caller's token, or nothing when they have not signed in.
+ *
+ * `fetchAuthSession` throws when there is no session at all and returns tokens
+ * without an id token when the session has lapsed, so both are "not signed in"
+ * here rather than errors — asking a public endpoint who you are is allowed to
+ * have no answer.
+ */
+async function idTokenOrNull(): Promise<string | null> {
+  try {
+    const session = await fetchAuthSession();
+    return session.tokens?.idToken?.toString() ?? null;
+  } catch {
+    return null;
   }
-  return token;
 }
+
+/**
+ * How a request is authenticated.
+ *
+ * - `required` — the default: the caller must be signed in, and the request
+ *   fails without a token rather than going out anonymously.
+ * - `optional` — a public endpoint that behaves differently when it knows who
+ *   is asking. The token is attached when there is one and the request goes out
+ *   either way.
+ * - `none` — the marketplace catalog, read by people who have never signed in.
+ */
+type AuthMode = 'required' | 'optional' | 'none';
 
 /**
  * A failed API call, carrying the status it failed with.
@@ -103,12 +125,22 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  auth: AuthMode = 'required',
+): Promise<T> {
+  const token = auth === 'none' ? null : await idTokenOrNull();
+
+  if (auth === 'required' && !token) {
+    throw new ApiError(401, 'Not authenticated');
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${await idToken()}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init.headers ?? {}),
     },
   });
@@ -325,8 +357,40 @@ export const api = {
   listMySpaceInvitations: () =>
     request<ListMySpaceInvitationsResponse>('/me/space-invitations'),
 
-  /** The courses the caller is in, wherever they are. */
+  /** Courses the caller is in, wherever they are. */
   listMyCourses: () => request<ListMyCoursesResponse>('/me/spaces'),
+
+  /**
+   * The marketplace catalog: courses their authors have listed, newest first.
+   *
+   * Read without a token, because the people who read it have not signed in
+   * yet — that is the whole point of a catalog.
+   */
+  listCatalogCourses: (nextToken?: string) =>
+    request<ListCatalogResponse>(
+      `/catalog/courses${nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : ''}`,
+      {},
+      'none',
+    ),
+
+  /** One listed course, with the syllabus anybody may read. */
+  getCatalogCourse: (spaceId: string) =>
+    request<CatalogCourseResponse>(`/catalog/courses/${spaceId}`, {}, 'none'),
+
+  /**
+   * Registers the caller for a listed course.
+   *
+   * Idempotent on the server: registering for a course you are already in
+   * answers with the membership you have, whichever way you got it. An
+   * invitation waiting for the caller's address is claimed by the same call, so
+   * an invited assistant registers as an assistant.
+   */
+  enrollInCourse: (spaceId: string) =>
+    request<SpaceMemberResponse>(`/spaces/${spaceId}/enrollment`, { method: 'POST' }),
+
+  /** Drops the caller out of a course. The course itself is untouched. */
+  leaveCourse: (spaceId: string) =>
+    request<void>(`/spaces/${spaceId}/enrollment`, { method: 'DELETE' }),
 
   /** A course's cohorts, each with the ids of the members in it. */
   listCohorts: (spaceId: string) => request<ListCohortsResponse>(`/spaces/${spaceId}/cohorts`),

@@ -290,3 +290,34 @@ export async function nextContentPosition(sectionId: string): Promise<number> {
   const last = (res.Items ?? [])[0] as Content | undefined;
   return (last?.position ?? 0) + 1;
 }
+
+/**
+ * How many lessons a space holds.
+ *
+ * One `COUNT` query over the space's own index — the same one the whole outline
+ * is read from — so a course can say how long it is on a card without reading
+ * every lesson of it to find out.
+ */
+export async function countContentsInSpace(spaceId: string): Promise<number> {
+  let count = 0;
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: CONTENTS_TABLE,
+        IndexName: SPACE_POSITION_INDEX,
+        KeyConditionExpression: '#spaceId = :spaceId',
+        ExpressionAttributeNames: { '#spaceId': 'spaceId' },
+        ExpressionAttributeValues: { ':spaceId': spaceId },
+        Select: 'COUNT',
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    count += res.Count ?? 0;
+    exclusiveStartKey = res.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return count;
+}
