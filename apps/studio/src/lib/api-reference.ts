@@ -39,10 +39,15 @@ export interface ApiEndpoint {
   auth: 'key' | 'session';
   parameters?: ApiParameter[];
   body?: ApiField[];
-  /** The JSON the endpoint answers with, exactly as it arrives. */
-  responseExample: string;
-  responseFields: ApiField[];
-  notes?: string[];
+  /** The status it answers with, e.g. `200 OK`. */
+  responseStatus: string;
+  /**
+   * The JSON the endpoint answers with, exactly as it arrives. Absent when the
+   * answer is a status and nothing else, which is what a delete is.
+   */
+  responseExample?: string;
+  /** What is in that JSON. Empty when there is no JSON. */
+  responseFields?: ApiField[];
 }
 
 export interface ApiEndpointGroup {
@@ -95,7 +100,6 @@ const KEY_FIELDS: ApiField[] = [
   { name: 'prefix', type: 'string', description: 'The opening characters of the secret, `play_sk_…`. Enough to tell two keys apart, not enough to use one.' },
   { name: 'createdAt', type: 'number', description: 'Epoch milliseconds.' },
   { name: 'lastUsedAt', type: 'number?', description: 'When it was last presented, accurate to about five minutes. Absent until it is used.' },
-  { name: 'revokedAt', type: 'number?', description: 'Set once the key is revoked, and carried only by the response that revoked it. A revoked key stops authenticating and is not returned by any list.' },
   { name: 'organizationId', type: 'string?', description: 'The organization it was made for, when its creator named one.' },
   { name: 'organizationName', type: 'string?', description: 'That organization’s name, so a list needs no second call.' },
 ];
@@ -121,6 +125,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'The first call to make with a new key, and the one that answers both questions a key’s owner has: does this work, and what does it unlock. It reads the key’s own record, so the organization it names is the organization that will answer the endpoint below.',
         auth: 'key',
+        responseStatus: '200 OK',
         responseExample: `{
   "key": {
     "keyId": "01JQ8Z6K4M7N9P2R5T8V1W3X6Y",
@@ -156,6 +161,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'One page of the catalog, or a search across it. With `query` the API searches instead of paging: it reads a bounded stretch of the catalog and matches a case-insensitive substring against each course’s title, its description, and the name of the community it is from.',
         auth: 'key',
+        responseStatus: '200 OK',
         parameters: [
           {
             in: 'query',
@@ -204,6 +210,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'What a course is, and what is in it: its sections and their lessons, in the order they are taught. The lessons themselves are not here — a lesson’s video, notes, files and discussion are what registering for the course is *for*, and they stay behind the course’s own membership.',
         auth: 'key',
+        responseStatus: '200 OK',
         parameters: [
           {
             in: 'path',
@@ -265,6 +272,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'The read that makes naming an organization on a key worth doing. A partner integrating with one customer gets that customer’s entire catalogue — the courses written for a team, the drafts, the ones nobody has listed — rather than the subset advertised to the world. Courses come back in the same shape the catalog list returns.',
         auth: 'key',
+        responseStatus: '200 OK',
         parameters: [
           {
             in: 'path',
@@ -315,8 +323,9 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         path: '/me/api-keys',
         summary: 'Your own keys that still work.',
         description:
-          'The keys you hold that still work, newest first. A revoked key is not among them: revoking is what stops the key working *and* what takes it out of the listing, so every key here is one that can be used right now. The record is kept — the row stays in the table — it is simply not an answer to “what credentials exist”.',
+          'The keys you hold, newest first. Every row is a key that works: revoking deletes one, so there is no revoked state to return and nothing here that cannot authenticate. The secret itself is never in this response — the API keeps only a hash of it — which is why a key is only ever readable at the moment it is made.',
         auth: 'session',
+        responseStatus: '200 OK',
         parameters: [LIMIT, NEXT_TOKEN],
         responseExample: `{
   "keys": [
@@ -345,6 +354,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'The response carries the secret and it is the only time the API will ever hand one over: what is stored is a SHA-256 of it, so nothing — not an admin, not support, not this endpoint — can read the key back. A caller that loses one revokes it and makes another.',
         auth: 'session',
+        responseStatus: '201 Created',
         body: [
           {
             name: 'name',
@@ -386,8 +396,9 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         path: '/me/api-keys/{keyId}',
         summary: 'Revoke one of your own keys.',
         description:
-          'The key stops authenticating on the next request — nothing is cached in front of the authorizer, so there is no window in which a revoked key still works — and it leaves every listing at the same moment. This response is the last place it appears: the row is kept and returned here marked revoked, because the secret is unrecoverable and the record of *when* it was cut off is the only thing that survives.',
+          'Revoking is a hard delete. The key stops authenticating on the next request — nothing is cached in front of the authorizer, and the row the presented secret would have matched is gone — and it is gone from every listing and from the table at the same moment. There is no half state and nothing left to read back, which is why the answer carries no body.',
         auth: 'session',
+        responseStatus: '204 No Content',
         parameters: [
           {
             in: 'path',
@@ -398,21 +409,9 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             example: '01JQ8Z6K4M7N9P2R5T8V1W3X6Y',
           },
         ],
-        responseExample: `{
-  "key": {
-    "keyId": "01JQ8Z6K4M7N9P2R5T8V1W3X6Y",
-    "name": "Nightly reporting",
-    "prefix": "play_sk_9f2c1a4b",
-    "createdAt": 1772582400000,
-    "revokedAt": 1772755200000
-  }
-}`,
-        responseFields: [
-          { name: 'key', type: 'object', description: 'The key as it now stands, with `revokedAt` set.' },
-        ],
         notes: [
-          'Revoking a key twice is not an error: the second call returns the same row with the original `revokedAt`, because the timestamp is the moment it happened rather than the moment somebody looked again.',
-          'Someone else’s key answers **404**, not 403. Which key ids exist is not a stranger’s business.',
+          'The secret is unrecoverable, so a revoked key is not a key that can be brought back: an integration that lost its credential needs a new one, not this one restored.',
+          'Revoking a key twice answers **404** the second time. There is no row left to tell an already-revoked key from one that never existed, and nothing about which ids exist is a stranger’s business either.',
         ],
       },
       {
@@ -421,8 +420,9 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         path: '/organizations/{orgId}/api-keys',
         summary: 'The organization’s live keys, whoever made them.',
         description:
-          'An admin’s list. Keys outlive the integrations they were made for and often the people who made them, so the question “who still has access to this?” has to be answerable by somebody other than the person holding the key. Revoked keys are not returned, which is what makes the list comparable against the people who should still have access.',
+          'An admin’s list. Keys outlive the integrations they were made for and often the people who made them, so the question “who still has access to this?” has to be answerable by somebody other than the person holding the key. Revoking deletes a key, so this list is exactly the access that is still live — which is what makes it comparable against the people who should still have it.',
         auth: 'session',
+        responseStatus: '200 OK',
         parameters: [
           {
             in: 'path',
@@ -462,8 +462,9 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         path: '/organizations/{orgId}/api-keys/{keyId}',
         summary: 'Revoke one of the organization’s keys.',
         description:
-          'The same revocation as the one above, performed by an admin on a key somebody else made. The key has to belong to this organization rather than merely exist: an admin of one organization is nobody’s admin in the next.',
+          'The same hard delete as the one above, performed by an admin on a key somebody else made. The key has to belong to this organization rather than merely exist: an admin of one organization is nobody’s admin in the next.',
         auth: 'session',
+        responseStatus: '204 No Content',
         parameters: [
           {
             in: 'path',
@@ -481,20 +482,6 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             description: 'The key to revoke.',
             example: '01JQ8Z6K4M7N9P2R5T8V1W3X6Y',
           },
-        ],
-        responseExample: `{
-  "key": {
-    "keyId": "01JQ8Z6K4M7N9P2R5T8V1W3X6Y",
-    "name": "Nightly reporting",
-    "prefix": "play_sk_9f2c1a4b",
-    "userId": "8f14e45f-ea6c-4f2b-9d3a-1c2b3a4d5e6f",
-    "userEmail": "dana@northwind.example",
-    "createdAt": 1772582400000,
-    "revokedAt": 1772755200000
-  }
-}`,
-        responseFields: [
-          { name: 'key', type: 'object', description: 'The key as it now stands, with `revokedAt` set.' },
         ],
         notes: [
           'A key made for a different organization answers **404**, the same answer an id that does not exist gets.',
@@ -532,7 +519,7 @@ export const API_ERRORS: { status: string; meaning: string }[] = [
   },
   {
     status: '404',
-    meaning: 'No such course, or a course that exists but has not been published. No such key, or one belonging to somebody else.',
+    meaning: 'No such course, or a course that exists but has not been published. No such key — which includes one belonging to somebody else, and one already revoked, because revocation deletes it.',
   },
   { status: '409', meaning: 'The account already holds the maximum number of keys.' },
   { status: '500', meaning: 'Something failed on our side. The request can be retried.' },

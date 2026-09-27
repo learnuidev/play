@@ -42,20 +42,20 @@ export function useCreateApiKey() {
 }
 
 /**
- * Cuts off one of the caller's own keys.
+ * Revokes one of the caller's own keys.
  *
- * The revoked key leaves the list rather than staying in it wearing a badge.
- * The effect of revoking is that the key is gone, so the row it was in goes with
- * it — taken out of the cache at once so the list answers before the refetch
- * does, and the refetch is what makes the rest of the list current.
+ * The row goes out of the cache the moment the delete succeeds — the mutation's
+ * own argument is the id, because revoking no longer answers with anything to
+ * read — so the list answers before the refetch does, and the refetch is what
+ * makes the rest of the list current.
  */
 export function useRevokeApiKey() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (keyId: string) => api.revokeApiKey(keyId),
-    onSuccess: ({ key }) => {
+    onSuccess: (_result, keyId) => {
       qc.setQueryData<{ keys: ApiKey[] }>(apiKeyKeys.mine(), (current) =>
-        current ? { ...current, keys: current.keys.filter((k) => k.keyId !== key.keyId) } : current,
+        current ? { ...current, keys: current.keys.filter((k) => k.keyId !== keyId) } : current,
       );
       qc.invalidateQueries({ queryKey: apiKeyKeys.all });
     },

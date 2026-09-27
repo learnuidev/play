@@ -2046,7 +2046,9 @@ resources:
         GlobalSecondaryIndexes:
           # The hash a presented secret is looked up by. The only index read on
           # the authentication path, and the reason an unknown secret costs one
-          # query rather than a walk through every key ever made.
+          # query rather than a walk through every key ever made — and, since
+          # revoking deletes the row, the reason a revoked key costs the same
+          # nothing as one that never existed.
           - IndexName: KeyHashIndex
             KeySchema:
               - AttributeName: keyHash
@@ -2064,7 +2066,8 @@ resources:
               ProjectionType: ALL
           # The keys made for one organization, whoever made them. Sparse: only
           # a key whose creator named an organization carries the attribute, so
-          # this index holds the organization's keys and nothing else.
+          # this index holds the organization's keys and nothing else. Revoking
+          # deletes the row, so an entry leaves this index when the key does.
           - IndexName: OrganizationCreatedIndex
             KeySchema:
               - AttributeName: organizationId

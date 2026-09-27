@@ -982,14 +982,6 @@ export interface ApiKeyRecord {
   createdAt: number;
   /** The last time the key was presented, written at most every few minutes. */
   lastUsedAt?: number;
-  /**
-   * When the key stopped working. A revoked key is kept rather than deleted —
-   * "this key was cut off on the 3rd" is a question somebody asks, and a row
-   * that vanished answers it with nothing — but it is never *listed*: the
-   * listing queries filter it out, so the only response that carries this is the
-   * one that revoked it.
-   */
-  revokedAt?: number;
 }
 
 /**
@@ -1004,7 +996,6 @@ export interface ApiKey {
   prefix: string;
   createdAt: number;
   lastUsedAt?: number;
-  revokedAt?: number;
   organizationId?: string;
   organizationName?: string;
 }

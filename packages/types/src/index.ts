@@ -1201,6 +1201,9 @@ export interface CatalogCourseResponse {
  * The secret is deliberately absent, and not because this shape is trimmed for
  * display: the API keeps only a hash of the secret, so the full key exists once
  * — in the response that created it — and cannot be read back afterwards.
+ *
+ * There is no revoked state, because a revoked key is deleted: this shape only
+ * ever describes a key that works.
  */
 export interface ApiKey {
   /** ULID. Public: it identifies the key, and it is what revokes one. */
@@ -1218,12 +1221,6 @@ export interface ApiKey {
    * that authenticating is not a write on every request.
    */
   lastUsedAt?: number;
-  /**
-   * Set once the key is revoked. It appears in the response that revoked it and
-   * in no list: revocation is what stops the key working *and* what takes it out
-   * of the listing, so a key you can see is a key that can still be used.
-   */
-  revokedAt?: number;
   /**
    * The organization the key was made for, when its creator named one. It is
    * what an admin's list reads, and what decides whether the key can read that
@@ -1283,16 +1280,6 @@ export interface ListApiKeysResponse {
 export interface ListOrganizationApiKeysResponse {
   keys: OrganizationApiKey[];
   nextToken?: string;
-}
-
-/** The key that was revoked, as it now stands. */
-export interface RevokeApiKeyResponse {
-  key: ApiKey;
-}
-
-/** The organization's key that was revoked, as it now stands. */
-export interface RevokeOrganizationApiKeyResponse {
-  key: OrganizationApiKey;
 }
 
 /**

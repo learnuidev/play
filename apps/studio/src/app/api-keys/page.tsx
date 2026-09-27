@@ -7,7 +7,6 @@ import { useOrganizations } from '@api/modules/organization/organization.queries
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { EmptyState, PageCard } from '@/components/shell/page-card';
-import { activeKeys } from '@/components/api-keys/active-keys';
 import { ApiKeyRow } from '@/components/api-keys/api-key-row';
 import { CreateApiKeyDialog } from '@/components/api-keys/create-api-key-dialog';
 import { OrganizationApiKeysCard } from '@/components/api-keys/organization-api-keys-card';
@@ -31,7 +30,7 @@ export default function ApiKeysPage() {
   const organizationsQuery = useOrganizations();
   const revoke = useRevokeApiKey();
 
-  const keys = activeKeys(keysQuery.data?.keys ?? []);
+  const keys = keysQuery.data?.keys ?? [];
 
   // Only an admin sees the organization's keys, and the API enforces it — this
   // is what decides whether to ask at all, not what decides the answer.
@@ -75,8 +74,8 @@ export default function ApiKeysPage() {
         ) : keys.length === 0 ? (
           <EmptyState
             icon={<KeyRoundIcon className="size-5 text-muted-foreground" />}
-            title="No active keys"
-            description="Make one and give it to whatever needs to read your courses — a reporting script, a partner's backend, a nightly export. A key you revoke is gone from this list; it is not gone from the record."
+            title="No keys yet"
+            description="Make one and give it to whatever needs to read your courses — a reporting script, a partner's backend, a nightly export. Revoking one deletes it, so this is the whole of what you hold."
             action={createDialog(
               <Button>
                 <PlusIcon />

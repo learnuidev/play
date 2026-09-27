@@ -4,7 +4,6 @@ import { KeyRoundIcon } from 'lucide-react';
 import { useOrganizationApiKeys, useRevokeOrganizationApiKey } from '@api/modules/api-key/api-key.queries';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { EmptyState, PageCard } from '@/components/shell/page-card';
-import { activeKeys } from './active-keys';
 import { ApiKeyRow } from './api-key-row';
 
 /**
@@ -27,7 +26,7 @@ export function OrganizationApiKeysCard({
   const keysQuery = useOrganizationApiKeys(orgId, true);
   const revoke = useRevokeOrganizationApiKey(orgId);
 
-  const keys = activeKeys(keysQuery.data?.keys ?? []);
+  const keys = keysQuery.data?.keys ?? [];
 
   return (
     <PageCard
@@ -50,7 +49,7 @@ export function OrganizationApiKeysCard({
         <EmptyState
           icon={<KeyRoundIcon className="size-5 text-muted-foreground" />}
           title="No keys for this organization"
-          description="Any member can make one for it. It appears here as soon as they do, so nothing is using this organization's courses without you knowing. Revoked keys are not listed."
+          description="Any member can make one for it. It appears here as soon as they do, so nothing is using this organization's courses without you knowing. Revoking one deletes it."
         />
       ) : (
         <div className="grid gap-3">

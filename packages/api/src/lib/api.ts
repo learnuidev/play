@@ -56,8 +56,6 @@ import type {
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
   PlaylistResponse,
-  RevokeApiKeyResponse,
-  RevokeOrganizationApiKeyResponse,
   RevokeRewardGrantResponse,
   RewardGrantResponse,
   RewardResponse,
@@ -619,9 +617,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  /** Cuts off one of the caller's own keys. The key's row is kept, revoked. */
+  /**
+   * Revokes one of the caller's own keys, which deletes it: it stops
+   * authenticating at once and there is nothing left to read back.
+   */
   revokeApiKey: (keyId: string) =>
-    request<RevokeApiKeyResponse>(`/me/api-keys/${keyId}`, { method: 'DELETE' }),
+    request<void>(`/me/api-keys/${keyId}`, { method: 'DELETE' }),
 
   /**
    * Every key made for an organization, whoever made it. An admin's list: keys
@@ -630,9 +631,7 @@ export const api = {
   listOrganizationApiKeys: (orgId: string) =>
     request<ListOrganizationApiKeysResponse>(`/organizations/${orgId}/api-keys?limit=100`),
 
-  /** Cuts off one of the organization's keys, whoever made it. */
+  /** Revokes one of the organization's keys, whoever made it. Deletes it too. */
   revokeOrganizationApiKey: (orgId: string, keyId: string) =>
-    request<RevokeOrganizationApiKeyResponse>(`/organizations/${orgId}/api-keys/${keyId}`, {
-      method: 'DELETE',
-    }),
+    request<void>(`/organizations/${orgId}/api-keys/${keyId}`, { method: 'DELETE' }),
 };

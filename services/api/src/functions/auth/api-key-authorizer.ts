@@ -38,10 +38,12 @@ export async function handler(
 ): Promise<APIGatewayAuthorizerResult> {
   const secret = presentedKey(event.headers);
 
-  // An unknown secret and a revoked one get the same answer on purpose: whether
-  // a key ever existed is not something a caller holding the wrong one needs.
+  // One lookup, and its absence is the whole answer: a secret that matches no
+  // row is a key that was never made, or one that has since been revoked and
+  // deleted. Distinguishing those would tell a caller holding a wrong key
+  // whether a right one once existed, which is nothing they need to know.
   const record = secret ? await findApiKeyBySecret(secret) : undefined;
-  if (!record || record.revokedAt !== undefined) {
+  if (!record) {
     return policy(event.methodArn, 'Deny', REJECTED_PRINCIPAL);
   }
 

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  DeleteCommand,
   GetCommand,
   PutCommand,
   QueryCommand,
@@ -13,10 +14,7 @@ import { HttpError } from './http';
 
 export const API_KEYS_TABLE = env.apiKeysTableName;
 
-/**
- * GSI on the keys table: every key one person has made, revoked ones included —
- * the *listing* is what excludes those, not the index.
- */
+/** GSI on the keys table: every key one person holds. */
 const USER_CREATED_INDEX = 'UserCreatedIndex';
 
 /**
@@ -27,9 +25,6 @@ const USER_CREATED_INDEX = 'UserCreatedIndex';
  * an admin's list reads. An admin sees the keys of the organization rather than
  * those of its members one member at a time: a key made by somebody who has
  * since left the organization still belongs to it.
- *
- * Revoked keys stay in it, because the row stays; the listing filters them out
- * rather than the index holding only what is live.
  */
 const ORGANIZATION_CREATED_INDEX = 'OrganizationCreatedIndex';
 
@@ -37,7 +32,8 @@ const ORGANIZATION_CREATED_INDEX = 'OrganizationCreatedIndex';
  * GSI on the keys table: the hash a presented secret is looked up by.
  *
  * The authorizer has the secret and nothing else — no id, no owner — so the
- * hash has to be a key space of its own. It is a separate index rather than the
+ * hash has to be a key space of its own, and an entry leaves it exactly when the
+ * key behind it is deleted. It is a separate index rather than the
  * table's own key so that a row stays addressable by `keyId` for everything the
  * studio does: listing, revoking and attributing a key all read it by id, and a
  * table keyed by hash could answer none of those without a second index.
@@ -122,7 +118,6 @@ export function toApiKey(record: ApiKeyRecord): ApiKey {
     prefix: record.prefix,
     createdAt: record.createdAt,
     ...(record.lastUsedAt !== undefined ? { lastUsedAt: record.lastUsedAt } : {}),
-    ...(record.revokedAt !== undefined ? { revokedAt: record.revokedAt } : {}),
     ...(record.organizationId ? { organizationId: record.organizationId } : {}),
     ...(record.organizationName ? { organizationName: record.organizationName } : {}),
   };
@@ -179,12 +174,14 @@ export async function createApiKey(
  * Refuses to make a key when the caller already holds the maximum.
  *
  * Counted over the caller's own index rather than a counter on a row, because a
- * counter is a number that drifts and this one is read once per creation. The
- * count is of keys that still work: what the limit is on is keys somebody can
- * use, and a revoked one is not in the query at all.
+ * counter is a number that drifts and this one is read once per creation.
+ *
+ * Every row in this index is a key somebody can use, because revoking deletes
+ * one rather than marking it: there is nothing here to filter out, and the count
+ * is the whole of what the caller holds.
  */
 export async function assertKeyAllowance(userId: string): Promise<void> {
-  const { keys } = await listActiveApiKeysForUser(userId, { limit: MAX_ACTIVE_KEYS_PER_USER });
+  const { keys } = await listApiKeysForUser(userId, { limit: MAX_ACTIVE_KEYS_PER_USER });
 
   if (keys.length >= MAX_ACTIVE_KEYS_PER_USER) {
     throw new HttpError(
@@ -211,90 +208,55 @@ export interface ListApiKeysOptions {
   exclusiveStartKey?: Record<string, unknown>;
 }
 
-/**
- * How many pages of an index one listing reads while looking for keys that still
- * work.
- *
- * A DynamoDB filter runs *after* the page size, so a page of the index can
- * contribute nothing at all — a hundred revoked keys in front of a live one
- * answers the first page with none of them. Filling the caller's page therefore
- * means reading on, but not without end: a caller with a long history of revoked
- * keys would otherwise hold a Lambda open until it timed out. Five pages is five
- * hundred scanned rows for a page of a hundred, and a short page still carries
- * the token that continues it.
- */
-const MAX_FILTERED_PAGES = 5;
-
-/**
- * Keys that still work, newest first, through one of the table's indexes.
- *
- * Revoked keys are kept as rows — the revoke response reads one back, and "when
- * did this stop working" is a question people ask — but they are not handed out.
- * A key list is the keys that still work, and a revoked key in it is a row whose
- * only possible action is one that has already happened.
- */
-async function listActiveKeysByIndex(
+/** Keys through one of the table's indexes, newest first. */
+async function listKeysByIndex(
   indexName: string,
   keyName: 'userId' | 'organizationId',
   keyValue: string,
   opts: ListApiKeysOptions,
 ): Promise<ListApiKeysResult> {
-  const keys: ApiKeyRecord[] = [];
-  let exclusiveStartKey = opts.exclusiveStartKey;
-  let lastEvaluatedKey: Record<string, unknown> | undefined;
+  const res = await client.send(
+    new QueryCommand({
+      TableName: API_KEYS_TABLE,
+      IndexName: indexName,
+      KeyConditionExpression: '#key = :key',
+      ExpressionAttributeNames: { '#key': keyName },
+      ExpressionAttributeValues: { ':key': keyValue },
+      ScanIndexForward: false,
+      Limit: opts.limit,
+      ExclusiveStartKey: opts.exclusiveStartKey,
+    }),
+  );
 
-  for (let page = 0; page < MAX_FILTERED_PAGES; page += 1) {
-    // Asking for what is still missing rather than for a whole page again is
-    // what keeps the answer to `limit`: the filter can only ever return fewer
-    // rows than were scanned, and a later round must not top the page up past
-    // what the caller asked for.
-    const remaining = opts.limit - keys.length;
-    if (remaining <= 0) break;
-
-    const res = await client.send(
-      new QueryCommand({
-        TableName: API_KEYS_TABLE,
-        IndexName: indexName,
-        KeyConditionExpression: '#key = :key',
-        FilterExpression: 'attribute_not_exists(revokedAt)',
-        ExpressionAttributeNames: { '#key': keyName },
-        ExpressionAttributeValues: { ':key': keyValue },
-        ScanIndexForward: false,
-        Limit: remaining,
-        ExclusiveStartKey: exclusiveStartKey,
-      }),
-    );
-
-    keys.push(...((res.Items ?? []) as ApiKeyRecord[]));
-    lastEvaluatedKey = res.LastEvaluatedKey;
-    if (!lastEvaluatedKey) break;
-    exclusiveStartKey = lastEvaluatedKey;
-  }
-
-  return { keys, lastEvaluatedKey };
+  return {
+    keys: (res.Items ?? []) as ApiKeyRecord[],
+    lastEvaluatedKey: res.LastEvaluatedKey,
+  };
 }
 
-/** The keys one person holds that still work, newest first. */
-export function listActiveApiKeysForUser(
+/** The keys one person holds, newest first. */
+export function listApiKeysForUser(
   userId: string,
   opts: ListApiKeysOptions,
 ): Promise<ListApiKeysResult> {
-  return listActiveKeysByIndex(USER_CREATED_INDEX, 'userId', userId, opts);
+  return listKeysByIndex(USER_CREATED_INDEX, 'userId', userId, opts);
 }
 
-/** The keys one organization holds that still work, whoever made them. */
-export function listActiveApiKeysForOrganization(
+/** The keys one organization holds, whoever made them, newest first. */
+export function listApiKeysForOrganization(
   organizationId: string,
   opts: ListApiKeysOptions,
 ): Promise<ListApiKeysResult> {
-  return listActiveKeysByIndex(ORGANIZATION_CREATED_INDEX, 'organizationId', organizationId, opts);
+  return listKeysByIndex(ORGANIZATION_CREATED_INDEX, 'organizationId', organizationId, opts);
 }
 
 /**
  * The key a presented secret belongs to, or nothing.
  *
  * Read through the hash index, so an unknown secret is one query that returns
- * nothing rather than a walk through every key ever made.
+ * nothing rather than a walk through every key ever made. A revoked key is
+ * unknown by the same route: revoking deletes the row, and the index entry goes
+ * with it.
  */
 export async function findApiKeyBySecret(secret: string): Promise<ApiKeyRecord | undefined> {
   const res = await client.send(
@@ -343,21 +305,24 @@ export async function touchApiKey(keyId: string): Promise<void> {
 }
 
 /**
- * Stops a key working, and says whether this call is what stopped it.
+ * Deletes a key, and says whether there was one to delete.
  *
- * Conditional on the key not already being revoked, so the write is the moment
- * it happened rather than the moment somebody looked at it again — two admins
- * revoking the same key at once record one revocation, not the later one.
+ * A hard delete rather than a tombstone. The row is the credential and nothing
+ * else — the hash, the name, who made it and when it was last used — and every
+ * one of those is a fact about a key that exists. Keeping the row after the key
+ * stops working means keeping a credential's record for no purpose but the
+ * record, and this API has no answer to give about a key that is gone.
+ *
+ * Conditional on the row still being there, so that a delete racing another
+ * delete reports one success and one absence rather than two.
  */
 export async function revokeApiKey(keyId: string): Promise<boolean> {
   try {
     await client.send(
-      new UpdateCommand({
+      new DeleteCommand({
         TableName: API_KEYS_TABLE,
         Key: { keyId },
-        UpdateExpression: 'SET revokedAt = :now',
-        ConditionExpression: 'attribute_exists(keyId) AND attribute_not_exists(revokedAt)',
-        ExpressionAttributeValues: { ':now': Date.now() },
+        ConditionExpression: 'attribute_exists(keyId)',
       }),
     );
     return true;

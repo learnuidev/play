@@ -130,9 +130,9 @@ function RevokeKeyDialog({
  * A key made for an organization says so, in the same row as its name, because
  * that is what decides what it can reach.
  *
- * There is no revoked state to draw. Revoking takes a key out of the list —
- * the API stops returning it and the cache drops it — so every row here is a
- * key that still works, and every one of them can be revoked.
+ * There is no revoked state to draw, because revoking deletes the key: the row
+ * leaves the cache, the row leaves the table, and there is nothing left that
+ * could be shown as revoked.
  */
 export function ApiKeyRow({
   apiKey,

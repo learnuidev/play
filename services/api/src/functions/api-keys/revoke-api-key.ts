@@ -1,17 +1,21 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { getApiKey, revokeApiKey, toApiKey } from '../../lib/api-keys';
+import { getApiKey, revokeApiKey } from '../../lib/api-keys';
 import { requireUser } from '../../lib/auth';
-import { HttpError, handle, ok, pathParam } from '../../lib/http';
+import { HttpError, handle, noContent, pathParam } from '../../lib/http';
 
 /**
- * Stops one of the caller's own keys working.
+ * Deletes one of the caller's own keys.
  *
- * Revoking is deleting as far as the API is concerned — the key stops
- * authenticating the moment this returns, because the authorizer caches nothing
- * — but the row stays, so the list can say what happened and when.
+ * Delete is what revoking is: the key stops authenticating the moment this
+ * returns — nothing is cached in front of the authorizer, and the row the hash
+ * would have matched is gone — and it is gone from every listing and from the
+ * table itself. There is no half state to come back to and no record left to
+ * read, which is why the answer is 204 rather than a body describing a key that
+ * no longer exists.
  *
- * Somebody else's key answers 404 rather than 403: which key ids exist is not a
- * stranger's business, and a 403 would say one does.
+ * Somebody else's key answers 404 rather than 403, and so does one already
+ * revoked: which key ids exist is not a stranger's business, and after the
+ * delete there is nothing to tell the two apart.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const user = requireUser(event);
@@ -22,12 +26,14 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     throw new HttpError(404, 'API key not found');
   }
 
-  await revokeApiKey(keyId);
+  // A false return here means somebody else deleted it between the read above
+  // and this call. That is the same absence the read would have found a moment
+  // later, so it answers the same way.
+  if (!(await revokeApiKey(keyId))) {
+    throw new HttpError(404, 'API key not found');
+  }
 
-  // Read back rather than assumed: revoking a key that was already revoked
-  // leaves the original timestamp alone, and the response says which one stands.
-  const revoked = await getApiKey(keyId);
-  return ok({ key: toApiKey(revoked ?? existing) });
+  return noContent();
 }
 
 export const handler = handle(main);
