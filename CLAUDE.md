@@ -1,6 +1,7 @@
 # DO NOT
 
-Take screenshots to test your changes. it wastes token
+- Take screenshots to test your changes. it wastes token
+- Commit yourself! Thats my job!
 
 ## Frontend
 

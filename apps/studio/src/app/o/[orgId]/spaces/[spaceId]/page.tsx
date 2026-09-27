@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useState } from "react";
+import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   ChevronLeftIcon,
   GiftIcon,
@@ -11,22 +11,30 @@ import {
   MailPlusIcon,
   UsersIcon,
   UsersRoundIcon,
-} from 'lucide-react';
-import { useSpace } from '@api/modules/space/space.queries';
-import { useSections } from '@api/modules/section/section.queries';
-import { useOrganization } from '@api/modules/organization/organization.queries';
-import { useMySpaceInvitations } from '@api/modules/space-member/space-member.queries';
-import { Button } from '@ui/components/ui/button';
-import { Skeleton } from '@ui/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@ui/components/ui/tabs';
-import { EmptyState } from '@/components/shell/page-card';
-import { SpaceAvatar } from '@learning/components/space/space-avatar';
-import { spaceScheduleLabel } from '@learning/components/space/space-card';
-import { SpaceOverviewTab } from '@/components/space/space-overview-tab';
-import { SpaceContentTab } from '@/components/space/space-content-tab';
-import { SpaceMembersTab, SpaceInvitationCard } from '@/components/space/space-members-tab';
-import { SpaceCohortsTab } from '@/components/space/space-cohorts-tab';
-import { SpaceRewardsTab } from '@/components/space/space-rewards-tab';
+} from "lucide-react";
+import { useSpace } from "@api/modules/space/space.queries";
+import { useSections } from "@api/modules/section/section.queries";
+import { useOrganization } from "@api/modules/organization/organization.queries";
+import { useMySpaceInvitations } from "@api/modules/space-member/space-member.queries";
+import { Button } from "@ui/components/ui/button";
+import { Skeleton } from "@ui/components/ui/skeleton";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@ui/components/ui/tabs";
+import { EmptyState } from "@/components/shell/page-card";
+import { SpaceAvatar } from "@learning/components/space/space-avatar";
+import { spaceScheduleLabel } from "@learning/components/space/space-card";
+import { SpaceOverviewTab } from "@/components/space/space-overview-tab";
+import { SpaceContentTab } from "@/components/space/space-content-tab";
+import {
+  SpaceMembersTab,
+  SpaceInvitationCard,
+} from "@/components/space/space-members-tab";
+import { SpaceCohortsTab } from "@/components/space/space-cohorts-tab";
+import { SpaceRewardsTab } from "@/components/space/space-rewards-tab";
 
 /**
  * The five things a course is: what it is, what it holds, who takes it, how they
@@ -39,7 +47,7 @@ import { SpaceRewardsTab } from '@/components/space/space-rewards-tab';
  * each can be as dense as its own job needs.
  */
 const TAB_STRIP =
-  'h-auto w-fit max-w-full justify-start gap-0.5 overflow-x-auto rounded-full bg-muted/70 p-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+  "h-auto w-fit max-w-full justify-start gap-0.5 overflow-x-auto rounded-full bg-muted/70 p-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 
 /**
  * One tab: an icon and its name, lifted out of the track when it is the one you
@@ -50,7 +58,7 @@ const TAB_STRIP =
  * the page is competing with — the course's own name is the heading here.
  */
 const SPACE_TAB =
-  'shrink-0 gap-1.5 whitespace-nowrap rounded-full border-0 bg-transparent px-3.5 py-1.5 text-sm text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-sm [&_svg]:size-4';
+  "shrink-0 gap-1.5 whitespace-nowrap rounded-full border-0 bg-transparent px-3.5 py-1.5 text-sm text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-sm [&_svg]:size-4";
 
 function SpaceTab({
   value,
@@ -75,24 +83,29 @@ export default function SpacePage() {
   const space = data?.space;
 
   const { data: orgData } = useOrganization(orgId);
-  const canEdit = orgData ? orgData.organization.role !== 'VIEWER' : false;
+  const canEdit = orgData ? orgData.organization.role !== "VIEWER" : false;
 
   const { data: outline, isLoading: outlineLoading } = useSections(spaceId);
   const sections = outline?.sections ?? [];
-  const lessonCount = sections.reduce((total, section) => total + section.contents.length, 0);
+  const lessonCount = sections.reduce(
+    (total, section) => total + section.contents.length,
+    0,
+  );
 
   // Invitations are read for the signed-in user across every organization, and
   // the one naming this course is the only one this page can act on.
   const invitationsQuery = useMySpaceInvitations();
-  const invitation = invitationsQuery.data?.invitations.find((entry) => entry.spaceId === spaceId);
+  const invitation = invitationsQuery.data?.invitations.find(
+    (entry) => entry.spaceId === spaceId,
+  );
 
   // An invitation email links here with the course it names, which is the only
   // way this page can tell "you were invited and have not accepted" from "this
   // course is not yours" — the offer itself grants nothing, so the read that
   // would have answered is refused either way.
-  const arrivedFromInvitation = useSearchParams().get('invitation') !== null;
+  const arrivedFromInvitation = useSearchParams().get("invitation") !== null;
 
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState("overview");
 
   if (isError) {
     // An invitation is readable before the course is — that is the whole point of
@@ -104,7 +117,8 @@ export default function SpacePage() {
         <div className="grid gap-4 pb-4">
           <SpaceInvitationCard spaceId={spaceId} invitation={invitation} />
           <p className="text-sm text-muted-foreground">
-            Accept the invitation and the course opens here. Nothing in it is visible before that.
+            Accept the invitation and the course opens here. Nothing in it is
+            visible before that.
           </p>
         </div>
       );
@@ -143,7 +157,7 @@ export default function SpacePage() {
 
     return (
       <p className="text-sm text-destructive">
-        {error instanceof Error ? error.message : 'Failed to load this space'}
+        {error instanceof Error ? error.message : "Failed to load this space"}
       </p>
     );
   }
@@ -161,15 +175,6 @@ export default function SpacePage() {
     );
   }
 
-  // What the course adds up to, above its name the way a subtitle reads. The
-  // type is not repeated here: the line below already says how the space runs.
-  const eyebrow = [
-    sections.length > 0 ? `${sections.length} section${sections.length === 1 ? '' : 's'}` : null,
-    lessonCount > 0 ? `${lessonCount} lesson${lessonCount === 1 ? '' : 's'}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
   return (
     <div className="grid gap-6 pb-4">
       <Link
@@ -180,20 +185,14 @@ export default function SpacePage() {
         Spaces
       </Link>
 
-      <header className="flex items-start gap-4">
-        {/* The course's own colour, and its mark. With the banner living in the
-            overview tab beside the control that changes it, this is what the page
-            is recognised by, so it is drawn larger than the list's. */}
-        <SpaceAvatar space={space} size="lg" className="size-12 rounded-xl text-lg shadow-sm" />
-
+      <header className="flex items-start gap-4 mt-6">
         <div className="min-w-0 flex-1">
-          {eyebrow && (
-            <p className="text-sm font-medium text-muted-foreground">{eyebrow}</p>
-          )}
           <h1 className="mt-1 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
             {space.title}
           </h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">{spaceScheduleLabel(space)}</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {spaceScheduleLabel(space)}
+          </p>
 
           {space.description && (
             // The width of the header it sits under, rather than a reading
@@ -209,7 +208,9 @@ export default function SpacePage() {
       {/* An offer waiting for the signed-in user, above everything: a course can
           be shared with somebody who is not in the organization at all, and until
           they take it up there is nothing else on this page that is theirs. */}
-      {invitation && <SpaceInvitationCard spaceId={spaceId} invitation={invitation} />}
+      {invitation && (
+        <SpaceInvitationCard spaceId={spaceId} invitation={invitation} />
+      )}
 
       {/* Controlled rather than defaulted: the tab is a place the reader is in,
           and coming back to the course should not lose it. */}
@@ -242,7 +243,11 @@ export default function SpacePage() {
         </TabsContent>
 
         <TabsContent value="members" className="mt-2">
-          <SpaceMembersTab spaceId={spaceId} canManage={canEdit} invitation={invitation} />
+          <SpaceMembersTab
+            spaceId={spaceId}
+            canManage={canEdit}
+            invitation={invitation}
+          />
         </TabsContent>
 
         <TabsContent value="cohorts" className="mt-2">
