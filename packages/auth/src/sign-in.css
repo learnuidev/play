@@ -1,0 +1,450 @@
+/**
+ * The sign-in screen's look, in two halves.
+ *
+ * **The tokens.** Amplify draws its form from a design-token system — colours,
+ * radii, spacing, type — declared at `:root`. Setting those tokens here, on the
+ * element the Authenticator renders (`[data-amplify-authenticator]`, which the
+ * component is given as `className="play-auth"`), re-points every one of them at
+ * the app the screen is rendering in. Custom properties are inherited by
+ * proximity rather than by specificity, so a value declared on this element
+ * beats the one at `:root` whatever order the two stylesheets load in — which is
+ * what makes this file safe to ship from a package.
+ *
+ * **The exceptions.** Where a shape is not expressible as a token — the pill
+ * tabs, the glass card, the fields that sit on it — the rule is written against
+ * Amplify's own class names instead. Those selectors are all prefixed with
+ * `.play-auth`, which is one class more specific than the rule they are
+ * overriding, and that extra class is the whole reason they win.
+ *
+ * What it adds up to: the app's own vocabulary — hairline edges, large radii,
+ * one accent, motion that only ever says "here is the next thing" — drawn on a
+ * piece of software that knows nothing about this repository.
+ */
+
+.play-auth[data-amplify-authenticator] {
+  /* The window, with the card in the middle of it.
+     How much window depends on the app: on its own the screen is the whole page
+     — a page of its own, or the wall the gate draws over an app — while an app
+     that keeps its own bar and footer around it has that much less room to give.
+     `--sign-in-min-height` is how it says so; the default is the viewport. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* The canvas reaches the edges of the room, not the edges of the card.
+     An app that keeps its own bar around this screen hands it what is left of
+     the window from a flex box, and a flex item is as wide as its own content
+     until something says otherwise — which drew the washes behind a column no
+     wider than the form, and no taller than it either once the app had set
+     `--sign-in-min-height` to nothing. Claiming the whole box in both
+     directions is what makes it a page rather than a panel.
+     Where the parent is *not* a flex container — the gate, drawn over a whole
+     app — none of these three has anything to stretch, and the line below is
+     what fills the window. */
+  flex: 1 1 auto;
+  align-self: stretch;
+  width: 100%;
+  min-height: var(--sign-in-min-height, 100svh);
+  padding: 3.5rem 1.25rem;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: var(--background, #09090b);
+  color: var(--foreground, #fafafa);
+
+  /* ---- Amplify's base tokens, pointed at the app's ---- */
+
+  --amplify-fonts-default-variable: ui-sans-serif, system-ui, -apple-system,
+    "SF Pro Text", "Segoe UI", sans-serif;
+
+  --amplify-colors-font-primary: var(--foreground, #fafafa);
+  --amplify-colors-font-secondary: var(--muted-foreground, #a1a1aa);
+  --amplify-colors-font-tertiary: var(--muted-foreground, #a1a1aa);
+  --amplify-colors-font-interactive: var(--foreground, #fafafa);
+  --amplify-colors-font-hover: var(--foreground, #fafafa);
+  --amplify-colors-font-focus: var(--foreground, #fafafa);
+  --amplify-colors-font-inverse: var(--primary-foreground, #09090b);
+  --amplify-colors-font-error: var(--destructive, #f87171);
+  --amplify-colors-background-primary: var(--card, #18181b);
+  --amplify-colors-background-secondary: var(--muted, #27272a);
+  --amplify-colors-background-tertiary: var(--muted, #27272a);
+  --amplify-colors-border-primary: var(--border, rgb(255 255 255 / 0.12));
+  --amplify-colors-border-secondary: var(--border, rgb(255 255 255 / 0.12));
+  --amplify-colors-border-focus: var(--ring, #71717a);
+  --amplify-colors-overlay-50: rgb(0 0 0 / 0.6);
+
+  --amplify-radii-xs: 0.5rem;
+  --amplify-radii-small: 0.75rem;
+  --amplify-radii-medium: 0.875rem;
+  --amplify-radii-large: 1rem;
+  --amplify-radii-xl: 1.25rem;
+  --amplify-radii-xxl: 1.5rem;
+  --amplify-radii-xxxl: 2rem;
+
+  /* 16px, which is also the size below which iOS Safari zooms a focused field. */
+  --amplify-components-fieldcontrol-font-size: 1rem;
+  --amplify-components-button-font-size: 1rem;
+  --amplify-components-tabs-item-font-size: 0.875rem;
+  --amplify-components-authenticator-container-width-max: 22rem;
+  --amplify-components-tabs-panel-padding-inline: 0;
+  --amplify-components-tabs-panel-padding-block: 1.25rem 0;
+  --amplify-components-tabs-item-border-width: 0;
+  --amplify-components-divider-label-background-color: transparent;
+  --amplify-components-divider-label-color: var(--muted-foreground, #a1a1aa);
+  --amplify-components-divider-label-font-size: 0.75rem;
+}
+
+/* ---- The canvas behind the card ---- */
+
+/**
+ * Two slow washes of colour, blurred past the point of being decoration.
+ *
+ * The palette is Apple's rather than this app's: the app is monochrome, and a
+ * sign-in screen with nothing but grey in it reads as a form to fill in. The
+ * blue and the violet are the one place Play is allowed a colour of its own, and
+ * at this opacity they are closer to light than to colour. They drift, slowly
+ * and out of step with each other, so the page is not a static image behind a
+ * form — and they stop for anyone who has asked for less motion.
+ */
+.play-auth[data-amplify-authenticator]::before,
+.play-auth[data-amplify-authenticator]::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 34rem;
+  height: 34rem;
+  border-radius: 999px;
+  filter: blur(90px);
+  opacity: var(--play-auth-aurora, 0.55);
+  pointer-events: none;
+}
+
+.play-auth[data-amplify-authenticator]::before {
+  top: -14rem;
+  left: -10rem;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in oklab, #3b82f6 45%, transparent),
+    transparent 68%
+  );
+  animation: play-auth-drift-a 26s ease-in-out infinite alternate;
+}
+
+.play-auth[data-amplify-authenticator]::after {
+  right: -12rem;
+  bottom: -16rem;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in oklab, #8b5cf6 38%, transparent),
+    transparent 68%
+  );
+  animation: play-auth-drift-b 32s ease-in-out infinite alternate;
+}
+
+/* On a light canvas the same two washes are twice as loud; tone them down. */
+html:not(.dark) .play-auth {
+  --play-auth-aurora: 0.34;
+}
+
+@keyframes play-auth-drift-a {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4rem, 3rem, 0) scale(1.12);
+  }
+}
+
+@keyframes play-auth-drift-b {
+  from {
+    transform: translate3d(0, 0, 0) scale(1.08);
+  }
+  to {
+    transform: translate3d(-3rem, -2rem, 0) scale(1);
+  }
+}
+
+/* ---- The card ---- */
+
+/**
+ * Frosted glass, not a panel: the card has to sit on the washes above rather
+ * than in front of them. A hairline edge and a highlight along the top rather
+ * than a border, which is the difference between glass and a box.
+ */
+.play-auth[data-amplify-authenticator] [data-amplify-router] {
+  padding: 1.5rem;
+  border-width: 1px;
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--border, rgb(255 255 255 / 0.12)) 90%, transparent);
+  border-radius: 1.75rem;
+  background-color: color-mix(in oklab, var(--card, #18181b) 72%, transparent);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in oklab, #fff 8%, transparent),
+    0 24px 60px -24px rgb(0 0 0 / 0.55);
+  overflow: hidden;
+  /* It arrives rather than appears — a few pixels, once. */
+  animation: play-auth-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes play-auth-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* ---- The tabs, as a segmented control ---- */
+
+/**
+ * Amplify draws "Sign in / Create Account" as underlined tabs. Play draws that
+ * decision as a segmented control everywhere else — a pill track with the
+ * active item lifted out of it — so the sign-in screen draws it that way too.
+ */
+.play-auth .amplify-tabs__list {
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-width: 0;
+  border-radius: 999px;
+  background-color: color-mix(in oklab, var(--muted, #27272a) 75%, transparent);
+  box-shadow: none;
+}
+
+.play-auth .amplify-tabs__item {
+  flex: 1;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-width: 0;
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--muted-foreground, #a1a1aa);
+  font-weight: 500;
+  transition:
+    color 200ms ease,
+    background-color 200ms ease;
+}
+
+.play-auth .amplify-tabs__item:hover {
+  color: var(--foreground, #fafafa);
+  background-color: transparent;
+}
+
+.play-auth .amplify-tabs__item--active,
+.play-auth .amplify-tabs__item--active:hover {
+  color: var(--foreground, #fafafa);
+  background-color: var(--background, #09090b);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}
+
+.play-auth .amplify-tabs__item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #71717a) 45%, transparent);
+}
+
+/* ---- The fields ---- */
+
+/**
+ * A soft fill rather than a box: the input is a tint on the card with a ring
+ * that appears when you are in it, which is what makes a form feel like one
+ * surface instead of a stack of rectangles.
+ */
+.play-auth .amplify-input,
+.play-auth .amplify-select {
+  padding: 0.625rem 0.875rem;
+  border-width: 1px;
+  border-color: transparent;
+  border-radius: 0.875rem;
+  background-color: color-mix(in oklab, var(--muted, #27272a) 60%, transparent);
+  color: var(--foreground, #fafafa);
+  transition:
+    background-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.play-auth .amplify-input:hover,
+.play-auth .amplify-select:hover {
+  background-color: color-mix(in oklab, var(--muted, #27272a) 80%, transparent);
+}
+
+.play-auth .amplify-input:focus,
+.play-auth .amplify-select:focus {
+  outline: none;
+  border-color: transparent;
+  background-color: color-mix(in oklab, var(--muted, #27272a) 85%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #71717a) 40%, transparent);
+}
+
+/* The browser's own autofill paint would sit on top of all of that. */
+.play-auth .amplify-input:-webkit-autofill {
+  -webkit-text-fill-color: var(--foreground, #fafafa);
+  caret-color: var(--foreground, #fafafa);
+  box-shadow: 0 0 0 100px var(--card, #18181b) inset;
+}
+
+/* The button inside a password field that reveals it: part of the field. */
+.play-auth .amplify-field-group__control {
+  border-width: 0;
+  color: var(--muted-foreground, #a1a1aa);
+  background-color: transparent;
+}
+
+.play-auth .amplify-field-group__control:hover {
+  color: var(--foreground, #fafafa);
+  background-color: transparent;
+}
+
+.play-auth .amplify-label {
+  color: var(--muted-foreground, #a1a1aa);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.play-auth .amplify-text--error {
+  color: var(--destructive, #f87171);
+  font-size: 0.875rem;
+}
+
+.play-auth .amplify-alert {
+  border-width: 0;
+  border-radius: 0.875rem;
+  font-size: 0.875rem;
+  background-color: color-mix(in oklab, var(--destructive, #f87171) 14%, transparent);
+  color: var(--destructive, #f87171);
+}
+
+/* ---- The buttons ---- */
+
+.play-auth .amplify-button {
+  border-radius: 999px;
+  font-weight: 500;
+  transition:
+    background-color 200ms ease,
+    color 200ms ease,
+    opacity 200ms ease,
+    transform 160ms ease;
+}
+
+/* The one decision on the screen, in the size it deserves. */
+.play-auth .amplify-button--primary {
+  min-height: 2.75rem;
+  padding: 0.75rem 1.25rem;
+  border-width: 0;
+  background-color: var(--primary, #fafafa);
+  color: var(--primary-foreground, #09090b);
+}
+
+.play-auth .amplify-button--primary:hover {
+  background-color: color-mix(in oklab, var(--primary, #fafafa) 88%, transparent);
+  color: var(--primary-foreground, #09090b);
+}
+
+.play-auth .amplify-button--primary:active {
+  transform: scale(0.985);
+}
+
+.play-auth .amplify-button--primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #71717a) 45%, transparent);
+}
+
+.play-auth .amplify-button--primary:disabled,
+.play-auth .amplify-button--primary[disabled] {
+  background-color: color-mix(in oklab, var(--primary, #fafafa) 45%, transparent);
+  color: var(--primary-foreground, #09090b);
+  transform: none;
+}
+
+/* "Forgot your password?" — a link, in the quietest ink on the screen. */
+.play-auth .amplify-button--link {
+  padding: 0;
+  border-width: 0;
+  background-color: transparent;
+  color: var(--muted-foreground, #a1a1aa);
+  font-size: 0.875rem;
+}
+
+.play-auth .amplify-button--link:hover {
+  background-color: transparent;
+  color: var(--foreground, #fafafa);
+  text-decoration: none;
+}
+
+.play-auth .amplify-button--link:focus-visible {
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* ---- "or continue with Google" ---- */
+
+/**
+ * The federated button is the second way in, so it is drawn as one: the same
+ * shape and height as the primary button and none of its weight — a hairline
+ * outline on a tint, which is the shape Google's own button is borrowed from.
+ * The divider above it keeps its "or" and loses its line: a rule drawn across a
+ * translucent card cannot be masked by the label sitting on it, and two ways in
+ * under one word do not need a rule between them.
+ */
+.play-auth .federated-sign-in-container {
+  gap: 0.75rem;
+}
+
+.play-auth .federated-sign-in-button {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.625rem 1.25rem;
+  gap: 0.625rem;
+  border-width: 1px;
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--border, rgb(255 255 255 / 0.12)) 90%, transparent);
+  border-radius: 999px;
+  background-color: color-mix(in oklab, var(--foreground, #fafafa) 6%, transparent);
+  color: var(--foreground, #fafafa);
+}
+
+.play-auth .federated-sign-in-button:hover {
+  background-color: color-mix(in oklab, var(--foreground, #fafafa) 12%, transparent);
+  border-color: color-mix(in oklab, var(--border, rgb(255 255 255 / 0.12)) 100%, transparent);
+}
+
+.play-auth .federated-sign-in-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #71717a) 45%, transparent);
+}
+
+.play-auth .federated-sign-in-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.play-auth .amplify-divider {
+  border-color: transparent;
+  padding-block: 0.25rem;
+}
+
+.play-auth .amplify-divider::after {
+  padding-inline: 0;
+  background-color: transparent;
+}
+
+/* ---- Less motion, no motion ---- */
+
+@media (prefers-reduced-motion: reduce) {
+  .play-auth[data-amplify-authenticator]::before,
+  .play-auth[data-amplify-authenticator]::after {
+    animation: none;
+  }
+
+  .play-auth[data-amplify-authenticator] [data-amplify-router] {
+    animation: none;
+  }
+
+  .play-auth .amplify-button:active {
+    transform: none;
+  }
+}

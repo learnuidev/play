@@ -19,7 +19,8 @@ import { AccountMenu } from './account-menu';
  *
  * The API reference is deliberately not one of them. It is a document rather
  * than a surface — its own header, its own rail, read once and left — and it is
- * reached from the account menu, or from the keys screen it documents.
+ * reached from the account menu, from the keys screen it documents, or, since it
+ * is public now, from the front page by somebody who has no account at all.
  */
 const SURFACES = [
   { href: '/organizations', label: 'Organizations' },

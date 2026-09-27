@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import {
   ArrowRightIcon,
   BracesIcon,
@@ -36,7 +37,20 @@ import {
  * rather than the app's sidebar. A reference is not a place you navigate around
  * — you arrive from a key you just made, read the section you came for, and go
  * back to your terminal.
+ *
+ * It is public, and it is read by two kinds of people because of it: somebody who
+ * already has a key, arriving from the keys screen, and somebody deciding whether
+ * to get one. The page is written for the first and readable by the second, and
+ * the only thing the second cannot do here is mint a key — see
+ * `CredentialPanel`, which offers them the paste box and a way to sign in rather
+ * than a button that would fail.
  */
+
+export const metadata: Metadata = {
+  title: 'Play API reference — read Play from your own code',
+  description:
+    'The public, read-only API: courses, lessons, transcripts and media, authenticated with one x-api-key header. Every endpoint documented, with a playground.',
+};
 export default function ApiDocsPage() {
   // Step three of the quickstart is a real request, built from the same
   // reference the cards below are built from: the first call anybody makes with
@@ -129,8 +143,9 @@ export default function ApiDocsPage() {
               <div className="mt-6 grid gap-6">
                 <Step step={1} title="Make a key">
                   <p className="text-sm text-muted-foreground">
-                    In the studio, under your account menu. The secret is shown once — we keep a hash
-                    of it, so copy it somewhere safe before you close the dialog.
+                    In the studio, under your account menu — making one takes an account, because a
+                    key belongs to somebody. The secret is shown once: we keep a hash of it, so copy
+                    it somewhere safe before you close the dialog. Reading this page needs nothing.
                   </p>
                   <Button asChild variant="secondary" size="sm" className="mt-3 w-fit">
                     <Link href="/api-keys">

@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { ArrowRightIcon } from 'lucide-react';
 import { useCatalogCourses } from '@play/api';
+import { Reveal } from '@play/ui';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { CourseTile } from '@/components/course-tile';
-import { Reveal } from '@/components/reveal';
 import { useEnrolledSpaceIds } from '@/components/use-enrolled';
 
 /** How many courses the front page shows before sending you to Discover. */

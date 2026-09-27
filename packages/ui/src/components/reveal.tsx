@@ -6,11 +6,16 @@ import { cn } from '@ui/lib/utils';
 /**
  * A block that arrives as it is scrolled to.
  *
- * The front page is long, and a long page read top to bottom benefits from the
- * next thing not being fully there until you get to it: each block rises a few
- * pixels and settles. It is the page's whole animation budget — one gesture,
- * repeated — so nothing on the market's front door moves in a way that competes
- * with the words.
+ * Both front pages are long, and a long page read top to bottom benefits from
+ * the next thing not being fully there until you get to it: each block rises a
+ * few pixels and settles. It is a page's whole animation budget — one gesture,
+ * repeated — so nothing on a front door moves in a way that competes with the
+ * words.
+ *
+ * It lives here rather than in either app because both of them draw their front
+ * page with it, and the two would otherwise drift: the marketplace's version and
+ * the studio's would be the same file with two sets of comments. Nothing in it
+ * knows anything about the page it is on, which is what makes it a primitive.
  *
  * Three deliberate refusals, each of which is a way this could go wrong:
  *

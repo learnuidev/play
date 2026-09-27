@@ -11,7 +11,7 @@ play/
 ├── packages/
 │   ├── types/            @play/types     — the shapes the API and both apps agree on
 │   ├── api/              @play/api       — the API client + React Query hooks
-│   ├── auth/             @play/auth      — Cognito wiring, providers, the sign-in gate
+│   ├── auth/             @play/auth      — Cognito wiring, the sign-in screen, the gate
 │   ├── ui/               @play/ui        — design primitives
 │   └── learning/         @play/learning  — the classroom, the player, course cards
 ├── services/
@@ -93,6 +93,7 @@ dropped the player API the classroom uses.
 | --- | --- |
 | A screen only one app has | that app's `src/app` and `src/components` |
 | A screen both apps have, with different URLs or data | `@play/learning`, with the differences as props |
+| A screen both apps have and neither varies — the sign-in | `@play/auth` |
 | A request, its cache key and its invalidation | `@play/api/modules/*/*.queries.ts` |
 | Anything a page renders that is not specific to a screen | `@play/ui` |
 | A shape the API serializes | `@play/types` — and the same shape in `services/api/src/types` |
@@ -145,11 +146,14 @@ carries an explicit `@source` for the packages:
 ```css
 @source "../../../../packages/ui/src";
 @source "../../../../packages/learning/src";
+@source "../../../../packages/auth/src";
 ```
 
 Without it, the classes only the packages use are never generated and the shared
 components render unstyled — which looks like a broken component rather than a
-missing build setting.
+missing build setting. `packages/auth` is on the list for the sign-in screen's
+own markup (the mark and its headline are Tailwind; the form under them is
+Amplify's and is styled in `packages/auth/src/sign-in.css` instead).
 
 Both apps import the same `globals.css` copy (the theme tokens and variants are
 identical); if the design changes, it changes in both, and the primitives it
@@ -182,12 +186,18 @@ keeping to when adding a screen:
   and ordinary rounded buttons for everything else.
 - **Empty states are composed, not coloured**: a muted icon circle, a line in the
   heading's voice, a sentence of explanation, and the action (`EmptyState`).
-- **The marketplace's front page speaks in a marketing register, and it is the
-  only screen that does.** Large type, wide margins, one accent, and `Reveal`
-  for blocks that arrive as they are scrolled to — where the app screens state
-  what is on them, `/` makes a claim and then shows the evidence. The reviews on
-  it are written for the page rather than collected, so replacing them with real
-  ones is a copy change and never a wiring one.
+- **The marketplace's front page speaks in a marketing register, and the studio's
+  now does too.** Large type, wide margins, one accent, and `Reveal` (in
+  `@play/ui`, since two pages draw with it) for blocks that arrive as they are
+  scrolled to — where the app screens state what is on them, a front page makes a
+  claim and then shows the evidence. The marketplace's reviews are written for
+  its page rather than collected, so replacing them with real ones is a copy
+  change and never a wiring one; the studio's front page has none, because a
+  picture of the tool is worth more than a stranger's sentence about it.
+- **A front page is not a screen, and it does not live with them.** A claim made
+  to somebody who has never heard of the product is a different job from a page
+  in the app, which is why the studio's `/` says what the studio is for and the
+  community you actually belong to is at `/home`.
 
 The primitives in `@play/ui` are shared and stay deliberately plain: the
 vocabulary above is applied at the composition layer (the shell, the page card,
@@ -200,16 +210,36 @@ One Cognito user pool for both apps, so an author in the studio and a learner in
 the marketplace are the same account. `@play/auth` is where that lives:
 
 - `AppProviders` — theme, query cache, tooltips, Amplify session, toasts.
-  **No gate**: the marketplace's front page and its catalog both render for
-  people who have not signed in.
+  **No gate**: neither app's front page needs an account, and a provider stack
+  that insists on one cannot render a landing page at all.
 - `AuthGate` — the sign-in wall, for everything that is only for signed-in
-  people. The studio wraps its whole tree in it; the marketplace wraps the pages
-  that need an account, and sends anonymous readers to `/sign-in?next=…`.
+  people. It goes in a *layout*, so a section decides once who may see it: the
+  studio wraps `/o/[orgId]`, `/spaces`, `/invites`, `/organizations`, `/api-keys`
+  and `/home`, and the marketplace wraps the pages that need an account and sends
+  anonymous readers to `/sign-in?next=…`.
 - `SignIn` — the sign-in screen itself, and the *only* place `socialProviders` is
   passed. A page that renders Amplify's `Authenticator` directly would silently
   offer passwords only, however the deployment is configured.
-- `useIsSignedIn` — for pages that ask the API who the caller is, because "the
-  courses I am in" is a 401 when nobody is signed in, not an empty list.
+- `SignInScreen` — what `SignIn` renders: Amplify's flows inside a frame this
+  repository draws. `packages/auth/src/sign-in.css` re-points Amplify's design
+  tokens at the app's, so the same screen is the studio's in the studio and the
+  marketplace's in the marketplace. It has one contract with the app it renders
+  in: on its own it takes the viewport, and an app that keeps a bar and a footer
+  around it sets `--sign-in-min-height` on an ancestor and centers what is left
+  itself, which is what both `/sign-in` pages do.
+- `useIsSignedIn` / `useAuthStatus` — for pages that ask the API who the caller
+  is, because "the courses I am in" is a 401 when nobody is signed in, not an
+  empty list. The status has three states rather than two so a page can tell
+  "nobody" apart from "not yet", which is what stops a signed-in reader being
+  told to sign in for the length of one session restore.
+
+**What is public.** In the marketplace: `/`, `/discover`, a course page and a
+lesson. In the studio: `/` (the front page), `/docs` (the API reference) and
+`/sign-in`; everything behind a gate is reached from them. A public page must not
+call an endpoint that needs a session — `/docs` is the worked example, where the
+playground offers a pasted key to a reader with no account and a sign-in link
+instead of the key-minting button, and waits for `useAuthStatus` to settle before
+deciding which.
 
 Redirect URLs are derived from `window.location.origin`, so the studio gets
 `localhost:3000/auth/callback` and the marketplace `localhost:3001/auth/callback`

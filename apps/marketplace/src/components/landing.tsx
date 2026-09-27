@@ -17,9 +17,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@ui/components/ui/button';
+import { Reveal } from '@play/ui';
 import { cn } from '@ui/lib/utils';
 import { FeaturedCourses } from '@/components/landing-featured';
-import { Reveal } from '@/components/reveal';
 
 /**
  * The marketplace's front page.

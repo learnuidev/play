@@ -7,6 +7,7 @@
    matters most. */
 @source "../../../../packages/ui/src";
 @source "../../../../packages/learning/src";
+@source "../../../../packages/auth/src";
 
 
 @custom-variant dark (&:is(.dark *));

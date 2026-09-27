@@ -14,6 +14,11 @@ import { lessonRoute } from '@/lib/routes';
  * somebody came to watch, and the way back to the course is the lesson's own
  * first line.
  *
+ * The sign-in page is *not* one of these. Somebody who has not decided to sign in
+ * yet is still reading this site, and taking the bar away is how they stop being
+ * able to; the shared sign-in screen asks the frame how much room it has left
+ * instead, which is what `--sign-in-min-height` is.
+ *
  * Every other page is a column in the middle of the screen: the frame supplies
  * the bar and the footer and nothing else, and each page brings its own measure,
  * because a catalog and a course page do not want the same one.

@@ -1,10 +1,10 @@
 'use client';
 
 import { Authenticator } from '@aws-amplify/ui-react';
-import '@aws-amplify/ui-react/styles.css';
 import { ThemeProvider } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { QueryProvider } from '@auth/components/query-provider';
+import { SignInScreen } from '@auth/components/sign-in';
 import { isAuthConfigured, isGoogleSignInEnabled, oauthCallbackPath } from '@auth/lib/amplify';
 import { Toaster } from '@ui/components/ui/sonner';
 import { TooltipProvider } from '@ui/components/ui/tooltip';
@@ -40,15 +40,16 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The sign-in screen: Amplify's Authenticator, with whichever identity providers
+ * The sign-in screen: the shared screen, pointed at whichever identity providers
  * this deployment has.
  *
  * Every app signs in through this rather than rendering `Authenticator` itself.
  * A deployment with Google configured offers it — `socialProviders` is what puts
  * the button on the screen, and an app that forgot to pass it would silently
  * offer passwords only, which looks like a deployment problem rather than a
- * missing prop. With children it is still the gate (they render once signed in);
- * without them it is the sign-in page itself.
+ * missing prop. What the screen looks like is `SignInScreen`'s business; this is
+ * the one place that decides what it offers. With children it is still the gate
+ * (they render once signed in); without them it is the sign-in page itself.
  */
 export function SignIn({ children }: { children?: React.ReactNode }) {
   // Typed from the Authenticator's own props rather than a named type: the
@@ -58,11 +59,7 @@ export function SignIn({ children }: { children?: React.ReactNode }) {
     ? ['google']
     : undefined;
 
-  if (!children) {
-    return <Authenticator socialProviders={socialProviders} />;
-  }
-
-  return <Authenticator socialProviders={socialProviders}>{children}</Authenticator>;
+  return <SignInScreen socialProviders={socialProviders}>{children}</SignInScreen>;
 }
 
 /**

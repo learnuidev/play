@@ -5,6 +5,7 @@
  */
 export * from './components/oauth-callback';
 export * from './components/query-provider';
+export * from './components/sign-in';
 export * from './hooks/use-signed-in';
 export * from './hooks/use-viewer';
 export * from './lib/after-sign-in';

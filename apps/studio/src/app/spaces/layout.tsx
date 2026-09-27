@@ -1,3 +1,4 @@
+import { AuthGate } from '@play/auth';
 import { PlainShell } from '@/components/shell/plain-shell';
 
 /**
@@ -10,8 +11,10 @@ import { PlainShell } from '@/components/shell/plain-shell';
  */
 export default function SpacesLayout({ children }: { children: React.ReactNode }) {
   return (
-    <PlainShell crumb="Spaces" width="wide">
-      {children}
-    </PlainShell>
+    <AuthGate>
+      <PlainShell crumb="Spaces" width="wide">
+        {children}
+      </PlainShell>
+    </AuthGate>
   );
 }
