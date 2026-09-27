@@ -48,6 +48,8 @@ export interface ApiEndpoint {
   responseExample?: string;
   /** What is in that JSON. Empty when there is no JSON. */
   responseFields?: ApiField[];
+  /** Caveats that change how the answer above should be read. */
+  notes?: string[];
 }
 
 export interface ApiEndpointGroup {
@@ -307,6 +309,239 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         ],
         notes: [
           'A key made for one organization is not a key for every organization. Asking about any other answers **403** rather than an empty list, so an integration wired up to the wrong organization says so instead of reporting that its customer has no courses.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'lessons',
+    title: 'A lesson',
+    description:
+      'The pieces a page needs to teach with, in the order it needs them: the outline the lesson sits in, the lesson itself, its video, its subtitles and its attachments. These are authorized by **access** rather than by publication — a key reaches what its owner may read, and a key made for an organization reaches everything that organization owns.',
+    endpoints: [
+      {
+        id: 'list-course-sections',
+        method: 'GET',
+        path: '/v1/courses/{spaceId}/sections',
+        summary: 'The outline of a course you can read, published or not.',
+        description:
+          'The same shape the syllabus uses — sections, and each lesson’s title and whether it has a video — with one difference that is the whole reason this endpoint exists: it answers for any course the key may read. `GET /v1/courses/{spaceId}` is the catalogue and answers only for a published course; this is the left rail of a classroom, which has to work for the ones nobody has advertised.',
+        auth: 'key',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'spaceId',
+            type: 'string',
+            required: true,
+            description: 'The course to outline.',
+            example: '01JQ8Y4C2D5F7H9K1M3P5R7T9V',
+          },
+        ],
+        responseExample: `{
+  "sections": [
+    {
+      "sectionId": "01JQ8Y6E4F7H9K1M3P5R7T9V1X",
+      "title": "Before the camera",
+      "lessons": [
+        { "contentId": "01JQ8Y8G6H9K1M3P5R7T9V1X3Z", "title": "What a shot is", "hasVideo": true },
+        { "contentId": "01JQ8Y8G6H9K1M3P5R7T9V1X40", "title": "Reading a scene", "hasVideo": false }
+      ]
+    }
+  ]
+}`,
+        responseFields: [
+          { name: 'sections', type: 'array', description: 'The course’s sections, in teaching order.' },
+          { name: 'sections[].sectionId', type: 'string', description: 'ULID of the section.' },
+          { name: 'sections[].title', type: 'string', description: 'The section’s heading.' },
+          { name: 'sections[].lessons', type: 'array', description: 'Its lessons, in order.' },
+          { name: 'sections[].lessons[].contentId', type: 'string', description: 'What `/v1/lessons/{contentId}` takes.' },
+          { name: 'sections[].lessons[].title', type: 'string', description: 'What the lesson is called.' },
+          { name: 'sections[].lessons[].hasVideo', type: 'boolean', description: 'Whether there is a video to ask `/stream` for.' },
+        ],
+      },
+      {
+        id: 'get-lesson',
+        method: 'GET',
+        path: '/v1/lessons/{contentId}',
+        summary: 'One lesson: its title, its notes, and its poster.',
+        description:
+          'What a lesson is, apart from its media. The notes come back as the document the author wrote — a ProseMirror tree, the same one the classroom renders — rather than as HTML, because this API does not sanitize markup for a caller and a document is not a string anybody has to trust. The poster is here so a page has something to draw before the manifest arrives.',
+        auth: 'key',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            description: 'The lesson, from the outline above.',
+            example: '01JQ8Y8G6H9K1M3P5R7T9V1X3Z',
+          },
+        ],
+        responseExample: `{
+  "lesson": {
+    "contentId": "01JQ8Y8G6H9K1M3P5R7T9V1X3Z",
+    "spaceId": "01JQ8Y4C2D5F7H9K1M3P5R7T9V",
+    "sectionId": "01JQ8Y6E4F7H9K1M3P5R7T9V1X",
+    "title": "What a shot is",
+    "notes": { "type": "doc", "content": [] },
+    "videoId": "01JQ8Y9H7K1M3P5R7T9V1X3Z5B",
+    "thumbnailUrl": "https://d111111abcdef8.cloudfront.net/thumbnails/…?Policy=…&Signature=…",
+    "fileCount": 2,
+    "position": 1,
+    "createdAt": 1771977600000,
+    "updatedAt": 1772064000000
+  }
+}`,
+        responseFields: [
+          { name: 'lesson.contentId', type: 'string', description: 'ULID of the lesson.' },
+          { name: 'lesson.spaceId', type: 'string', description: 'The course it belongs to.' },
+          { name: 'lesson.sectionId', type: 'string', description: 'The section it is filed under.' },
+          { name: 'lesson.title', type: 'string', description: 'What it is called.' },
+          { name: 'lesson.notes', type: 'object?', description: 'The author’s notes as a ProseMirror document. Render it with an editor; do not treat it as markup.' },
+          { name: 'lesson.videoId', type: 'string?', description: 'The video it plays, when it has one. Absent on a lesson that is reading only.' },
+          { name: 'lesson.thumbnailUrl', type: 'string?', description: 'Signed poster URL, when the video has one.' },
+          { name: 'lesson.fileCount', type: 'integer', description: 'How many attachments it has. `/attachments` returns them.' },
+          { name: 'lesson.position', type: 'integer', description: '1-based order inside its section.' },
+          { name: 'lesson.createdAt', type: 'number', description: 'Epoch milliseconds.' },
+          { name: 'lesson.updatedAt', type: 'number', description: 'Epoch milliseconds.' },
+        ],
+      },
+      {
+        id: 'get-lesson-stream',
+        method: 'GET',
+        path: '/v1/lessons/{contentId}/stream',
+        summary: 'A signed HLS manifest URL for the lesson’s video.',
+        description:
+          'How to play it. The manifest is signed per request, so a lesson’s video is reachable only by somebody who may read the lesson — and `baseUrl` and `signedQuery` come back beside the URL because the signature covers the video’s whole stream prefix rather than one file. A player has to attach that same query to every segment it asks for, which is the one thing it cannot work out from the manifest alone.',
+        auth: 'key',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            description: 'The lesson whose video to play.',
+            example: '01JQ8Y8G6H9K1M3P5R7T9V1X3Z',
+          },
+        ],
+        responseExample: `{
+  "videoId": "01JQ8Y9H7K1M3P5R7T9V1X3Z5B",
+  "manifestUrl": "https://d111111abcdef8.cloudfront.net/processed/01JQ8Y9H7K1M3P5R7T9V1X3Z5B/hls/master.m3u8?Policy=…&Signature=…&Key-Pair-Id=…",
+  "baseUrl": "https://d111111abcdef8.cloudfront.net/processed/01JQ8Y9H7K1M3P5R7T9V1X3Z5B/hls/master.m3u8",
+  "signedQuery": "Policy=…&Signature=…&Key-Pair-Id=…",
+  "expiresAt": 1772669700
+}`,
+        responseFields: [
+          { name: 'videoId', type: 'string', description: 'The video behind the manifest.' },
+          { name: 'manifestUrl', type: 'string', description: 'The signed HLS master playlist. Hand this to the player.' },
+          { name: 'baseUrl', type: 'string', description: 'The same URL unsigned — for building sibling requests.' },
+          { name: 'signedQuery', type: 'string', description: 'Attach this to every segment and rendition request; the signature covers the whole prefix.' },
+          { name: 'expiresAt', type: 'number', description: 'Expiry in epoch **seconds**. Refetch the stream rather than holding a page open past it.' },
+        ],
+        notes: [
+          'A lesson with no video answers **404**. One whose video is still encoding, or whose encoding failed, answers **409** with the status — which is a state a page can say something about, where an empty manifest URL is not.',
+        ],
+      },
+      {
+        id: 'get-lesson-subtitles',
+        method: 'GET',
+        path: '/v1/lessons/{contentId}/subtitles',
+        summary: 'Signed WebVTT tracks, and the transcript that goes with them.',
+        description:
+          'Every ready track — the language it was transcribed in, and any translation the author generated — as a signed WebVTT URL for whatever player you use. `words` is the other half of the same recording: each word with when it is said, which is what lets a transcript highlight as it is read rather than appearing a line at a time.',
+        auth: 'key',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            description: 'The lesson whose subtitles to read.',
+            example: '01JQ8Y8G6H9K1M3P5R7T9V1X3Z',
+          },
+        ],
+        responseExample: `{
+  "videoId": "01JQ8Y9H7K1M3P5R7T9V1X3Z5B",
+  "status": "READY",
+  "sourceLanguage": "en-US",
+  "tracks": [
+    {
+      "language": "en-US",
+      "label": "English",
+      "isSource": true,
+      "subtitleUrl": "https://d111111abcdef8.cloudfront.net/subtitles/…/source.vtt?Policy=…&Signature=…",
+      "baseUrl": "https://d111111abcdef8.cloudfront.net/subtitles/…/source.vtt",
+      "signedQuery": "Policy=…&Signature=…&Key-Pair-Id=…",
+      "expiresAt": 1772669700
+    }
+  ],
+  "words": [
+    { "w": "A", "s": 0, "e": 120 },
+    { "w": "shot", "s": 120, "e": 460 }
+  ]
+}`,
+        responseFields: [
+          { name: 'videoId', type: 'string?', description: 'Null when the lesson has no video at all.' },
+          { name: 'status', type: 'string', description: '`NONE`, `GENERATING`, `READY` or `FAILED` — whether captions exist yet, so a page can say “coming” rather than show nothing.' },
+          { name: 'sourceLanguage', type: 'string?', description: 'The language it was transcribed in, when there are tracks.' },
+          { name: 'tracks', type: 'array', description: 'One per ready language. Empty when there are none.' },
+          { name: 'tracks[].language', type: 'string', description: 'BCP-47 code, e.g. `en-US`, `zh-CN`.' },
+          { name: 'tracks[].label', type: 'string', description: 'Human-readable, e.g. `English`.' },
+          { name: 'tracks[].isSource', type: 'boolean', description: 'True for the track it was transcribed in, false for a translation.' },
+          { name: 'tracks[].subtitleUrl', type: 'string', description: 'The signed WebVTT file.' },
+          { name: 'tracks[].signedQuery', type: 'string', description: 'As with the stream: the signature covers the prefix.' },
+          { name: 'tracks[].expiresAt', type: 'number', description: 'Expiry in epoch seconds.' },
+          { name: 'words', type: 'array?', description: 'Each word with `w`, and `s`/`e` in milliseconds from the start of the video. Capped; absent when the video has no timings.' },
+        ],
+        notes: [
+          'A lesson whose subtitles are still being generated answers **200** with its status and no tracks, rather than an error — “no captions yet” is a state a page renders, not a failure it has to catch.',
+        ],
+      },
+      {
+        id: 'list-lesson-attachments',
+        method: 'GET',
+        path: '/v1/lessons/{contentId}/attachments',
+        summary: 'The worksheets and files beside the video.',
+        description:
+          'Everything attached to the lesson, each with a signed URL. They are signed under one policy scoped to the lesson’s own prefix, so a single signature serves every file — which is also why the whole list comes back at once rather than paged: a lesson’s material is a handful of files.',
+        auth: 'key',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            description: 'The lesson whose attachments to list.',
+            example: '01JQ8Y8G6H9K1M3P5R7T9V1X3Z',
+          },
+        ],
+        responseExample: `{
+  "attachments": [
+    {
+      "fileId": "01JQ8YBJ9M3P5R7T9V1X3Z5B7D",
+      "name": "shot-list.pdf",
+      "contentType": "application/pdf",
+      "size": 182734,
+      "url": "https://d111111abcdef8.cloudfront.net/contents/…/shot-list.pdf?Policy=…&Signature=…",
+      "createdAt": 1771977600000
+    }
+  ],
+  "expiresAt": 1772669700
+}`,
+        responseFields: [
+          { name: 'attachments', type: 'array', description: 'The lesson’s files. Empty when it has none.' },
+          { name: 'attachments[].fileId', type: 'string', description: 'ULID, unique within the lesson.' },
+          { name: 'attachments[].name', type: 'string', description: 'The file’s name as it was uploaded — what to save it as.' },
+          { name: 'attachments[].contentType', type: 'string', description: 'MIME type, so a caller knows what it is holding.' },
+          { name: 'attachments[].size', type: 'number?', description: 'Bytes, when it was recorded at upload.' },
+          { name: 'attachments[].url', type: 'string', description: 'Signed download URL.' },
+          { name: 'attachments[].createdAt', type: 'number', description: 'Epoch milliseconds.' },
+          { name: 'expiresAt', type: 'number', description: 'Expiry in epoch seconds, shared by every URL in the answer.' },
         ],
       },
     ],

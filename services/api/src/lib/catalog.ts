@@ -4,7 +4,7 @@ import { countSectionsInSpace } from './sections';
 import { countSpaceStudents } from './space-members';
 import { buildSpaceThumbnailUrl } from './space-thumbnail';
 import { getSpace, listListedSpaces } from './spaces';
-import type { CatalogCourse, CatalogLesson, CatalogSection, Space } from '../types';
+import type { CatalogCourse, CatalogLesson, CatalogSection, Content, Space } from '../types';
 
 /**
  * What a listed course looks like from the outside.
@@ -123,6 +123,23 @@ export function toCatalogSections(
       }),
     ),
   }));
+}
+
+/**
+ * A lesson list per section, from one pass over a course's contents.
+ *
+ * The outline is read as one query for the whole course and then grouped here,
+ * rather than queried per section: a five-section course would otherwise be five
+ * round trips to draw one page.
+ */
+export function groupContentsBySection(contents: Content[]): Map<string, Content[]> {
+  const bySection = new Map<string, Content[]>();
+  for (const content of contents) {
+    const existing = bySection.get(content.sectionId);
+    if (existing) existing.push(content);
+    else bySection.set(content.sectionId, [content]);
+  }
+  return bySection;
 }
 
 /**

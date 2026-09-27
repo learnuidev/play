@@ -1,20 +1,20 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { listActiveApiKeysForUser, toApiKey } from '../../lib/api-keys';
+import { listApiKeysForUser, toApiKey } from '../../lib/api-keys';
 import { requireUser } from '../../lib/auth';
 import { encodeNextToken, handle, ok, parsePaging } from '../../lib/http';
 
 /**
- * The caller's own keys that still work, newest first.
+ * The caller's own keys, newest first.
  *
- * Revoked keys are not among them. A key list is read to decide which
- * credentials exist, and a revoked key is not one of them — it cannot
- * authenticate, and the only thing left to do to it is what was already done.
- * The row is still kept; it is simply not an answer to this question.
+ * Every one of them works: revoking deletes a key rather than marking it, so
+ * there is no revoked state in this table to return. What this answers is the
+ * whole of "which credentials exist", which is the question a key list is read
+ * to decide.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const user = requireUser(event);
 
-  const { keys, lastEvaluatedKey } = await listActiveApiKeysForUser(
+  const { keys, lastEvaluatedKey } = await listApiKeysForUser(
     user.userId,
     parsePaging(event),
   );

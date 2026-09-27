@@ -250,10 +250,12 @@ export default function ApiDocsPage() {
                   Every time in this API is epoch milliseconds in UTC, as a number. Nothing is a
                   formatted date string, because a client that has to parse one has to guess a locale.
                 </Convention>
-                <Convention title="What is public">
-                  A course appears in the catalog when its author publishes it. Reading one that has
-                  not been published answers <Code>404</Code> rather than <Code>403</Code>, so the
-                  catalog never reports which course ids exist in private.
+                <Convention title="Publication and access">
+                  Two different questions. The <em>catalog</em> holds the courses their authors
+                  published, where an unpublished one answers <Code>404</Code> so that it never
+                  reports which ids exist in private. The <em>lesson</em> endpoints are authorized by
+                  access instead: they answer for any course the key may read, published or not, and
+                  answer <Code>403</Code> for one it may not.
                 </Convention>
                 <Convention title="Versioning">
                   Everything is under <Code>/v1</Code>. Within a version, changes are additive — a new

@@ -1,9 +1,8 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { getCatalogCourse, toCatalogSections } from '../../lib/catalog';
+import { getCatalogCourse, groupContentsBySection, toCatalogSections } from '../../lib/catalog';
 import { listAllContentsBySpace } from '../../lib/contents';
 import { HttpError, handle, ok, pathParam } from '../../lib/http';
 import { listAllSectionsBySpace } from '../../lib/sections';
-import type { Content } from '../../types';
 
 /**
  * One listed course: what it is, and what is in it.
@@ -22,18 +21,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const { sections } = await listAllSectionsBySpace(spaceId);
   const { contents } = await listAllContentsBySpace(spaceId);
 
-  return ok({ course, sections: toCatalogSections(sections, groupBySection(contents)) });
-}
-
-/** A lesson list per section, from one pass over the course's contents. */
-function groupBySection(contents: Content[]): Map<string, Content[]> {
-  const bySection = new Map<string, Content[]>();
-  for (const content of contents) {
-    const existing = bySection.get(content.sectionId);
-    if (existing) existing.push(content);
-    else bySection.set(content.sectionId, [content]);
-  }
-  return bySection;
+  return ok({ course, sections: toCatalogSections(sections, groupContentsBySection(contents)) });
 }
 
 export const handler = handle(main);

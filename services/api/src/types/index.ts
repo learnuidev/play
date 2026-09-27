@@ -1019,3 +1019,49 @@ export interface ApiKeyCaller {
   /** The organization the key was made for, when it has one. */
   organizationId?: string;
 }
+
+/**
+ * A lesson as `/v1` hands it out — the pieces somebody building the classroom
+ * somewhere else needs. The same shapes the shared package declares, kept here
+ * because the API's own types describe what it serializes; see docs/workspace.md.
+ */
+export interface ApiLesson {
+  contentId: string;
+  spaceId: string;
+  sectionId: string;
+  title: string;
+  notes?: Record<string, unknown>;
+  videoId?: string;
+  thumbnailUrl?: string;
+  fileCount: number;
+  position: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ApiLessonStream {
+  videoId: string;
+  manifestUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
+export interface ApiSubtitleTrack {
+  language: string;
+  label: string;
+  isSource: boolean;
+  subtitleUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
+export interface ApiLessonAttachment {
+  fileId: string;
+  name: string;
+  contentType: string;
+  size?: number;
+  url?: string;
+  createdAt: number;
+}

@@ -1295,3 +1295,109 @@ export interface ApiKeyIdentityResponse {
     userId: string;
   };
 }
+
+/**
+ * A lesson, as the API hands it to somebody building the classroom somewhere
+ * else: the pieces a page needs to teach with.
+ *
+ * Four shapes rather than one, because each is fetched at a different moment and
+ * signed with its own expiry — the lesson and its notes are read once, the
+ * manifest before playback, the subtitle tracks by the player, the attachments
+ * when somebody opens them.
+ */
+export interface ApiLesson {
+  contentId: string;
+  /** The course it belongs to. */
+  spaceId: string;
+  sectionId: string;
+  title: string;
+  /**
+   * The author's notes beside the video, as the document they wrote — a
+   * ProseMirror tree, the same one the classroom renders. Deliberately not HTML:
+   * this API does not sanitize markup for a caller, and a document a caller
+   * renders with an editor of its choice is not a string anybody has to trust.
+   */
+  notes?: NotesDocument;
+  /** The video it plays, when it has one. Reachable through `/stream`. */
+  videoId?: string;
+  /** Signed poster image URL for the video, when it has a thumbnail. */
+  thumbnailUrl?: string;
+  /** Attachments on the lesson. `/attachments` returns them with URLs. */
+  fileCount: number;
+  /** 1-based order inside its section. */
+  position: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ApiLessonResponse {
+  lesson: ApiLesson;
+}
+
+/** A course's outline: the same shape the public syllabus uses. */
+export interface ApiSectionsResponse {
+  sections: CatalogSection[];
+}
+
+/**
+ * How to play a lesson's video.
+ *
+ * `manifestUrl` is a signed HLS manifest. `baseUrl` and `signedQuery` are beside
+ * it because the signature covers the video's whole stream prefix rather than
+ * one file, so the same query has to be attached to every segment the player
+ * asks for — the one thing a caller cannot derive from the manifest alone.
+ */
+export interface ApiLessonStreamResponse {
+  videoId: string;
+  manifestUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  /** Expiry in epoch seconds. Refetch this rather than holding a page open past it. */
+  expiresAt: number;
+}
+
+/** One subtitle track: a signed WebVTT URL, and what it holds. */
+export interface ApiSubtitleTrack {
+  /** BCP-47 code, e.g. `en-US` or `zh-CN`. */
+  language: string;
+  /** Human-readable label, e.g. `English`. */
+  label: string;
+  isSource: boolean;
+  subtitleUrl: string;
+  baseUrl: string;
+  signedQuery: string;
+  expiresAt: number;
+}
+
+export interface ApiLessonSubtitlesResponse {
+  /** Null when the lesson has no video at all. */
+  videoId: string | null;
+  /**
+   * Whether captions exist yet. A lesson whose subtitles are still being
+   * generated answers with this and no tracks, rather than an error: a page
+   * renders "no captions yet" as a state, not as a failure.
+   */
+  status: SubtitleStatus;
+  /** The language it was transcribed in, when there are tracks. */
+  sourceLanguage?: string;
+  tracks: ApiSubtitleTrack[];
+  /** Every word with when it is said, for a transcript that follows along. Capped. */
+  words?: TranscriptWord[];
+}
+
+/** One file attached to a lesson, with a signed URL. */
+export interface ApiLessonAttachment {
+  fileId: string;
+  name: string;
+  contentType: string;
+  size?: number;
+  /** Signed URL. Good until `expiresAt`. */
+  url?: string;
+  createdAt: number;
+}
+
+export interface ApiLessonAttachmentsResponse {
+  attachments: ApiLessonAttachment[];
+  /** Expiry in epoch seconds, shared by every URL in the answer. */
+  expiresAt: number;
+}

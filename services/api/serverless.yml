@@ -1369,6 +1369,62 @@ functions:
           cors: true
           authorizer: ${self:custom.apiKeyAuthorizer}
 
+  # A lesson, to a key that may read it: the pieces a page needs to teach with —
+  # the outline it sits in, the lesson itself, its video, its subtitles, and the
+  # attachments beside it.
+  #
+  # These are authorized by *access* rather than by publication, which is what
+  # separates them from the catalog routes above. A key reaches what its owner
+  # may read; a key made for an organization reaches everything that
+  # organization owns, published or not. That is what makes it possible to build
+  # the classroom somewhere else.
+  list-course-sections:
+    handler: src/functions/public/list-course-sections.handler
+    events:
+      - http:
+          path: v1/courses/{spaceId}/sections
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
+  get-lesson:
+    handler: src/functions/public/get-lesson.handler
+    events:
+      - http:
+          path: v1/lessons/{contentId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
+  get-lesson-stream:
+    handler: src/functions/public/get-lesson-stream.handler
+    events:
+      - http:
+          # A signed HLS manifest URL, expiring. Nothing public about it: the
+          # signature is built per request for a caller who may read the lesson.
+          path: v1/lessons/{contentId}/stream
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
+  get-lesson-subtitles:
+    handler: src/functions/public/get-lesson-subtitles.handler
+    events:
+      - http:
+          path: v1/lessons/{contentId}/subtitles
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
+  list-lesson-attachments:
+    handler: src/functions/public/list-lesson-attachments.handler
+    events:
+      - http:
+          path: v1/lessons/{contentId}/attachments
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiKeyAuthorizer}
+
   process-video:
     handler: src/functions/processing/process-video.handler
     timeout: 60

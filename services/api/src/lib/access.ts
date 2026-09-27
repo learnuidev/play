@@ -9,6 +9,7 @@ import { getSection } from './sections';
 import { isSpaceMember } from './space-members';
 import { getSpace } from './spaces';
 import type {
+  ApiKeyCaller,
   Cohort,
   Comment,
   Content,
@@ -48,6 +49,56 @@ export async function requireOrganizationAccess(
     throw new HttpError(403, `A ${membership.role.toLowerCase()} cannot modify this organization`);
   }
   return membership.role;
+}
+
+/**
+ * Authorizes an API key against a course.
+ *
+ * Two ways in, and the second is the one worth stating: the key's owner may
+ * read what they may read — an organization they belong to, a course they are
+ * registered for — and a key *made for an organization* may read that
+ * organization's own courses outright. A key scoped to an organization is that
+ * organization's credential, so what it reaches is what the organization owns,
+ * which is the same reach `GET /v1/organizations/{orgId}/courses` already gives
+ * it for the catalogue.
+ *
+ * It is not an escalation: every active member of an organization can already
+ * read its courses, and the key is made by a member and visible to its admins.
+ *
+ * A course nobody may read answers 403, and one that does not exist 404 — the
+ * same answers the signed-in routes give, for the same reasons.
+ */
+export async function requireKeySpaceAccess(
+  spaceId: string,
+  caller: ApiKeyCaller,
+): Promise<Space> {
+  const space = await getSpace(spaceId);
+  if (!space) throw new HttpError(404, 'Course not found');
+
+  if (caller.organizationId && caller.organizationId === space.organizationId) return space;
+
+  await assertSpaceRead(space.spaceId, space.organizationId, caller.userId);
+  return space;
+}
+
+/**
+ * Authorizes an API key against a lesson.
+ *
+ * The same two ways in as a course, asked of the lesson's own copy of the
+ * organization — a lesson carries its course and its organization, so this is
+ * one read and the same rule rather than a second one.
+ */
+export async function requireKeyContentAccess(
+  contentId: string,
+  caller: ApiKeyCaller,
+): Promise<Content> {
+  const content = await getContent(contentId);
+  if (!content) throw new HttpError(404, 'Lesson not found');
+
+  if (caller.organizationId && caller.organizationId === content.organizationId) return content;
+
+  await assertSpaceRead(content.spaceId, content.organizationId, caller.userId);
+  return content;
 }
 
 /**
