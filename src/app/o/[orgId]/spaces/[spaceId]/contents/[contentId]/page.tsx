@@ -62,7 +62,7 @@ import { NotesEditor } from "@/components/content/notes-editor";
 import { isEmptyNotes } from "@/components/content/notes";
 import { NotesView } from "@/components/content/notes-view";
 import { PlayingNext } from "@/components/content/playing-next";
-import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
+import { VideoPlayer, type SubtitleTrack, type VideoPlayerHandle } from "@/components/video-player";
 import { VideoStatusBadge } from "@/components/video/status-badge";
 import {
   useContent,
@@ -70,7 +70,11 @@ import {
   useUpdateContent,
 } from "@/modules/content/content.queries";
 import { useToggleCompletion } from "@/modules/content/completion.queries";
-import { useCreateLoop, useLoops, useUpdateLoop } from "@/modules/loop/loop.queries";
+import {
+  useCreateLoop,
+  useLoops,
+  useUpdateLoop,
+} from "@/modules/loop/loop.queries";
 import { loopColor } from "@/lib/loop-color";
 import { useOrganization } from "@/modules/organization/organization.queries";
 import { useSubtitles } from "@/modules/subtitle/subtitle.queries";
@@ -123,12 +127,18 @@ const QUIET_TAB =
 const TAB_STRIP =
   "h-auto w-full justify-evenly gap-1 overflow-x-auto rounded-none border-b border-border/60 bg-transparent p-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 
-/** What the lesson carries, on one quiet line above its name. */
+/**
+ * What the lesson carries, on one quiet line above its name.
+ *
+ * The comments are not counted here any more: the number belongs beside the
+ * icon it is a number *of*, and the discussion already has one on the tab
+ * strip — a second copy above the title only made the line longer than the
+ * thing it was annotating.
+ */
 function Meta({ content }: { content: Content }) {
   const stats = [
     { icon: PaperclipIcon, value: content.fileCount, label: "files" },
     { icon: HeartIcon, value: content.favouriteCount, label: "favourites" },
-    { icon: MessageSquareIcon, value: content.commentCount, label: "comments" },
   ].filter((stat) => stat.value > 0);
 
   if (stats.length === 0) return null;
@@ -164,17 +174,34 @@ function LessonTab({
   icon,
   label,
   hint,
+  badge,
 }: {
   value: string;
   icon: React.ReactNode;
   label: string;
   hint: string;
+  /**
+   * A number the tab itself is counting — only the comments have one, because
+   * how much discussion is waiting is the thing you want to know before you go
+   * looking. It sits beside the icon rather than in the tooltip so the strip
+   * answers that without a hover.
+   */
+  badge?: number;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <TabsTrigger value={value} className={QUIET_TAB} aria-label={label}>
+        <TabsTrigger
+          value={value}
+          className={QUIET_TAB}
+          aria-label={badge ? `${label} (${badge})` : label}
+        >
           {icon}
+          {badge ? (
+            <span className="-ml-1 text-xs font-semibold tabular-nums">
+              {badge}
+            </span>
+          ) : null}
         </TabsTrigger>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-56 text-center">
@@ -199,12 +226,18 @@ function LessonVideo({
   videoId,
   playerRef,
   autoPlay,
+  tracks,
+  onActiveTrackChange,
   children,
 }: {
   videoId: string;
   playerRef: React.MutableRefObject<VideoPlayerHandle | null>;
-  /** Started from the lesson before it, rather than opened. */
+  /** Play as soon as the stream can, rather than waiting to be pressed. */
   autoPlay: boolean;
+  /** The lesson's subtitles, as the captions drawn over the video. */
+  tracks: SubtitleTrack[];
+  /** The language the captions ended up in, so the transcript can follow it. */
+  onActiveTrackChange: (language: string | null) => void;
   /** The loop bar, which is part of the player while a loop is being chosen. */
   children?: React.ReactNode;
 }) {
@@ -245,6 +278,8 @@ function LessonVideo({
         signedQuery={stream.signedQuery}
         poster={thumbnail?.thumbnailUrl}
         autoPlay={autoPlay}
+        tracks={tracks}
+        onActiveTrackChange={onActiveTrackChange}
       />
 
       {children}
@@ -269,6 +304,14 @@ function TranscriptTab({
   video: Video | undefined;
   /** Playback position in milliseconds, read fresh every frame. */
   getTime: () => number;
+  /**
+   * Tapping a line: hear it from there.
+   *
+   * Not a bare seek — the reader who taps a line wants the video to play it, and
+   * on a lesson that has only just been opened there is nothing playing yet for
+   * a seek to move. The tab is the first thing reached for after the video, so
+   * it is also the way playback starts.
+   */
   onSeek: (timeMs: number) => void;
   selection?: { startMs: number; endMs: number } | null;
   selectionColor?: string;
@@ -420,14 +463,27 @@ export default function ContentPage() {
   /** Whether the passage being chosen is being heard, once asked for. */
   const [previewing, setPreviewing] = useState(false);
 
-  // The lesson before this one sends `?play=1`, which is how an automatic
-  // advance carries on playing instead of landing on a paused page.
   const search = useSearchParams();
-  const autoPlay = search.get("play") === "1";
   /** A shared loop: somebody sent a link that opens on their passage. */
   const sharedLoopId = search.get("loop");
 
   const viewerId = useViewerId();
+
+  /** The language the video's captions are in, once a reader has chosen one. */
+  const [captionsLanguage, setCaptionsLanguage] = useState<string | null>(null);
+
+  /**
+   * The transcript follows the captions.
+   *
+   * The two are the same words: a reader who switches the captions to French is
+   * reading in French, and leaving the page beside the video in English would
+   * make them two documents instead of one. Turning the captions *off* is not a
+   * language and does not move it back — that would take the transcript out from
+   * under someone who is still reading it.
+   */
+  const followCaptionsLanguage = useCallback((language: string | null) => {
+    if (language) setCaptionsLanguage(language);
+  }, []);
 
   /**
    * Which tab the panel is on, and where the course list is scrolled to — both
@@ -458,26 +514,83 @@ export default function ContentPage() {
     playerRef.current?.seekTo(timeMs);
   }, []);
 
+  /** A tap on a moment, parked until there is a player to give it to. */
+  const [pendingPlay, setPendingPlay] = useState<number | null>(null);
+
   /**
-   * Plays from a moment somebody named: a loop's own boundaries, or a time an
-   * `@` was put in front of in a comment.
+   * Plays from a moment somebody named: a loop's own boundaries, a time an `@`
+   * was put in front of in a comment, or a line tapped in the transcript.
    *
    * Seeking is not playing: a player that has been paused and put somewhere
    * else is still paused. Naming a passage is a request to *hear* it — a tap on
-   * a loop and a time in a comment are both that — so this asks for both, in
-   * that order, and leaves nothing for the caller to remember.
+   * a loop, a time in a comment and a line of the transcript are all that — so
+   * this asks for both, in that order, and leaves nothing for the caller to
+   * remember. On a lesson that has just been opened this is also what starts the
+   * video at all: the tap is the first thing the reader does, and a seek on a
+   * stream that has not loaded yet goes nowhere on its own.
    */
   const playFrom = useCallback(
     (timeMs: number) => {
+      // The video mounts a beat after the lesson does — its stream has to
+      // arrive first — and a tap inside that beat has nothing to seek and
+      // nothing to play. It is held rather than dropped; the effect below
+      // honours it the moment the player is on the page.
+      if (!playerRef.current) {
+        setPendingPlay(timeMs);
+        return;
+      }
+
       handleSeek(timeMs);
       playVideo();
     },
     [handleSeek, playVideo],
   );
 
+  /**
+   * A tap that landed before the player existed.
+   *
+   * Waited for by the frame, because the wait is short and the point is to lose
+   * as little of it as possible: `play()` is only something the browser has to
+   * allow because a person asked for it, and that asking has a shelf life. So
+   * the wait is bounded to the window in which it still counts as the reader's
+   * own gesture — past it the position is not worth keeping, since a seek with
+   * no sound is not what they asked for.
+   */
+  useEffect(() => {
+    if (pendingPlay === null) return;
+
+    const GESTURE_GRACE_MS = 5000;
+    const deadline = performance.now() + GESTURE_GRACE_MS;
+    let frame = 0;
+
+    const tick = () => {
+      if (playerRef.current) {
+        handleSeek(pendingPlay);
+        playVideo();
+        setPendingPlay(null);
+        return;
+      }
+
+      if (performance.now() >= deadline) {
+        setPendingPlay(null);
+        return;
+      }
+
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [pendingPlay, handleSeek, playVideo]);
+
   // The transcript is read by the transcript itself, by the loop picker while it
   // is choosing a passage, and by the loop list to show what each loop covers.
-  const { lines, video } = useTranscriptLines(content?.videoId);
+  // The captions over the video are read from here too — they are the same
+  // subtitles, in the language the reader put them in.
+  const { lines, video, tracks } = useTranscriptLines(
+    content?.videoId,
+    captionsLanguage,
+  );
 
   // The course, in order, to know what comes next. The same query the Course
   // tab asks for, so it costs nothing extra.
@@ -501,21 +614,22 @@ export default function ContentPage() {
 
       try {
         await navigator.clipboard.writeText(url);
-        toast.success('Link copied', { description: `Opens on “${loop.name}”` });
+        toast.success("Link copied", {
+          description: `Opens on “${loop.name}”`,
+        });
       } catch {
         // A clipboard can be refused, and a link nobody can copy is worse than
         // one they have to select by hand.
-        window.prompt('Copy this link', url);
+        window.prompt("Copy this link", url);
       }
     },
     [contentId, orgId, spaceId],
   );
 
+  /** The lesson after this one, opened the way any lesson is: playing. */
   const handleAdvance = useCallback(() => {
     if (!next) return;
-    router.push(
-      `/o/${orgId}/spaces/${spaceId}/contents/${next.contentId}?play=1`,
-    );
+    router.push(`/o/${orgId}/spaces/${spaceId}/contents/${next.contentId}`);
   }, [next, orgId, router, spaceId]);
 
   // One loop at a time, whether it is a saved one being played or a draft being
@@ -630,14 +744,18 @@ export default function ContentPage() {
   useEffect(() => {
     if (!sharedLoopId || openedSharedRef.current) return;
 
-    const loop = loopData?.loops.find((candidate) => candidate.loopId === sharedLoopId);
+    const loop = loopData?.loops.find(
+      (candidate) => candidate.loopId === sharedLoopId,
+    );
     if (!loop) return;
 
     openedSharedRef.current = true;
     setActiveLoop(loop);
-    handleSeek(loop.startMs);
-    playVideo();
-  }, [handleSeek, loopData, playVideo, sharedLoopId]);
+    // Through `playFrom` rather than a seek and a play of its own: a link opened
+    // cold arrives before the player does, and that is exactly the case it
+    // parks and honours.
+    playFrom(loop.startMs);
+  }, [loopData, playFrom, sharedLoopId]);
 
   const createLoop = useCreateLoop(contentId);
   const updateLoop = useUpdateLoop(contentId);
@@ -736,11 +854,11 @@ export default function ContentPage() {
   const completed = data?.viewer.completed ?? false;
 
   return (
-    // Two rows on a desktop screen: the way back, and then a split that fills
+    // Two rows on a desktop screen: the way back, and a split that fills
     // whatever is left. `minmax(0, 1fr)` rather than `1fr` so the split can be
     // shorter than its contents — which is what lets the panel scroll inside
     // itself instead of the page scrolling as a whole.
-    <div className="grid gap-x-5 gap-y-4 lg:h-full lg:grid-rows-[auto_auto_minmax(0,1fr)] lg:gap-y-5">
+    <div className="grid gap-x-5 gap-y-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-5">
       <div className="flex items-center justify-between gap-4">
         <Link
           href={`/o/${orgId}/spaces/${spaceId}`}
@@ -782,58 +900,6 @@ export default function ContentPage() {
         </Button>
       </div>
 
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <Meta content={content} />
-          <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
-            {content.title}
-          </h1>
-        </div>
-
-        {canEdit && (
-          <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="-mr-2 size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
-                  aria-label="Lesson actions"
-                >
-                  <MoreHorizontalIcon />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
-                {/* The menu closes before this opens: a dialog inside a menu
-                    item fights the menu for focus. */}
-                <DropdownMenuItem
-                  onSelect={() => setTimeout(() => setEditing(true), 0)}
-                >
-                  <PencilIcon />
-                  Edit details
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={deleteContent}
-                >
-                  <Trash2Icon />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <ContentDetailsDialog
-              orgId={orgId}
-              spaceId={spaceId}
-              content={content}
-              open={editing}
-              onOpenChange={setEditing}
-            />
-          </>
-        )}
-      </header>
-
       {/* The video on the left, everything filed under it on the right. The
           video is what the lesson is, so it takes the larger share — but only
           just, because the panel is where the reading happens: the transcript
@@ -841,10 +907,11 @@ export default function ContentPage() {
           now lives in there too. Below `lg` the two stack and the page scrolls
           normally, because a phone has no second half to give.
 
-          The title sits above both rather than inside the left half, which is
-          what lets the video and the panel start on the same line — a heading in
-          the video's own column would push it down by its own height and leave
-          the two columns visibly out of step. */}
+          The title sits in the video's own column, under the picture: the video
+          is what you opened the lesson for, so it gets the top of the page, and
+          the name of what you are watching reads as a caption to it. The panel
+          still starts on the video's first line, because it is the column that
+          was never pushed down. */}
       {/* Fixed to the corner of the page, not of the video: see the card. */}
       {next && upNext.seconds !== null && (
         <PlayingNext
@@ -863,10 +930,17 @@ export default function ContentPage() {
       <div className="grid min-h-0 gap-6 lg:mt-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div>
           {content.videoId ? (
+            // Opened, and playing: a lesson is a thing you came to watch, and
+            // having to press play on the thing you just asked for is a step
+            // that only ever stood between the reader and the lesson. The
+            // browser gets to refuse an unmuted page starting itself, and the
+            // player answers that by starting muted rather than not at all.
             <LessonVideo
               videoId={content.videoId}
               playerRef={playerRef}
-              autoPlay={autoPlay}
+              autoPlay
+              tracks={tracks}
+              onActiveTrackChange={followCaptionsLanguage}
             >
               <div className="mt-4">
                 {draft && (
@@ -918,6 +992,60 @@ export default function ContentPage() {
               )}
             </div>
           )}
+
+          {/* Under the picture, over the panel's shoulder: the lesson's name and
+              what it carries, with its own actions on the right. */}
+          <header className="mt-5 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <Meta content={content} />
+              <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight">
+                {content.title}
+              </h1>
+            </div>
+
+            {canEdit && (
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="-mr-2 size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
+                      aria-label="Lesson actions"
+                    >
+                      <MoreHorizontalIcon />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    {/* The menu closes before this opens: a dialog inside a menu
+                        item fights the menu for focus. */}
+                    <DropdownMenuItem
+                      onSelect={() => setTimeout(() => setEditing(true), 0)}
+                    >
+                      <PencilIcon />
+                      Edit details
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={deleteContent}
+                    >
+                      <Trash2Icon />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <ContentDetailsDialog
+                  orgId={orgId}
+                  spaceId={spaceId}
+                  content={content}
+                  open={editing}
+                  onOpenChange={setEditing}
+                />
+              </>
+            )}
+          </header>
         </div>
 
         {/* Controlled rather than defaulted: the tab is a place the reader is
@@ -966,6 +1094,7 @@ export default function ContentPage() {
               value="comments"
               icon={<MessageSquareIcon />}
               label="Comments"
+              badge={content.commentCount}
               hint={
                 content.commentCount > 0
                   ? `${content.commentCount} comment${content.commentCount === 1 ? "" : "s"} on this lesson.`
@@ -1004,7 +1133,7 @@ export default function ContentPage() {
               lines={lines}
               video={video}
               getTime={getTime}
-              onSeek={handleSeek}
+              onSeek={playFrom}
               selection={draft}
               selectionColor={editingLoop ? loopColor(editingLoop) : "#6366f1"}
               onSelectLine={draft ? selectLine : undefined}

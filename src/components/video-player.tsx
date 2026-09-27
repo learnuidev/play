@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -105,14 +106,63 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
+    /**
+     * A position asked for before the stream could take it.
+     *
+     * Assigning `currentTime` to an element that has no metadata yet is not a
+     * seek: there is no duration to seek within, and the browser drops it. So a
+     * tap on the transcript a moment after the lesson opened did nothing at all.
+     * The position is held here instead and applied the moment the stream has
+     * something to seek in.
+     */
+    const pendingSeekRef = useRef<number | null>(null);
+
+    /**
+     * Starts playback, and keeps the sound if the browser will not hand it over.
+     *
+     * A page that starts itself is precisely what an autoplay policy exists to
+     * refuse, and whether a lesson opened from a link may begin unmuted is the
+     * browser's decision and not ours. Refused, the video starts muted instead:
+     * a lesson playing quietly is one whose volume can be turned up, while one
+     * that never started is one that has to be pressed. The sound then comes
+     * back at the first thing the reader touches, which is a gesture the browser
+     * does accept — and both listeners are removed by whichever of them fires
+     * first, so neither is left behind for the next click to trip over.
+     */
+    const startPlayback = useCallback((video: HTMLVideoElement) => {
+      const started = video.play();
+      if (!started || typeof started.catch !== 'function') return;
+
+      started.catch(() => {
+        video.muted = true;
+
+        const quiet = video.play();
+        if (quiet && typeof quiet.catch === 'function') quiet.catch(() => {});
+
+        const restore = () => {
+          video.muted = false;
+          document.removeEventListener('pointerdown', restore);
+          document.removeEventListener('keydown', restore);
+        };
+
+        document.addEventListener('pointerdown', restore);
+        document.addEventListener('keydown', restore);
+      });
+    }, []);
+
     useImperativeHandle(
       ref,
       () => ({
         seekTo: (timeMs: number) => {
           const video = videoRef.current;
-          if (video && Number.isFinite(timeMs)) {
-            video.currentTime = timeMs / 1000;
+          if (!video || !Number.isFinite(timeMs)) return;
+
+          if (video.readyState < 1) {
+            pendingSeekRef.current = timeMs;
+            return;
           }
+
+          video.currentTime = timeMs / 1000;
         },
         getTimeMs: () => {
           const video = videoRef.current;
@@ -122,19 +172,14 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         },
         play: () => {
           const video = videoRef.current;
-          if (!video) return;
-          // A rejected promise here is the browser refusing to start playback
-          // on its own terms, which is not an error worth surfacing: the
-          // controls are right there.
-          const started = video.play();
-          if (started && typeof started.catch === 'function') started.catch(() => {});
+          if (video) startPlayback(video);
         },
         getDurationMs: () => {
           const video = videoRef.current;
           return video && Number.isFinite(video.duration) ? video.duration * 1000 : 0;
         },
       }),
-      [],
+      [startPlayback],
     );
 
     const onTimeUpdateRef = useRef(onTimeUpdate);
@@ -185,10 +230,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       const resume = () => {
         const start = initialTimeMsRef.current;
         if (start && video.readyState >= 1) video.currentTime = start / 1000;
-        if (autoPlayRef.current) {
-          const p = video.play();
-          if (p && typeof p.catch === "function") p.catch(() => {});
-        }
+        if (autoPlayRef.current) startPlayback(video);
       };
 
       if (video.readyState >= 1) {
@@ -197,6 +239,25 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         video.addEventListener("loadedmetadata", resume, { once: true });
       }
       return () => video.removeEventListener("loadedmetadata", resume);
+    }, [startPlayback]);
+
+    // The seek that arrived before the stream was ready, applied as soon as it
+    // can be. Declared after the resume above, so a position named by hand wins
+    // over the one the lesson was opened at.
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const flush = () => {
+        const pending = pendingSeekRef.current;
+        if (pending === null || video.readyState < 1) return;
+        pendingSeekRef.current = null;
+        video.currentTime = pending / 1000;
+      };
+
+      flush();
+      video.addEventListener("loadedmetadata", flush);
+      return () => video.removeEventListener("loadedmetadata", flush);
     }, []);
 
     // Report playback time so the transcript can highlight the active cue.
