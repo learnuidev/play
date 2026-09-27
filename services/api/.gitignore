@@ -1,0 +1,20 @@
+# dependencies
+node_modules
+.build
+.serverless
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+
+# pem
+*.pem
+
+# logs
+*.log
+npm-debug.log*
+
+# os
+.DS_Store

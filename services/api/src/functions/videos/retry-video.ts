@@ -1,0 +1,64 @@
+import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import { requireVideoAccess } from '../../lib/access';
+import { requireUserId } from '../../lib/auth';
+import { env } from '../../lib/config';
+import { getVideo, updateVideo } from '../../lib/dynamodb';
+import { HttpError, handle, ok } from '../../lib/http';
+import { startFrameCaptureJob, startMediaConvertJob } from '../../lib/mediaconvert';
+import { deletePrefix, listKeysUnderPrefix } from '../../lib/s3';
+
+async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+  const userId = requireUserId(event);
+  const videoId = event.pathParameters?.videoId;
+
+  if (!videoId) throw new HttpError(400, 'videoId path parameter is required');
+
+  const video = await requireVideoAccess(videoId, userId, 'write');
+  if (video.status !== 'FAILED') {
+    throw new HttpError(409, `Cannot retry processing while the video is ${video.status}`);
+  }
+
+  const uploadKeys = await listKeysUnderPrefix(`uploads/${videoId}/`);
+  if (uploadKeys.length === 0) {
+    throw new HttpError(409, 'Original upload is missing; upload the file again');
+  }
+
+  // Clear any partial transcoded output from the previous attempt so the
+  // new job starts clean and the completion handler picks the fresh manifest.
+  await deletePrefix(`processed/${videoId}/`);
+
+  await updateVideo(videoId, { status: 'PROCESSING' });
+
+  try {
+    await startMediaConvertJob({
+      videoId,
+      inputUrl: `s3://${env.bucket}/${video.s3Key}`,
+      outputBase: `s3://${env.bucket}/processed/${videoId}/hls/`,
+      sourceWidth: video.width,
+      sourceHeight: video.height,
+    });
+
+    // A retried video has no thumbnail yet, so capture its first frame again
+    // (best-effort — the encode is what matters here).
+    if (!video.thumbnailKey) {
+      try {
+        await startFrameCaptureJob({
+          videoId,
+          inputUrl: `s3://${env.bucket}/${video.s3Key}`,
+          outputBase: `s3://${env.bucket}/thumbnails/${videoId}/`,
+        });
+      } catch (thumbnailErr) {
+        console.error(`Failed to start thumbnail capture for videoId=${videoId}`, thumbnailErr);
+      }
+    }
+  } catch (err) {
+    console.error(`Failed to retry processing for videoId=${videoId}`, err);
+    await updateVideo(videoId, { status: 'FAILED' });
+    throw new HttpError(500, 'Failed to start processing job');
+  }
+
+  const updated = await getVideo(videoId);
+  return ok({ video: updated });
+}
+
+export const handler = handle(main);
