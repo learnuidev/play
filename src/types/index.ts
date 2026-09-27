@@ -257,12 +257,44 @@ export interface ListOrgMembersResponse {
   role: OrgRole;
   /** The organization's owner: the one member who cannot be demoted or removed. */
   ownerId?: string;
+  /**
+   * Where an invitation to this organization is claimed. Sent to admins so the
+   * list can hand out the link directly — which is what makes inviting work on
+   * a deployment whose mail is not set up yet.
+   */
+  inviteUrl?: string;
   nextToken?: string;
+}
+
+/**
+ * What became of the invitation email.
+ *
+ * A send that fails is not an error: the invitation exists either way, and this
+ * is how the page knows whether to say "sent" or hand over the link instead.
+ */
+export interface MailDelivery {
+  sent: boolean;
+  /** Address it went out as. */
+  from?: string;
+  /** Why it did not, when it did not. */
+  error?: string;
 }
 
 export interface InviteMemberPayload {
   email: string;
   role: OrgRole;
+}
+
+export interface InviteMemberResponse {
+  member: OrgMemberApi;
+  delivery: MailDelivery;
+  inviteUrl: string;
+}
+
+/** Re-sending an outstanding invitation, optionally correcting its role. */
+export interface ResendInvitationResponse {
+  member: OrgMemberApi;
+  delivery: MailDelivery;
 }
 
 export interface OrgMemberResponse {

@@ -241,6 +241,7 @@ export default function OrganizationMembersPage() {
                 member={member}
                 canManage={isAdmin}
                 isOwner={false}
+                inviteUrl={membersQuery.data?.inviteUrl}
               />
             ))}
           </div>

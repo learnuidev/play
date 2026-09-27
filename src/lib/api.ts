@@ -18,6 +18,7 @@ import type {
   CreateVideoResponse,
   FavouriteResponse,
   InviteMemberPayload,
+  InviteMemberResponse,
   ListCommentsResponse,
   ListContentFilesResponse,
   ListLoopsResponse,
@@ -34,6 +35,7 @@ import type {
   LoopResponse,
   OrgMemberResponse,
   OrgRole,
+  ResendInvitationResponse,
   PlaylistResponse,
   SectionResponse,
   SpaceThumbnailResponse,
@@ -182,10 +184,21 @@ export const api = {
   listMembers: (orgId: string) => request<ListOrgMembersResponse>(`/organizations/${orgId}/members`),
 
   inviteMember: (orgId: string, payload: InviteMemberPayload) =>
-    request<OrgMemberResponse>(`/organizations/${orgId}/members`, {
+    request<InviteMemberResponse>(`/organizations/${orgId}/members`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  /**
+   * Sends an outstanding invitation again, to the address it was made to. The
+   * role may be corrected in the same call — an offer nobody has accepted is
+   * still editable.
+   */
+  resendInvitation: (orgId: string, memberId: string, role?: OrgRole) =>
+    request<ResendInvitationResponse>(
+      `/organizations/${orgId}/members/${encodeURIComponent(memberId)}/invitation`,
+      { method: 'POST', body: JSON.stringify(role ? { role } : {}) },
+    ),
 
   /**
    * The member's id goes in the path, and while their invitation is pending

@@ -50,6 +50,24 @@ export function useInviteMember(orgId: string) {
 }
 
 /**
+ * Sends an outstanding invitation again.
+ *
+ * `role` is passed only when the admin is correcting it at the same time: an
+ * invitation nobody has accepted is still editable, so re-sending is also the
+ * moment to fix the offer rather than withdraw it and start over.
+ */
+export function useResendInvitation(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memberId, role }: { memberId: string; role?: OrgRole }) =>
+      api.resendInvitation(orgId, memberId, role),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: memberKeys.list(orgId) });
+    },
+  });
+}
+
+/**
  * Changing a role can change what the caller themselves may do — an admin may
  * demote themselves — so the organization is invalidated too, not just the
  * roster.

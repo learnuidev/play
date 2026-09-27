@@ -7,6 +7,7 @@ import { useAcceptInvitation } from '@/modules/organization/member.queries';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PageCard } from '@/components/shell/page-card';
+import { cn } from '@/lib/utils';
 
 /**
  * One invitation, with the one thing that can be done about it.
@@ -15,7 +16,14 @@ import { PageCard } from '@/components/shell/page-card';
  * the invitation names an email address, and being signed in as that address is
  * what accepting means.
  */
-function InvitationRow({ invitation }: { invitation: MyInvitation }) {
+function InvitationRow({
+  invitation,
+  highlighted,
+}: {
+  invitation: MyInvitation;
+  /** The invitation the link that brought them here named. */
+  highlighted: boolean;
+}) {
   const accept = useAcceptInvitation(invitation.orgId);
 
   async function handleAccept() {
@@ -28,7 +36,12 @@ function InvitationRow({ invitation }: { invitation: MyInvitation }) {
   }
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-ring/40 bg-muted/30 px-4 py-3">
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-xl border bg-muted/30 px-4 py-3',
+        highlighted ? 'border-ring' : 'border-ring/40',
+      )}
+    >
       <div className="flex size-9 shrink-0 items-center justify-center rounded-full border bg-background">
         <MailPlusIcon className="size-4 text-muted-foreground" />
       </div>
@@ -63,8 +76,18 @@ function InvitationRow({ invitation }: { invitation: MyInvitation }) {
  * This is the only place somebody who belongs nowhere yet can find out they
  * were invited at all, so it is rendered on the page listing communities rather
  * than inside one — there is no organization to be inside yet.
+ *
+ * `highlightOrgId` is the one an invitation link named: the email points here,
+ * and pointing at a *page* rather than at a token means the link still has to
+ * say which offer it was about.
  */
-export function PendingInvitationsCard({ invitations }: { invitations: MyInvitation[] }) {
+export function PendingInvitationsCard({
+  invitations,
+  highlightOrgId,
+}: {
+  invitations: MyInvitation[];
+  highlightOrgId?: string;
+}) {
   if (invitations.length === 0) return null;
 
   return (
@@ -74,7 +97,11 @@ export function PendingInvitationsCard({ invitations }: { invitations: MyInvitat
     >
       <div className="grid gap-3">
         {invitations.map((invitation) => (
-          <InvitationRow key={invitation.orgId} invitation={invitation} />
+          <InvitationRow
+            key={invitation.orgId}
+            invitation={invitation}
+            highlighted={invitation.orgId === highlightOrgId}
+          />
         ))}
       </div>
     </PageCard>

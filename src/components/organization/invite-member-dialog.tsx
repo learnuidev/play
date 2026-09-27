@@ -1,9 +1,15 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Loader2Icon } from 'lucide-react';
+import { LinkIcon, Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import { ORG_ROLES, ORG_ROLE_DESCRIPTIONS, ORG_ROLE_LABELS, type OrgRole } from '@/types';
+import {
+  ORG_ROLES,
+  ORG_ROLE_DESCRIPTIONS,
+  ORG_ROLE_LABELS,
+  type InviteMemberResponse,
+  type OrgRole,
+} from '@/types';
 import { useInviteMember } from '@/modules/organization/member.queries';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,6 +44,7 @@ export function InviteMemberDialog({ orgId, trigger }: { orgId: string; trigger:
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<OrgRole>('EDITOR');
+  const [result, setResult] = useState<InviteMemberResponse | null>(null);
 
   const invite = useInviteMember(orgId);
 
@@ -45,23 +52,55 @@ export function InviteMemberDialog({ orgId, trigger }: { orgId: string; trigger:
   const emailInvalid = trimmedEmail.length > 0 && !EMAIL_PATTERN.test(trimmedEmail);
   const canSubmit = EMAIL_PATTERN.test(trimmedEmail) && !invite.isPending;
 
+  function reset() {
+    setResult(null);
+    setEmail('');
+    setRole('EDITOR');
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!canSubmit) return;
 
     try {
-      await invite.mutateAsync({ email: trimmedEmail, role });
-      toast.success(`Invited ${trimmedEmail} as ${ORG_ROLE_LABELS[role].toLowerCase()}`);
-      setOpen(false);
-      setEmail('');
-      setRole('EDITOR');
+      const response = await invite.mutateAsync({ email: trimmedEmail, role });
+      setResult(response);
+
+      // Only claim it was emailed when it was. A deployment with no verified
+      // sender, or an account still in the SES sandbox, produces a real
+      // invitation and no email at all — saying "invited" there is how an admin
+      // ends up waiting for a message that was never sent.
+      if (response.delivery.sent) {
+        toast.success(`Invitation emailed to ${trimmedEmail}`);
+        setOpen(false);
+        reset();
+      } else {
+        toast.warning('Invitation created, but no email was sent', {
+          description: response.delivery.error,
+        });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not send the invitation');
     }
   }
 
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Invitation link copied');
+    } catch {
+      toast.error('Could not copy the link', { description: url });
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -72,7 +111,39 @@ export function InviteMemberDialog({ orgId, trigger }: { orgId: string; trigger:
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="grid gap-4">
+        {result && !result.delivery.sent ? (
+          <div className="grid gap-4">
+            <div className="grid gap-1.5 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3">
+              <p className="text-sm font-medium">The invitation exists — the email did not go out</p>
+              <p className="text-xs text-muted-foreground">{result.delivery.error}</p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="invite-link">Send them this link instead</Label>
+              <div className="flex gap-2">
+                <Input id="invite-link" readOnly value={result.inviteUrl} className="font-mono" />
+                <Button type="button" variant="secondary" onClick={() => void copyLink(result.inviteUrl)}>
+                  <LinkIcon />
+                  Copy
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                They sign in with {result.member.email ?? trimmedEmail} and accept from the
+                organizations page. The Members tab shows this link again whenever it is needed.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={reset}>
+                Invite somebody else
+              </Button>
+              <DialogClose asChild>
+                <Button type="button">Done</Button>
+              </DialogClose>
+            </DialogFooter>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="invite-email">Email address</Label>
             <Input
@@ -133,7 +204,8 @@ export function InviteMemberDialog({ orgId, trigger }: { orgId: string; trigger:
               Send invitation
             </Button>
           </DialogFooter>
-        </form>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

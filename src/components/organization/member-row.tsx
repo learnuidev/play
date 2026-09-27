@@ -1,7 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckIcon, Loader2Icon, MailIcon, MoreHorizontalIcon, UserMinusIcon } from 'lucide-react';
+import {
+  CheckIcon,
+  LinkIcon,
+  Loader2Icon,
+  MailIcon,
+  MoreHorizontalIcon,
+  SendIcon,
+  UserMinusIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ORG_ROLES,
@@ -19,7 +27,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useRemoveMember, useUpdateMemberRole } from '@/modules/organization/member.queries';
+import {
+  useRemoveMember,
+  useResendInvitation,
+  useUpdateMemberRole,
+} from '@/modules/organization/member.queries';
 import { cn } from '@/lib/utils';
 
 const ROLE_VARIANT = {
@@ -52,6 +64,7 @@ export function MemberRow({
   member,
   canManage,
   isOwner,
+  inviteUrl,
   children,
 }: {
   orgId: string;
@@ -59,15 +72,51 @@ export function MemberRow({
   /** The caller is an admin, so this row can be acted on. */
   canManage: boolean;
   isOwner: boolean;
+  /** Where an invitation to this organization is claimed, for copying. */
+  inviteUrl?: string;
   /** Extra trailing controls: the Accept button on the caller's own invitation. */
   children?: React.ReactNode;
 }) {
   const [removing, setRemoving] = useState(false);
   const updateRole = useUpdateMemberRole(orgId);
   const remove = useRemoveMember(orgId);
+  const resend = useResendInvitation(orgId);
 
-  const busy = updateRole.isPending || remove.isPending;
+  const busy = updateRole.isPending || remove.isPending || resend.isPending;
   const canAct = canManage && !isOwner && !member.isYou;
+
+  /**
+   * Telling an admin "sent" when SES refused the message is the failure this
+   * whole path exists to avoid, so the outcome decides the message: a send that
+   * did not happen says why and points at the link instead.
+   */
+  async function resendInvitation() {
+    try {
+      const { delivery } = await resend.mutateAsync({ memberId: member.userId });
+      if (delivery.sent) {
+        toast.success(`Invitation sent again to ${member.email ?? member.userId}`);
+      } else {
+        toast.warning('Invitation is still outstanding, but the email did not go out', {
+          description: delivery.error,
+        });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not send the invitation again');
+    }
+  }
+
+  /** The invite path that does not depend on mail being set up at all. */
+  async function copyInviteLink() {
+    if (!inviteUrl) return;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      toast.success('Invitation link copied', {
+        description: 'Send it to them yourself — they sign in with the invited address.',
+      });
+    } catch {
+      toast.error('Could not copy the link', { description: inviteUrl });
+    }
+  }
 
   async function changeRole(role: OrgRole) {
     if (role === member.role) return;
@@ -149,6 +198,23 @@ export function MemberRow({
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
+            {/* An outstanding invitation is a different thing to act on from a
+                membership: what it needs is sending again, not a new role. */}
+            {member.pending && (
+              <>
+                <DropdownMenuItem onSelect={() => void resendInvitation()}>
+                  <SendIcon className="size-4" />
+                  Send invitation again
+                </DropdownMenuItem>
+                {inviteUrl && (
+                  <DropdownMenuItem onSelect={() => void copyInviteLink()}>
+                    <LinkIcon className="size-4" />
+                    Copy invitation link
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+              </>
+            )}
             {removing ? (
               <div className="grid gap-2 p-2">
                 <p className="text-xs text-muted-foreground">
