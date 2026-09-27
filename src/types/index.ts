@@ -145,9 +145,13 @@ export type OrgRole = 'ADMIN' | 'EDITOR' | 'VIEWER';
 export const ORG_ROLES: OrgRole[] = ['ADMIN', 'EDITOR', 'VIEWER'];
 
 /**
- * Membership lifecycle. `INVITED` is the placeholder created by an invitation
- * that has not been accepted yet — nothing issues one today, but the role model
- * is already written down so invitations do not need a data migration.
+ * Membership lifecycle.
+ *
+ * - `ACTIVE`  — the person is in the organization; `userId` is their Cognito
+ *   `sub` and every authorization check reads this row.
+ * - `INVITED` — an invitation nobody has accepted yet. It grants nothing:
+ *   `requireOrganizationAccess` treats it as no membership at all, so the
+ *   invited rows are invisible to the API until they are claimed.
  */
 export type OrgMemberStatus = 'ACTIVE' | 'INVITED';
 
@@ -160,6 +164,16 @@ export interface Organization {
   description: string;
   /** Cognito `sub` of the user who created it. */
   ownerId: string;
+  /**
+   * How many admins the organization currently has, kept on the row rather
+   * than counted on read. It is what makes "an organization always has at least
+   * one admin" a condition DynamoDB enforces on the same item the last admin is
+   * being demoted or removed in, so two admins demoting each other at the same
+   * moment cannot both succeed and leave nobody in charge.
+   *
+   * Absent on organizations created before it existed; treated as 1.
+   */
+  adminCount?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -167,6 +181,21 @@ export interface Organization {
 /** An organization together with the caller's role in it. */
 export interface OrganizationSummary extends Organization {
   role: OrgRole;
+}
+
+/**
+ * An invitation addressed to the caller's own email address, as the API hands
+ * it out: the offer, and enough of the organization to decide about it.
+ *
+ * No membership is involved — the caller has none yet, which is the whole point
+ * — so this is not the roster shape.
+ */
+export interface MyInvitation {
+  orgId: string;
+  organizationName: string;
+  role: OrgRole;
+  invitedBy?: string;
+  invitedAt: number;
 }
 
 /**
@@ -225,14 +254,33 @@ export interface SpaceThumbnailInfo {
 
 export interface OrgMember {
   orgId: string;
-  /** Cognito `sub` of the member. */
+  /**
+   * Cognito `sub` of the member — except while `status` is `INVITED`, when it
+   * is the invited email address instead. An invitation is addressed to a
+   * person the pool may not know yet, so the only identifier there is to key
+   * the row by is the address it was sent to; accepting it rewrites the row
+   * under the real `sub`. Nothing reads an `INVITED` row as an identity: the
+   * authorization check requires `ACTIVE`.
+   */
   userId: string;
   role: OrgRole;
   status: OrgMemberStatus;
-  /** Email of the member, when known. */
+  /**
+   * Email of the member, when known. Set on every row: at invitation time from
+   * the invite, and at acceptance time (or creation) from the caller's claims.
+   */
   email?: string;
+  /**
+   * The address the invitation was sent to. Only ever on an `INVITED` row, and
+   * the reason it is kept separately from `email` is that it is *what the
+   * invitation is for* rather than a property of the person: it is what the
+   * invitation-accepting flow matches on, so an invite is claimed by the person
+   * who can sign in as the address it named.
+   */
+  invitedEmail?: string;
   /** Cognito `sub` of the user who added them. */
   invitedBy?: string;
+  /** When the membership began, or when the invitation was sent. */
   joinedAt: number;
 }
 

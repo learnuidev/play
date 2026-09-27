@@ -5,7 +5,7 @@ import { HttpError } from './http';
 import { getMembership } from './organizations';
 import { getSection } from './sections';
 import { getSpace } from './spaces';
-import type { Comment, Content, OrgRole, Section, Space, Video } from '../types';
+import type { Comment, Content, OrgMember, OrgRole, Section, Space, Video } from '../types';
 
 /** Roles that may create, change, or delete what an organization owns. */
 const WRITE_ROLES: OrgRole[] = ['ADMIN', 'EDITOR'];
@@ -35,6 +35,29 @@ export async function requireOrganizationAccess(
     throw new HttpError(403, `A ${membership.role.toLowerCase()} cannot modify this organization`);
   }
   return membership.role;
+}
+
+/**
+ * Authorizes a caller as an organization's admin and returns the membership.
+ *
+ * Admin is the narrowest of the three roles and the only one that may change
+ * the roster, so it is checked here rather than through the read/write split:
+ * an editor writes courses, they do not decide who is in the organization. The
+ * membership row comes back because every caller of this also needs something
+ * off it — who the caller is, or whether the row is an invitation.
+ */
+export async function requireOrganizationAdmin(
+  userId: string,
+  organizationId: string,
+): Promise<OrgMember> {
+  const membership = await getMembership(organizationId, userId);
+  if (!membership || membership.status !== 'ACTIVE') {
+    throw new HttpError(403, 'Forbidden');
+  }
+  if (membership.role !== 'ADMIN') {
+    throw new HttpError(403, 'Only an admin can manage this organization’s members');
+  }
+  return membership;
 }
 
 /**

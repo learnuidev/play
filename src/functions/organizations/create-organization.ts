@@ -50,12 +50,15 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     slug: buildSlug(name, suffix),
     description,
     ownerId: user.userId,
+    // The creator is the organization's first admin, and the count moves in
+    // step with every later invitation, promotion, demotion and removal.
+    adminCount: 1,
     createdAt: now,
     updatedAt: now,
   };
 
   // The creator is the organization's first admin. Inviting others is a
-  // separate flow, but it will write the same membership shape.
+  // separate flow, but it writes the same membership shape.
   const ownerMember: OrgMember = {
     orgId,
     userId: user.userId,

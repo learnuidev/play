@@ -373,6 +373,71 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  # The roster. Reading it is any member's business — knowing who else is in the
+  # organization is part of being in it — while every change to it is an
+  # admin's: an editor writes courses, they do not decide who is in the room.
+  list-members:
+    handler: src/functions/organizations/list-members.handler
+    events:
+      - http:
+          path: organizations/{orgId}/members
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  invite-member:
+    handler: src/functions/organizations/invite-member.handler
+    events:
+      - http:
+          path: organizations/{orgId}/members
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # A member is addressed by their own id, which is an email address until the
+  # invitation is accepted — hence the path parameter being percent-encoded.
+  update-member-role:
+    handler: src/functions/organizations/update-member-role.handler
+    events:
+      - http:
+          path: organizations/{orgId}/members/{userId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  remove-member:
+    handler: src/functions/organizations/remove-member.handler
+    events:
+      - http:
+          path: organizations/{orgId}/members/{userId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # Claiming the invitation addressed to the caller's own verified email. Not
+  # under /members, because it is not an admin acting on somebody else: it is
+  # the invited person acting on an offer made to them.
+  accept-invitation:
+    handler: src/functions/organizations/accept-invitation.handler
+    events:
+      - http:
+          path: organizations/{orgId}/invitation
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # The offers addressed to the caller, wherever they came from. The one read a
+  # person who belongs to nothing yet can make, and the only way they can find
+  # out they were invited at all.
+  list-my-invitations:
+    handler: src/functions/organizations/list-my-invitations.handler
+    events:
+      - http:
+          path: me/invitations
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   # Spaces (courses) belong to an organization, so creating and listing them is
   # addressed under the organization. Reading one back is by its own id.
   create-space:
@@ -885,6 +950,8 @@ resources:
             AttributeType: S
           - AttributeName: joinedAt
             AttributeType: N
+          - AttributeName: invitedEmail
+            AttributeType: S
         KeySchema:
           - AttributeName: orgId
             KeyType: HASH
@@ -894,6 +961,18 @@ resources:
           - IndexName: UserOrgIndex
             KeySchema:
               - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: joinedAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          # An invitation is keyed by the address it was sent to, because the
+          # person may not have an account yet — so the table's key cannot
+          # answer "what has been sent to me?". This one can, and it is what the
+          # Members page asks when it looks for offers the caller can claim.
+          - IndexName: InviteEmailIndex
+            KeySchema:
+              - AttributeName: invitedEmail
                 KeyType: HASH
               - AttributeName: joinedAt
                 KeyType: RANGE

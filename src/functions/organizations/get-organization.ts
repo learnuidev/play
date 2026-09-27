@@ -14,9 +14,10 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   if (!organization) throw new HttpError(404, 'Organization not found');
 
   // The membership row is the authorization check — being able to see the
-  // organization is exactly what membership means.
+  // organization is exactly what membership means. An invitation is not
+  // membership: it grants nothing until it is accepted.
   const membership = await getMembership(orgId, user.userId);
-  if (!membership) throw new HttpError(403, 'Forbidden');
+  if (!membership || membership.status !== 'ACTIVE') throw new HttpError(403, 'Forbidden');
 
   const summary: OrganizationSummary = { ...organization, role: membership.role };
   return ok({ organization: summary });

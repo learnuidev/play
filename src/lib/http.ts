@@ -94,6 +94,23 @@ export function pathParam(event: APIGatewayProxyEvent, name: string): string {
   return value;
 }
 
+/**
+ * Reads a path parameter API Gateway has percent-decoded.
+ *
+ * A member is addressed by their own id, and while an invitation has not been
+ * accepted that id is an email address — which arrives as `%40` in the path.
+ * A malformed escape is a bad request rather than a 500, because a client can
+ * send one.
+ */
+export function decodedPathParam(event: APIGatewayProxyEvent, name: string): string {
+  const value = pathParam(event, name);
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new HttpError(400, `Invalid ${name} path parameter`);
+  }
+}
+
 /** Parses a JSON request body, treating an absent one as `{}`. */
 export function jsonBody<T extends object>(event: APIGatewayProxyEvent): T {
   if (!event.body) return {} as T;
