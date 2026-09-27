@@ -494,7 +494,7 @@ export function AnimatedTranscript({
           so that scrolling and tapping still reach the words it covers. */}
       <div
         aria-hidden
-        className="tt-fade pointer-events-none absolute inset-x-0 bottom-0 h-[10%]"
+        className="tt-fade pointer-events-none absolute inset-x-0 bottom-0"
       />
 
       {/* Offered, not taken: the sheet has stopped following, and this is the
