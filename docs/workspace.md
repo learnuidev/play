@@ -38,6 +38,10 @@ npm run deploy --workspace play-backend   # serverless deploy (services/api)
 `npm run <script> --workspace <name>` runs a script in one workspace;
 `--workspaces --if-present` runs it in all of them.
 
+The two apps are deployed to Vercel as two projects built from this one
+repository; the backend keeps deploying from here to AWS, as above. That setup,
+and the configuration on the other side of it, is [deploy.md](deploy.md).
+
 ## Packages ship source
 
 `@play/*` packages have no build step and no `dist/`: their `package.json` points

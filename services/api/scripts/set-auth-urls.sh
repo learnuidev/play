@@ -13,15 +13,18 @@
 # even once, a new app or a new port has to be added here too, or Cognito will
 # refuse the redirect with `redirect_mismatch`.
 #
-# Both apps are included by default: Play Studio on 3000 and Play Marketplace on
-# 3001, and both sign in against the same user pool.
+# Every place the apps are served is included by default: both of them on
+# localhost (studio 3000, marketplace 3001) and both of them deployed — the
+# studio on studio.lets-play.xyz, the marketplace on lets-play.xyz. One list
+# covers all four because Amplify picks the entry matching the hostname the
+# browser is on.
 #
 # Usage:
 #   ./scripts/set-auth-urls.sh [options]
 #
 # Options:
-#   --callback-urls=<urls>  comma-separated  (default: both apps on localhost)
-#   --logout-urls=<urls>    comma-separated  (default: both apps on localhost)
+#   --callback-urls=<urls>  comma-separated  (default: both apps, localhost + deployed)
+#   --logout-urls=<urls>    comma-separated  (default: both apps, localhost + deployed)
 #   --stage=<name>          Backend stage    (default: dev)
 #   --profile=<name>        AWS profile      (default: yoserverless)
 #   --region=<name>         AWS region       (default: us-east-1)
@@ -34,13 +37,16 @@ set -euo pipefail
 PROFILE="yoserverless"
 REGION="us-east-1"
 STAGE="dev"
-CALLBACK_URLS="http://localhost:3000/auth/callback,http://localhost:3000,http://localhost:3001/auth/callback,http://localhost:3001"
-LOGOUT_URLS="http://localhost:3000,http://localhost:3001"
+CALLBACK_URLS="http://localhost:3000/auth/callback,http://localhost:3000,http://localhost:3001/auth/callback,http://localhost:3001,https://studio.lets-play.xyz/auth/callback,https://studio.lets-play.xyz,https://lets-play.xyz/auth/callback,https://lets-play.xyz"
+LOGOUT_URLS="http://localhost:3000,http://localhost:3001,https://studio.lets-play.xyz,https://lets-play.xyz"
 SHOW=false
 DELETE=false
 
 usage() {
-  sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  # The header comment as written, minus the shebang and the `# ` that marks it:
+  # every leading comment line, stopping at the first line of code. Reading it by
+  # line number used to work only while the comment kept its exact length.
+  awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
 }
 
 while [[ $# -gt 0 ]]; do
