@@ -1,5 +1,12 @@
 service: play-backend
-frameworkVersion: "^3"
+frameworkVersion: "^4"
+
+# Serverless v4 ships its own ESBuild + TypeScript build. We keep `serverless-esbuild`
+# (configured under custom.esbuild below) so packaging behaviour stays exactly as it
+# was: one artifact per function with sourcemaps, which is what keeps us under Lambda's
+# 250 MB unzipped limit. Setting this to false disables v4's built-in build.
+build:
+  esbuild: false
 
 plugins:
   - serverless-esbuild
@@ -21,13 +28,21 @@ custom:
   # scripts/set-google-oauth.sh. When they are missing, the Google identity
   # provider and the Hosted UI domain are not created and the service keeps
   # working with email/password sign-in only.
+  #
+  # The local-dev fallbacks are plain strings here rather than inline defaults:
+  # Serverless v4's variable parser splits a fallback on commas and reads each
+  # part as another provider, so an inline `http://a,http://b` default fails with
+  # "Provider 'http is not supported".
+  authDefaults:
+    callbackUrls: "http://localhost:3000/auth/callback,http://localhost:3000"
+    logoutUrls: "http://localhost:3000"
   auth:
     googleClientId: ${ssm:/play/auth/google-client-id, ''}
     googleClientSecret: ${ssm:/play/auth/google-client-secret, ''}
     # Comma-separated. Must match the frontend's
     # NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_IN / _SIGN_OUT values.
-    callbackUrls: ${ssm:/play/auth/callback-urls, 'http://localhost:3000/auth/callback,http://localhost:3000'}
-    logoutUrls: ${ssm:/play/auth/logout-urls, 'http://localhost:3000'}
+    callbackUrls: ${ssm:/play/auth/callback-urls, self:custom.authDefaults.callbackUrls}
+    logoutUrls: ${ssm:/play/auth/logout-urls, self:custom.authDefaults.logoutUrls}
 
 # Every function is packaged on its own.
 #
@@ -46,7 +61,7 @@ provider:
   runtime: nodejs22.x
   region: ${opt:region, 'us-east-1'}
   stage: ${opt:stage, 'dev'}
-  timeout: 30
+  timeout: 29
   memorySize: 512
 
   environment:
@@ -296,7 +311,7 @@ functions:
 
   generate-translations:
     handler: src/functions/videos/generate-translations.handler
-    timeout: 300
+    timeout: 29
     events:
       - http:
           path: videos/{videoId}/subtitles/translations
@@ -1455,7 +1470,11 @@ resources:
         # supported in `DependsOn`, so ordering has to be implicit.
         SupportedIdentityProviders:
           - COGNITO
-          - !If [GoogleSignInEnabled, !Ref GoogleIdentityProvider, !Ref "AWS::NoValue"]
+          - !If [
+              GoogleSignInEnabled,
+              !Ref GoogleIdentityProvider,
+              !Ref "AWS::NoValue",
+            ]
 
     # Lets Cognito call the pre sign-up trigger. Needed because the pool is wired
     # to the function through a raw LambdaConfig property; a Serverless function

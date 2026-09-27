@@ -2,8 +2,11 @@ import {
   AdminLinkProviderForUserCommand,
   CognitoIdentityProviderClient,
   ListUsersCommand,
-} from '@aws-sdk/client-cognito-identity-provider';
-import type { PreSignUpTriggerHandler, PreSignUpTriggerEvent } from 'aws-lambda';
+} from "@aws-sdk/client-cognito-identity-provider";
+import type {
+  PreSignUpTriggerHandler,
+  PreSignUpTriggerEvent,
+} from "aws-lambda";
 
 /**
  * Pre sign-up trigger: links a first-time federated (Google) sign-in to an
@@ -35,27 +38,31 @@ import type { PreSignUpTriggerHandler, PreSignUpTriggerEvent } from 'aws-lambda'
 
 const cognito = new CognitoIdentityProviderClient({});
 
-const NAME_SEPARATOR = '_';
+const NAME_SEPARATOR = "_";
 
 /** The only social provider this stack configures. */
-const SOCIAL_PROVIDER = 'Google';
+const SOCIAL_PROVIDER = "Google";
 
 /** ListUsers caps Limit at 60; a filter matches users, not the whole pool. */
 const USER_LOOKUP_LIMIT = 60;
 
-export const handler: PreSignUpTriggerHandler = async (event: PreSignUpTriggerEvent) => {
+export const handler: PreSignUpTriggerHandler = async (
+  event: PreSignUpTriggerEvent,
+) => {
   try {
     await linkToExistingAccount(event);
   } catch (error) {
     // Never fail the sign-in: if linking does not work the user simply gets a
     // separate federated profile, which is what happens without this trigger.
-    console.error('link-federated-user: could not link account', error);
+    console.error("link-federated-user: could not link account", error);
   }
   return event;
 };
 
-async function linkToExistingAccount(event: PreSignUpTriggerEvent): Promise<void> {
-  if (event.triggerSource !== 'PreSignUp_ExternalProvider') return;
+async function linkToExistingAccount(
+  event: PreSignUpTriggerEvent,
+): Promise<void> {
+  if (event.triggerSource !== "PreSignUp_ExternalProvider") return;
 
   // Cognito derives a federated username from the IdP name and the provider's
   // subject claim — for Google that is `Google_<sub>`, which is also the value
@@ -69,17 +76,22 @@ async function linkToExistingAccount(event: PreSignUpTriggerEvent): Promise<void
 
   const { email, email_verified: emailVerified } = event.request.userAttributes;
 
-  if (!email || emailVerified !== 'true') {
+  if (!email || emailVerified !== "true") {
     console.log(
       `link-federated-user: not linking ${event.userName} — email ` +
-        `${email ?? '(missing)'} is not verified`,
+        `${email ?? "(missing)"} is not verified`,
     );
     return;
   }
 
-  const destinationUsername = await findLocalUsernameByEmail(event.userPoolId, email);
+  const destinationUsername = await findLocalUsernameByEmail(
+    event.userPoolId,
+    email,
+  );
   if (!destinationUsername) {
-    console.log(`link-federated-user: no local account for ${email}; creating a new profile`);
+    console.log(
+      `link-federated-user: no local account for ${email}; creating a new profile`,
+    );
     return;
   }
 
@@ -88,20 +100,22 @@ async function linkToExistingAccount(event: PreSignUpTriggerEvent): Promise<void
       UserPoolId: event.userPoolId,
       // The existing password account, identified by its username.
       DestinationUser: {
-        ProviderName: 'Cognito',
+        ProviderName: "Cognito",
         ProviderAttributeValue: destinationUsername,
       },
       // The incoming Google identity. Social IdPs must use Cognito_Subject,
       // which makes Cognito parse `sub` from the provider's token.
       SourceUser: {
         ProviderName: providerName,
-        ProviderAttributeName: 'Cognito_Subject',
+        ProviderAttributeName: "Cognito_Subject",
         ProviderAttributeValue: providerUserId,
       },
     }),
   );
 
-  console.log(`link-federated-user: linked ${providerName} identity to ${destinationUsername}`);
+  console.log(
+    `link-federated-user: linked ${providerName} identity to ${destinationUsername}`,
+  );
 }
 
 /**
@@ -115,7 +129,7 @@ async function findLocalUsernameByEmail(
   userPoolId: string,
   email: string,
 ): Promise<string | undefined> {
-  const escaped = email.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const escaped = email.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
   const { Users = [] } = await cognito.send(
     new ListUsersCommand({
@@ -132,10 +146,14 @@ async function findLocalUsernameByEmail(
 
     if (!user.Username) return false;
     if (attributes.identities) return false;
-    if (user.Username.startsWith(`${SOCIAL_PROVIDER}${NAME_SEPARATOR}`)) return false;
+    if (user.Username.startsWith(`${SOCIAL_PROVIDER}${NAME_SEPARATOR}`))
+      return false;
 
-    return attributes.email_verified === 'true';
-  }).sort((a, b) => (a.UserCreateDate?.getTime() ?? 0) - (b.UserCreateDate?.getTime() ?? 0));
+    return attributes.email_verified === "true";
+  }).sort(
+    (a, b) =>
+      (a.UserCreateDate?.getTime() ?? 0) - (b.UserCreateDate?.getTime() ?? 0),
+  );
 
   // Oldest first: if a pool somehow holds several local profiles for one
   // address, always link to the same one.
