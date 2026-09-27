@@ -1,11 +1,12 @@
 {
-  "name": "play-frontend",
+  "name": "play-studio",
   "version": "1.0.0",
   "private": true,
+  "description": "Play Studio — where creators make courses: videos, spaces, sections, lessons, members and rewards.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3000",
     "typecheck": "tsc --noEmit",
     "get-env": "node scripts/get-env.js"
   },
@@ -25,7 +26,7 @@
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
-    "@videojs/react": "^10.0.0-beta.26",
+    "@videojs/react": "10.0.0-beta.26",
     "aws-amplify": "^6.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

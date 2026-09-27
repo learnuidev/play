@@ -1,0 +1,237 @@
+[
+  {
+    "name": "accent",
+    "light": "#F5F5F4",
+    "dark": "#44403C"
+  },
+  {
+    "name": "accent-foreground",
+    "light": "#1C1917",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "accent-category-1 [new]",
+    "light": "#FFF82C",
+    "dark": "#FFF82C"
+  },
+  {
+    "name": "accent-category-2 [new]",
+    "light": "#FFA60D",
+    "dark": "#FFA60D"
+  },
+  {
+    "name": "accent-category-3 [new]",
+    "light": "#FA97F1",
+    "dark": "#FA97F1"
+  },
+  {
+    "name": "accent-category-4 [new]",
+    "light": "#6D1D14",
+    "dark": "#6D1D14"
+  },
+  {
+    "name": "accent-category-5 [new]",
+    "light": "#FE5F1D",
+    "dark": "#FE5F1D"
+  },
+  {
+    "name": "accent-category-6 [new]",
+    "light": "#AFC300",
+    "dark": "#AFC300"
+  },
+  {
+    "name": "accent-category-7 [new]",
+    "light": "#106F47",
+    "dark": "#106F47"
+  },
+  {
+    "name": "accent-category-8 [new]",
+    "light": "#88B0FF",
+    "dark": "#88B0FF"
+  },
+  {
+    "name": "background",
+    "light": "#FFFFFF",
+    "dark": "#0C0A09"
+  },
+  {
+    "name": "border",
+    "light": "#E7E5E4",
+    "dark": "#FFFFFF"
+  },
+  {
+    "name": "border-active [new]",
+    "light": "#0156FF",
+    "dark": "#0156FF"
+  },
+  {
+    "name": "card",
+    "light": "#FFFFFF",
+    "dark": "#1C1917"
+  },
+  {
+    "name": "card-foreground",
+    "light": "#0C0A09",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "destructive",
+    "light": "#DC2626",
+    "dark": "#F87171"
+  },
+  {
+    "name": "destructive-foreground",
+    "light": "#FEF2F2",
+    "dark": "#FEF2F2"
+  },
+  {
+    "name": "foreground",
+    "light": "#0C0A09",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "input",
+    "light": "#E7E5E4",
+    "dark": "#FFFFFF"
+  },
+  {
+    "name": "input-active [new]",
+    "light": "#0156FF",
+    "dark": "#0156FF"
+  },
+  {
+    "name": "muted",
+    "light": "#F5F5F4",
+    "dark": "#292524"
+  },
+  {
+    "name": "muted-foreground",
+    "light": "#78716C",
+    "dark": "#A8A29E"
+  },
+  {
+    "name": "popover",
+    "light": "#FFFFFF",
+    "dark": "#292524"
+  },
+  {
+    "name": "popover-foreground",
+    "light": "#0C0A09",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "primary",
+    "light": "#0156FF",
+    "dark": "#0156FF"
+  },
+  {
+    "name": "primary-alt [new]",
+    "light": "#0C0A09",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "primary-foreground",
+    "light": "#FAFAF9",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "primary-alt-foreground  [new]",
+    "light": "#FAFAF9",
+    "dark": "#0A0A0A"
+  },
+  {
+    "name": "ring",
+    "light": "#A8A29E",
+    "dark": "#78716C"
+  },
+  {
+    "name": "ring-offset",
+    "light": "#FFFFFF",
+    "dark": "#0C0A09"
+  },
+  {
+    "name": "secondary",
+    "light": "#F5F5F4",
+    "dark": "#292524"
+  },
+  {
+    "name": "secondary-foreground",
+    "light": "#1C1917",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "chart-1",
+    "light": "#0156FF",
+    "dark": "#0156FF"
+  },
+  {
+    "name": "chart-2",
+    "light": "#FFA60D",
+    "dark": "#FFA60D"
+  },
+  {
+    "name": "chart-3",
+    "light": "#AFC300",
+    "dark": "#AFC300"
+  },
+  {
+    "name": "chart-4",
+    "light": "#FE5F1D",
+    "dark": "#FE5F1D"
+  },
+  {
+    "name": "chart-5",
+    "light": "#88B0FF",
+    "dark": "#88B0FF"
+  },
+  {
+    "name": "sidebar",
+    "light": "#FAFAF9",
+    "dark": "#1C1917"
+  },
+  {
+    "name": "sidebar-foreground",
+    "light": "#0C0A09",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "sidebar-primary",
+    "light": "#1C1917",
+    "dark": "#0156FF"
+  },
+  {
+    "name": "sidebar-primary-foreground",
+    "light": "#FAFAF9",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "sidebar-accent",
+    "light": "#F5F5F4",
+    "dark": "#292524"
+  },
+  {
+    "name": "sidebar-accent-foreground",
+    "light": "#1C1917",
+    "dark": "#FAFAF9"
+  },
+  {
+    "name": "sidebar-border",
+    "light": "#E7E5E4",
+    "dark": "#FFFFFF"
+  },
+  {
+    "name": "sidebar-ring",
+    "light": "#A8A29E",
+    "dark": "#57534E"
+  },
+  {
+    "name": "warning [new]",
+    "light": "#FFA60D",
+    "dark": "#FFA60D"
+  },
+  {
+    "name": "warning-foreground [new]",
+    "light": "#5D3F0B",
+    "dark": "#FFF6E5"
+  }
+]

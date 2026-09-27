@@ -31,3 +31,9 @@ npm-debug.log*
 
 # pem
 *.pem
+
+# `book/` is a repository of its own, with its own history and its own remote —
+# it is not part of this monorepo. Tracking it here would either embed it as a
+# gitlink (a pointer to a commit no clone of this repo can fetch) or silently
+# absorb its history. It stays a sibling on disk.
+book/
