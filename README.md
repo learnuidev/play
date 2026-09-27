@@ -99,7 +99,7 @@ typecheck. Each package declares its own dependencies, and its own tsconfig give
 it `@ui/*`, `@api/*`, `@auth/*` and `@learning/*` aliases so no file inside a
 package needs a chain of `../../`.
 
-Where two apps need the same *screen* rather than the same component, the screen
+Where two apps need the same _screen_ rather than the same component, the screen
 asks the app for what differs. The classroom is the example: it takes the course
 and lesson it is showing, and a `LearningRoutes` object saying where a course and
 a lesson live — `/o/{orgId}/spaces/{spaceId}/contents/{contentId}` in the studio,
@@ -132,7 +132,7 @@ The app is a **community shell**, modelled on the three-column community layout:
 - **The rail** (`components/shell/org-rail.tsx`) is the community switcher: one
   avatar per organization you belong to, with `+` to create another. The tiles
   are monochrome on purpose — `--primary` follows the theme — so no organization
-  out-shouts another; the colour a *space* is drawn in is the space's own.
+  out-shouts another; the colour a _space_ is drawn in is the space's own.
 - **The community nav** (`components/shell/community-sidebar.tsx`) shows which
   organization you are in, the organization's five sections — Home, Videos,
   Spaces, Members and Organization settings, the four the tab bar carries plus
@@ -173,7 +173,7 @@ never with the outline.
 ## The classroom
 
 A lesson (`/o/{orgId}/spaces/{spaceId}/contents/{contentId}`) is where the shell
-gets out of the way. It is the one route that is *read* rather than browsed, so
+gets out of the way. It is the one route that is _read_ rather than browsed, so
 it takes the whole window:
 
 ```
@@ -208,11 +208,11 @@ it takes the whole window:
   strip because it is the one tab that answers "where is this?" rather than "what
   is in it", and it is reached for less often than the rest — which is exactly
   why it is not a column of its own any more. The panel still opens on the
-  transcript, which is what is watched *with*.
+  transcript, which is what is watched _with_.
 - **One breadcrumb line, not a heading.** The lesson's name sits at the top left
   in the same voice as the way back on a course's own page — 13px, muted, with
   the chevron — and is itself the way back to the course, so the section the
-  lesson sits in is not named twice. What the page does *not* have is a 24px
+  lesson sits in is not named twice. What the page does _not_ have is a 24px
   title over the picture: the video is the subject, and a heading that size above
   it made the lesson the subject instead. Beside the name are the counts of what
   the lesson carries and, for an author, the `⋯` actions; the "Complete lesson"
@@ -235,7 +235,7 @@ it takes the whole window:
   behind a press below the video — which is a strange place for the one part of
   the page that everybody else writes.
 - **The video plays on the page.** Playback lives here now rather than behind a
-  link to the library: a lesson *is* the video and the material around it, and
+  link to the library: a lesson _is_ the video and the material around it, and
   being sent elsewhere to watch it is what made the two feel like separate
   things. Captions are deliberately not switched on — the transcript tab is the
   words, animated and seekable, and a second copy of the same sentence over the
@@ -327,7 +327,7 @@ time it is spoken over.
   fighting you, and it picks itself up again once you stop — with a "back to the
   current line" button for when you would rather not wait.
 - **The sheet ends where the transcript ends.** The reading anchor is a fixed
-  height from the top of the panel, and parking a *line* there needs scrollable
+  height from the top of the panel, and parking a _line_ there needs scrollable
   room beneath it; parking the last line there needs a screenful of room beneath
   it, which is a blank page a reader can scroll into. So the room below is one
   anchor tall, the transcript stops a margin past its last line, and over the
@@ -388,7 +388,7 @@ palette of emoji for the sentence itself.
 - **`@1:12` points at a moment** (`lib/timecode.ts`). A time written after an `@`
   — `@1:12`, `@00:01:12`, and a fraction of a second after either — is drawn in
   the sentence's own type and in the blue of a link, and tapping it puts the
-  playhead there and starts it, so "what happens at `@00:01:12`?" is asked *at*
+  playhead there and starts it, so "what happens at `@00:01:12`?" is asked _at_
   00:01:12 rather than about it. It is set as prose rather than as a control of
   its own because that is what it is: a time in a sentence is part of the
   sentence, and only the colour says it can be tapped. The `@` is the whole of
@@ -415,22 +415,22 @@ palette of emoji for the sentence itself.
 The active organization is part of the URL, so every page is deep-linkable and
 survives a refresh:
 
-| Route | Page |
-| --- | --- |
-| `/` | Resolves to your first organization, or the create form if you have none |
-| `/o/{orgId}` | Home — recent videos and what the organization has |
-| `/o/{orgId}/videos` | The organization's video library |
-| `/o/{orgId}/videos/new` | Upload into this organization |
-| `/o/{orgId}/videos/{videoId}` | Video detail (general / thumbnail / transcriptions) |
-| `/o/{orgId}/videos/{videoId}/preview` | Player, audio-only mode, synced transcript |
-| `/o/{orgId}/spaces` | The organization's spaces (courses) |
-| `/o/{orgId}/spaces/new` | Create a space — type, colour, cover |
-| `/o/{orgId}/spaces/{spaceId}` | Space detail — the course outline: its sections and the content under them |
+| Route                                              | Page                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `/`                                                | Resolves to your first organization, or the create form if you have none     |
+| `/o/{orgId}`                                       | Home — recent videos and what the organization has                           |
+| `/o/{orgId}/videos`                                | The organization's video library                                             |
+| `/o/{orgId}/videos/new`                            | Upload into this organization                                                |
+| `/o/{orgId}/videos/{videoId}`                      | Video detail (general / thumbnail / transcriptions)                          |
+| `/o/{orgId}/videos/{videoId}/preview`              | Player, audio-only mode, synced transcript                                   |
+| `/o/{orgId}/spaces`                                | The organization's spaces (courses)                                          |
+| `/o/{orgId}/spaces/new`                            | Create a space — type, colour, cover                                         |
+| `/o/{orgId}/spaces/{spaceId}`                      | Space detail — the course outline: its sections and the content under them   |
 | `/o/{orgId}/spaces/{spaceId}/contents/{contentId}` | The classroom — a lesson: video, animated transcript, notes, files, comments |
-| `/o/{orgId}/members` | The roster, invitations not yet accepted, and the role reference |
-| `/o/{orgId}/settings` | Organization details and your role |
-| `/organizations` | Every organization you belong to, and the invitations waiting for you |
-| `/organizations/new` | Create an organization |
+| `/o/{orgId}/members`                               | The roster, invitations not yet accepted, and the role reference             |
+| `/o/{orgId}/settings`                              | Organization details and your role                                           |
+| `/organizations`                                   | Every organization you belong to, and the invitations waiting for you        |
+| `/organizations/new`                               | Create an organization                                                       |
 
 `/o/{orgId}/*` renders inside the shell; the two `/organizations` pages sit
 outside it (there is no active community there) with their own plain header.
@@ -452,34 +452,59 @@ links are the organization's own sections: every one of the five opens a page.
 
 ## AWS profile
 
-The scripts and deploy commands assume an AWS profile named **`yoserverless`**
-in **`us-east-1`**. Configure it once:
+Every script in this repository reaches AWS through one profile, and that profile
+is named in exactly one place — **`scripts/api-config.env`**:
+
+```sh
+API_AWS_PROFILE=your-aws-profile-name
+```
+
+The bash scripts under `services/api/scripts/` source that file, and the two Node
+scripts (`scripts/get-env.mjs` and
+`services/api/scripts/backfill-video-organizations.js`) parse it — so no other
+file needs to know the name. An `AWS_PROFILE` already in the environment _wins_
+over the file, which is how you point one shell somewhere else without editing
+anything:
 
 ```bash
-aws configure --profile yoserverless
+AWS_PROFILE=personal npm run get-env
+```
+
+Configure the profile once (everything here also assumes **`us-east-1`**, which
+`--region=<name>` overrides):
+
+```bash
+# the profile scripts/api-config.env names
+aws configure --profile your-aws-profile-name
 # AWS Access Key ID: ...
 # AWS Secret Access Key: ...
 # Default region name: us-east-1
 # Default output format: json
 ```
 
-This writes to `~/.aws/credentials` and `~/.aws/config`. To use a different
-profile/region, pass `--profile=<name>` / `--region=<name>` to the commands
-below, or change the defaults in:
+This writes to `~/.aws/credentials` and `~/.aws/config`.
 
-- `services/api/scripts/generate-cloudfront-keypair.sh` (`PROFILE`, `REGION`)
-- `scripts/get-env.mjs` (`DEFAULT_AWS_PROFILE`)
+`serverless` is the one tool that cannot read that file — it takes the profile
+from the environment, so a shell you deploy from reads it out of the file once:
+
+```bash
+export AWS_PROFILE="$(. scripts/api-config.env && printf %s "$API_AWS_PROFILE")"
+```
+
+Individual commands still take `--profile=<name>` (bash scripts) or
+`--aws-profile <name>` (`serverless`) to point somewhere else for one run.
 
 ## Where configuration lives
 
-| What | Where |
-| --- | --- |
-| CloudFront signing key pair | AWS SSM Parameter Store (see below) — **not** `.env` |
-| Google OAuth client id/secret | AWS SSM Parameter Store (see [Google sign-in](#google-sign-in-optional)) |
-| Backend stage/region | CLI flags on `serverless deploy` |
-| Frontend API/Cognito values | `apps/studio/.env.local`, `apps/marketplace/.env.local` |
-| Where an *author's* email points (course invitations) | `custom.mail.appBaseUrl`, overridable with `/play/mail/app-base-url` |
-| Where a *learner's* email points (rewards) | `custom.mail.marketplaceBaseUrl`, overridable with `/play/mail/marketplace-base-url` |
+| What                                                  | Where                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| The AWS profile every script uses                     | `scripts/api-config.env` (an `AWS_PROFILE` in the environment wins)                  |
+| CloudFront signing key pair                           | AWS SSM Parameter Store (see below) — **not** `.env`                                 |
+| Google OAuth client id/secret                         | AWS SSM Parameter Store (see [Google sign-in](#google-sign-in-optional))             |
+| Backend stage/region                                  | CLI flags on `serverless deploy`                                                     |
+| Frontend API/Cognito values                           | `apps/studio/.env.local`, `apps/marketplace/.env.local`                              |
+| Where an _author's_ email points (course invitations) | `custom.mail.appBaseUrl`, overridable with `/play/mail/app-base-url`                 |
+| Where a _learner's_ email points (rewards)            | `custom.mail.marketplaceBaseUrl`, overridable with `/play/mail/marketplace-base-url` |
 
 The backend has **no `.env` requirements** — the CloudFront keys are read from
 SSM via `${ssm:...}` in `serverless.yml`.
@@ -491,25 +516,26 @@ cd services/api
 npm install
 
 # Generate the CloudFront key pair (for signed URLs) and write it to SSM
-./scripts/generate-cloudfront-keypair.sh --profile=yoserverless
+./scripts/generate-cloudfront-keypair.sh
 ```
 
 The script stores the key material in SSM Parameter Store:
 
 - `/play/cloudfront/private-key` (SecureString) — base64 PKCS#8 private key
-- `/play/cloudfront/public-key`  (String)       — PEM public key (`BEGIN/END PUBLIC KEY`)
+- `/play/cloudfront/public-key` (String) — PEM public key (`BEGIN/END PUBLIC KEY`)
 
-Then deploy:
+Then deploy — this is the one step whose tool cannot read `api-config.env`, so
+`AWS_PROFILE` has to be in the environment (see [AWS profile](#aws-profile)):
 
 ```bash
-npm run deploy -- --aws-profile yoserverless   # = serverless deploy --stage dev --aws-profile yoserverless
+npm run deploy   # = serverless deploy --stage dev, against $AWS_PROFILE
 ```
 
 Note the stack outputs — you'll need `ApiUrl`, `CognitoUserPoolId`, and
 `CognitoUserPoolClientId` for the frontend:
 
 ```bash
-npx serverless info --verbose --aws-profile yoserverless
+npx serverless info --verbose
 ```
 
 > **Key rotation:** CloudFront public keys cannot be updated in place through
@@ -530,16 +556,16 @@ Each app reads the same stack outputs into its own `.env.local`. From the root,
 `npm run get-env` writes both:
 
 ```bash
-npm run get-env -- --profile=yoserverless
+npm run get-env
 ```
 
 or one at a time, from the app's own directory:
 
 ```bash
 cd apps/studio
-npm run get-env -- --profile=yoserverless
+npm run get-env
 cd ../marketplace
-npm run get-env -- --profile=yoserverless
+npm run get-env
 ```
 
 This runs `scripts/get-env.mjs`, which reads the `play-backend-dev` stack outputs
@@ -586,17 +612,17 @@ to the sign-up email), create an organization, then upload a video into it.
 The learner's side, and the only part of this repository that is readable without
 an account:
 
-| Route | What it is |
-| --- | --- |
-| `/` | The front page: what the marketplace is, what a lesson looks like, what learners say about it, and the newest courses — and nothing to press but **Discover courses** |
-| `/discover` | The catalog: every course its author has listed, with covers, lesson counts and how many people are taking it, and one box to search them with |
-| `/courses/{spaceId}` | One course — its syllabus, section by section — and the button that registers you for it |
-| `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom, with no top bar and the whole window |
-| `/courses/{spaceId}/rewards` | What this course has given you: the codes, what they are for, and how to use them |
-| `/my-courses` | The courses you are registered for, wherever they came from |
-| `/sign-in` | Amplify's sign-in, then straight back to whatever you were doing (`?next=`) |
+| Route                                    | What it is                                                                                                                                                            |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                                      | The front page: what the marketplace is, what a lesson looks like, what learners say about it, and the newest courses — and nothing to press but **Discover courses** |
+| `/discover`                              | The catalog: every course its author has listed, with covers, lesson counts and how many people are taking it, and one box to search them with                        |
+| `/courses/{spaceId}`                     | One course — its syllabus, section by section — and the button that registers you for it                                                                              |
+| `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom, with no top bar and the whole window                                                                                         |
+| `/courses/{spaceId}/rewards`             | What this course has given you: the codes, what they are for, and how to use them                                                                                     |
+| `/my-courses`                            | The courses you are registered for, wherever they came from                                                                                                           |
+| `/sign-in`                               | Amplify's sign-in, then straight back to whatever you were doing (`?next=`)                                                                                           |
 
-The catalog used to *be* `/`. It is its own page now — a name in the top bar
+The catalog used to _be_ `/`. It is its own page now — a name in the top bar
 (**Discover**) rather than the front door — because somebody who has never heard
 of Play needs a sentence about the thing before they need a table of contents.
 The front page is written for that visitor: a claim, three steps, what the
@@ -630,7 +656,7 @@ redeems.
 The link lands on `/courses/{spaceId}/rewards` in the **marketplace**, not the
 studio: the person being given something is taking the course, and the studio is
 where courses are written. It points at that course's rewards rather than at a
-list of everything, so what the email promised — *this* reward, in *this* course
+list of everything, so what the email promised — _this_ reward, in _this_ course
 — is what is on screen when it opens, with the code on one line and a tap to
 copy it.
 
@@ -639,7 +665,7 @@ claimed in the studio (`appBaseUrl`) and rewards are read in the marketplace
 (`marketplaceBaseUrl`). Both default to localhost, and both must be set to the
 deployed app before either letter is sent to anybody real.
 
-A grant issued by a *milestone* — finishing a course, reaching a percentage —
+A grant issued by a _milestone_ — finishing a course, reaching a percentage —
 does not email: it already arrives in the classroom, with a toast and the
 rewards tab, and the reader is looking at the thing they just finished.
 
@@ -650,7 +676,7 @@ published courses, so Discover is a query rather than a scan of every course in
 the service.
 
 A reader in the course sees the same course page whether it is listed or not: the
-marketplace reads the catalog first and, if that says 404 *and* they are enrolled,
+marketplace reads the catalog first and, if that says 404 _and_ they are enrolled,
 reads the member endpoints instead. A course somebody was invited to and whose
 author never published is still theirs to take.
 
@@ -680,7 +706,7 @@ In the [Google Cloud Console](https://console.cloud.google.com/) → **APIs &
 Services** → **Credentials**:
 
 1. Configure the OAuth consent screen. Add **`amazoncognito.com`** to
-   *Authorized domains* — Google requires it when the redirect target is a
+   _Authorized domains_ — Google requires it when the redirect target is a
    Cognito domain — and include the `.../auth/userinfo.email`,
    `.../auth/userinfo.profile` and `openid` scopes.
 2. Create an **OAuth client ID** of type **Web application**. The two URLs it
@@ -691,17 +717,17 @@ Services** → **Credentials**:
 
 ```bash
 cd services/api
-./scripts/set-google-oauth.sh --profile=yoserverless
+./scripts/set-google-oauth.sh
 ```
 
 The script prompts for the client id/secret (the secret is read without echo),
 writes them to SSM Parameter Store, and prints the exact values to paste into the
 Google client:
 
-| Google client field | Value |
-| --- | --- |
-| Authorized JavaScript origins | `https://<cognito-domain>` |
-| Authorized redirect URIs | `https://<cognito-domain>/oauth2/idpresponse` |
+| Google client field           | Value                                         |
+| ----------------------------- | --------------------------------------------- |
+| Authorized JavaScript origins | `https://<cognito-domain>`                    |
+| Authorized redirect URIs      | `https://<cognito-domain>/oauth2/idpresponse` |
 
 Parameters written (secret stored as `SecureString`):
 
@@ -717,7 +743,7 @@ neither app sets those: `@play/auth` derives them from the origin the browser is
 on, so the studio gets `localhost:3000/auth/callback` and the marketplace
 `localhost:3001/auth/callback`.
 
-> **Adding an app or a port?** A value in SSM *wins over* the defaults in
+> **Adding an app or a port?** A value in SSM _wins over_ the defaults in
 > `custom.authDefaults`, and Cognito only learns the list at deploy time — so a
 > new origin must be added to the parameter **and** deployed, or signing in from
 > it fails with `redirect_mismatch`. `./scripts/set-auth-urls.sh` rewrites just
@@ -727,11 +753,11 @@ on, so the studio gets `localhost:3000/auth/callback` and the marketplace
 ### 3. Deploy and refresh the apps' env
 
 ```bash
-./scripts/set-auth-urls.sh --profile=yoserverless   # if an app or port is new
-npm run deploy -- --aws-profile yoserverless
+./scripts/set-auth-urls.sh   # if an app or port is new
+npm run deploy
 
 cd ../apps/studio
-npm run get-env -- --profile=yoserverless   # adds COGNITO_DOMAIN + GOOGLE_AUTH_ENABLED
+npm run get-env   # adds COGNITO_DOMAIN + GOOGLE_AUTH_ENABLED
 npm run dev
 ```
 
@@ -739,7 +765,7 @@ The marketplace reads the same two values, so run `npm run get-env` from
 `apps/marketplace` too — or once from the repository root, which writes both:
 
 ```bash
-cd ../.. && npm run get-env -- --profile=yoserverless
+cd ../.. && npm run get-env
 ```
 
 The sign-in screen now shows **Sign In with Google**. Restart the dev server so
@@ -747,13 +773,13 @@ the new `.env.local` values are picked up.
 
 ### What gets created
 
-| Resource | Purpose |
-| --- | --- |
-| `AWS::Cognito::UserPoolDomain` | Hosted UI (`/oauth2/authorize`, `/oauth2/token`). Cognito requires a domain for any federated sign-in. Pinned to hosted UI classic (`ManagedLoginVersion: 1`) because managed login needs a branding style that Cognito only applies to console-created app clients. |
-| `AWS::Cognito::UserPoolIdentityProvider` | The Google IdP, with `email`, `email_verified`, `given_name`, `family_name`, `name`, `picture` mapped. |
-| `CognitoUserPoolClient` OAuth settings | `code` flow, `openid email profile` scopes, callback/logout URLs, and `COGNITO` + `Google` as supported providers. |
-| `link-federated-user` Lambda + `LinkFederatedUserRole` | Pre sign-up trigger that links a first-time Google sign-in to the password account with the same verified email (see [Same email, same account](#same-email-same-account)). |
-| Stack outputs `CognitoDomain`, `GoogleAuthEnabled` | Consumed by `npm run get-env` to configure the frontend. |
+| Resource                                               | Purpose                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AWS::Cognito::UserPoolDomain`                         | Hosted UI (`/oauth2/authorize`, `/oauth2/token`). Cognito requires a domain for any federated sign-in. Pinned to hosted UI classic (`ManagedLoginVersion: 1`) because managed login needs a branding style that Cognito only applies to console-created app clients. |
+| `AWS::Cognito::UserPoolIdentityProvider`               | The Google IdP, with `email`, `email_verified`, `given_name`, `family_name`, `name`, `picture` mapped.                                                                                                                                                               |
+| `CognitoUserPoolClient` OAuth settings                 | `code` flow, `openid email profile` scopes, callback/logout URLs, and `COGNITO` + `Google` as supported providers.                                                                                                                                                   |
+| `link-federated-user` Lambda + `LinkFederatedUserRole` | Pre sign-up trigger that links a first-time Google sign-in to the password account with the same verified email (see [Same email, same account](#same-email-same-account)).                                                                                          |
+| Stack outputs `CognitoDomain`, `GoogleAuthEnabled`     | Consumed by `npm run get-env` to configure the frontend.                                                                                                                                                                                                             |
 
 ### How the frontend signs in
 
@@ -792,7 +818,7 @@ Cognito does not do this by itself:
 
 So the linking happens in the `link-federated-user` **Pre sign-up trigger**,
 which Cognito invokes with `triggerSource: PreSignUp_ExternalProvider`
-immediately *before* it creates the federated profile. The handler:
+immediately _before_ it creates the federated profile. The handler:
 
 1. Requires verified email on **both** sides — `email_verified` is mapped from
    Google's own claim, and the local profile's `email_verified` must be `true`.
@@ -847,7 +873,7 @@ sign-in re-creates the identity, this time linked):
 aws cognito-idp admin-delete-user --user-pool-id "$POOL" --username Google_100917265935340268751
 ```
 
-Deleting a federated profile that *does* own videos would orphan them: they would
+Deleting a federated profile that _does_ own videos would orphan them: they would
 remain in DynamoDB and S3 under the old `sub`, unreadable by the linked account.
 
 ### Caveats
@@ -866,8 +892,8 @@ To turn Google sign-in off again:
 
 ```bash
 cd services/api
-./scripts/set-google-oauth.sh --delete --profile=yoserverless
-npm run deploy -- --aws-profile yoserverless
+./scripts/set-google-oauth.sh --delete
+npm run deploy
 ```
 
 > Deleting the Hosted UI domain invalidates the existing hosted UI session
@@ -889,7 +915,7 @@ selector — `Auto` plus every rendition in the HLS master playlist:
 ### Sound, and why a lesson can open quietly
 
 A lesson opens playing — a thing you came to watch should not need pressing —
-but no browser lets a page that started itself *speak*, so the player asks for
+but no browser lets a page that started itself _speak_, so the player asks for
 sound and takes silence if it is refused, because a lesson playing quietly is
 one whose volume can be turned up while one that never started is one that has
 to be pressed. That is the browser's rule, not a setting here, and a reload is
@@ -902,79 +928,79 @@ What the player does about it:
   are the same gesture the browser accepts, and the button just says so.
 - The reader's own choice is remembered in `localStorage` as `play:sound`, so
   muting one lesson does not mean being talked at by the next one, and unmuting
-  one is tried again on the next. Only a choice the *reader* made is stored: a
+  one is tried again on the next. Only a choice the _reader_ made is stored: a
   mute the player applied because the browser refused is not an opinion.
 
 ## REST API
 
 All endpoints require `Authorization: Bearer <Cognito ID token>`.
 
-| Method | Path                    | Description                                          |
-| ------ | ----------------------- | ---------------------------------------------------- |
-| POST   | `/videos`               | Create a video in an organization + presigned S3 upload URL |
-| GET    | `/videos`               | List the caller's own uploads                        |
-| GET    | `/videos?organizationId=` | List an organization's whole library (any member)  |
-| GET    | `/videos/{id}`          | Get a single video                                   |
-| PATCH  | `/videos/{id}`          | Update title/description                             |
-| DELETE | `/videos/{id}`          | Delete metadata + S3 objects (blocked while encoding)|
-| POST   | `/videos/{id}/retry`    | Retry processing of a `FAILED` video                 |
-| GET    | `/videos/{id}/stream`   | Return a signed CloudFront URL for HLS playback      |
-| GET    | `/videos/{id}/audio`    | Return a signed CloudFront URL for the audio track   |
-| POST   | `/videos/{id}/audio`    | Extract audio for a video that has none              |
-| POST   | `/videos/{id}/subtitles`| Generate subtitles (AWS Transcribe → WebVTT)         |
-| GET    | `/videos/{id}/subtitles`| Return a signed CloudFront URL for the subtitle file |
-| GET    | `/videos/{id}/thumbnail`| Return a signed CloudFront URL for the thumbnail      |
-| PUT    | `/videos/{id}/thumbnail`| Upload a custom thumbnail (returns presigned PUT URL) |
-| POST   | `/videos/{id}/thumbnail/frame` | Capture the first frame as the default thumbnail |
-| POST   | `/organizations`        | Create an organization (the caller becomes its admin) |
-| GET    | `/organizations`        | List the organizations the caller belongs to         |
-| GET    | `/organizations/{orgId}`| Get one organization (members only)                  |
-| GET    | `/organizations/{orgId}/members` | The roster: members and unaccepted invitations (members only) |
-| POST   | `/organizations/{orgId}/members` | Invite an email address with a role (admins only)  |
-| PATCH  | `/organizations/{orgId}/members/{userId}` | Change a member's role (admins only)       |
-| DELETE | `/organizations/{orgId}/members/{userId}` | Remove a member, or revoke an invitation (admins only) |
-| POST   | `/organizations/{orgId}/members/{userId}/invitation` | Send an invitation again, optionally correcting its role (admins only) |
-| POST   | `/organizations/{orgId}/invitation` | Accept the invitation addressed to your own email |
-| GET    | `/me/invitations`       | Invitations addressed to the caller, in every organization |
-| POST   | `/organizations/{orgId}/spaces` | Create a space (course) in an organization    |
-| GET    | `/organizations/{orgId}/spaces` | List the organization's spaces                |
-| GET    | `/spaces/{spaceId}`     | Get one space (members only)                         |
-| GET    | `/spaces/{spaceId}/thumbnail` | Return a signed CloudFront URL for the cover   |
-| PUT    | `/spaces/{spaceId}/thumbnail` | Upload a cover (returns a presigned PUT URL)   |
-| POST   | `/spaces/{spaceId}/sections` | Add a section to a space                       |
-| GET    | `/spaces/{spaceId}/sections` | The space outline: sections, each with its content |
-| GET    | `/sections/{sectionId}` | Get one section                                      |
-| PATCH  | `/sections/{sectionId}` | Rename a section, rewrite it, or move it             |
-| DELETE | `/sections/{sectionId}` | Delete a section **and the content under it**        |
-| POST   | `/sections/{sectionId}/contents` | Add content to a section                    |
-| GET    | `/sections/{sectionId}/contents` | List a section's content (paged)            |
-| GET    | `/contents/{contentId}` | Get one piece of content, plus the caller's own state |
-| PATCH  | `/contents/{contentId}` | Change its title, video, notes, or position          |
-| DELETE | `/contents/{contentId}` | Delete it, its files, and its comments               |
-| PUT    | `/contents/{contentId}/files` | Attach a file (returns a presigned PUT URL)    |
-| GET    | `/contents/{contentId}/files` | List its attachments, each with a signed URL   |
-| GET    | `/contents/{contentId}/files/{fileId}` | Signed URL for one attachment          |
-| DELETE | `/contents/{contentId}/files/{fileId}` | Detach one attachment                  |
-| PUT    | `/contents/{contentId}/favourite` | Favourite it (any member)                   |
-| DELETE | `/contents/{contentId}/favourite` | Unfavourite it                              |
-| PUT    | `/contents/{contentId}/playlist` | Add it to the caller's learning playlist     |
-| DELETE | `/contents/{contentId}/playlist` | Remove it from it                            |
-| GET    | `/me/favourites`        | Everything the caller has favourited                 |
-| GET    | `/me/playlist`          | The caller's learning playlist                       |
-| GET    | `/contents/{contentId}/comments` | Its discussion, as two-level threads        |
-| POST   | `/contents/{contentId}/comments` | Comment on it, or reply to a comment        |
-| PATCH  | `/contents/{contentId}/comments/{commentId}` | Edit a comment (its author only) |
-| DELETE | `/contents/{contentId}/comments/{commentId}` | Delete a comment                 |
-| PUT    | `/contents/{contentId}/comments/{commentId}/favourite` | Favourite a comment   |
-| DELETE | `/contents/{contentId}/comments/{commentId}/favourite` | Unfavourite it         |
-| POST   | `/contents/{contentId}/loops` | Save a named stretch of the video as a loop    |
-| GET    | `/contents/{contentId}/loops` | The caller's own loops on this lesson          |
-| PATCH  | `/contents/{contentId}/loops/{loopId}` | Rename, recolour, or move one of its ends |
-| DELETE | `/contents/{contentId}/loops/{loopId}` | Delete it                             |
-| PUT    | `/contents/{contentId}/loops/{loopId}/like` | Like a loop                     |
-| DELETE | `/contents/{contentId}/loops/{loopId}/like` | Take the like back              |
-| PUT    | `/contents/{contentId}/completion` | Mark the lesson done for the caller     |
-| DELETE | `/contents/{contentId}/completion` | Take it back off the done list          |
+| Method | Path                                                   | Description                                                            |
+| ------ | ------------------------------------------------------ | ---------------------------------------------------------------------- |
+| POST   | `/videos`                                              | Create a video in an organization + presigned S3 upload URL            |
+| GET    | `/videos`                                              | List the caller's own uploads                                          |
+| GET    | `/videos?organizationId=`                              | List an organization's whole library (any member)                      |
+| GET    | `/videos/{id}`                                         | Get a single video                                                     |
+| PATCH  | `/videos/{id}`                                         | Update title/description                                               |
+| DELETE | `/videos/{id}`                                         | Delete metadata + S3 objects (blocked while encoding)                  |
+| POST   | `/videos/{id}/retry`                                   | Retry processing of a `FAILED` video                                   |
+| GET    | `/videos/{id}/stream`                                  | Return a signed CloudFront URL for HLS playback                        |
+| GET    | `/videos/{id}/audio`                                   | Return a signed CloudFront URL for the audio track                     |
+| POST   | `/videos/{id}/audio`                                   | Extract audio for a video that has none                                |
+| POST   | `/videos/{id}/subtitles`                               | Generate subtitles (AWS Transcribe → WebVTT)                           |
+| GET    | `/videos/{id}/subtitles`                               | Return a signed CloudFront URL for the subtitle file                   |
+| GET    | `/videos/{id}/thumbnail`                               | Return a signed CloudFront URL for the thumbnail                       |
+| PUT    | `/videos/{id}/thumbnail`                               | Upload a custom thumbnail (returns presigned PUT URL)                  |
+| POST   | `/videos/{id}/thumbnail/frame`                         | Capture the first frame as the default thumbnail                       |
+| POST   | `/organizations`                                       | Create an organization (the caller becomes its admin)                  |
+| GET    | `/organizations`                                       | List the organizations the caller belongs to                           |
+| GET    | `/organizations/{orgId}`                               | Get one organization (members only)                                    |
+| GET    | `/organizations/{orgId}/members`                       | The roster: members and unaccepted invitations (members only)          |
+| POST   | `/organizations/{orgId}/members`                       | Invite an email address with a role (admins only)                      |
+| PATCH  | `/organizations/{orgId}/members/{userId}`              | Change a member's role (admins only)                                   |
+| DELETE | `/organizations/{orgId}/members/{userId}`              | Remove a member, or revoke an invitation (admins only)                 |
+| POST   | `/organizations/{orgId}/members/{userId}/invitation`   | Send an invitation again, optionally correcting its role (admins only) |
+| POST   | `/organizations/{orgId}/invitation`                    | Accept the invitation addressed to your own email                      |
+| GET    | `/me/invitations`                                      | Invitations addressed to the caller, in every organization             |
+| POST   | `/organizations/{orgId}/spaces`                        | Create a space (course) in an organization                             |
+| GET    | `/organizations/{orgId}/spaces`                        | List the organization's spaces                                         |
+| GET    | `/spaces/{spaceId}`                                    | Get one space (members only)                                           |
+| GET    | `/spaces/{spaceId}/thumbnail`                          | Return a signed CloudFront URL for the cover                           |
+| PUT    | `/spaces/{spaceId}/thumbnail`                          | Upload a cover (returns a presigned PUT URL)                           |
+| POST   | `/spaces/{spaceId}/sections`                           | Add a section to a space                                               |
+| GET    | `/spaces/{spaceId}/sections`                           | The space outline: sections, each with its content                     |
+| GET    | `/sections/{sectionId}`                                | Get one section                                                        |
+| PATCH  | `/sections/{sectionId}`                                | Rename a section, rewrite it, or move it                               |
+| DELETE | `/sections/{sectionId}`                                | Delete a section **and the content under it**                          |
+| POST   | `/sections/{sectionId}/contents`                       | Add content to a section                                               |
+| GET    | `/sections/{sectionId}/contents`                       | List a section's content (paged)                                       |
+| GET    | `/contents/{contentId}`                                | Get one piece of content, plus the caller's own state                  |
+| PATCH  | `/contents/{contentId}`                                | Change its title, video, notes, or position                            |
+| DELETE | `/contents/{contentId}`                                | Delete it, its files, and its comments                                 |
+| PUT    | `/contents/{contentId}/files`                          | Attach a file (returns a presigned PUT URL)                            |
+| GET    | `/contents/{contentId}/files`                          | List its attachments, each with a signed URL                           |
+| GET    | `/contents/{contentId}/files/{fileId}`                 | Signed URL for one attachment                                          |
+| DELETE | `/contents/{contentId}/files/{fileId}`                 | Detach one attachment                                                  |
+| PUT    | `/contents/{contentId}/favourite`                      | Favourite it (any member)                                              |
+| DELETE | `/contents/{contentId}/favourite`                      | Unfavourite it                                                         |
+| PUT    | `/contents/{contentId}/playlist`                       | Add it to the caller's learning playlist                               |
+| DELETE | `/contents/{contentId}/playlist`                       | Remove it from it                                                      |
+| GET    | `/me/favourites`                                       | Everything the caller has favourited                                   |
+| GET    | `/me/playlist`                                         | The caller's learning playlist                                         |
+| GET    | `/contents/{contentId}/comments`                       | Its discussion, as two-level threads                                   |
+| POST   | `/contents/{contentId}/comments`                       | Comment on it, or reply to a comment                                   |
+| PATCH  | `/contents/{contentId}/comments/{commentId}`           | Edit a comment (its author only)                                       |
+| DELETE | `/contents/{contentId}/comments/{commentId}`           | Delete a comment                                                       |
+| PUT    | `/contents/{contentId}/comments/{commentId}/favourite` | Favourite a comment                                                    |
+| DELETE | `/contents/{contentId}/comments/{commentId}/favourite` | Unfavourite it                                                         |
+| POST   | `/contents/{contentId}/loops`                          | Save a named stretch of the video as a loop                            |
+| GET    | `/contents/{contentId}/loops`                          | The caller's own loops on this lesson                                  |
+| PATCH  | `/contents/{contentId}/loops/{loopId}`                 | Rename, recolour, or move one of its ends                              |
+| DELETE | `/contents/{contentId}/loops/{loopId}`                 | Delete it                                                              |
+| PUT    | `/contents/{contentId}/loops/{loopId}/like`            | Like a loop                                                            |
+| DELETE | `/contents/{contentId}/loops/{loopId}/like`            | Take the like back                                                     |
+| PUT    | `/contents/{contentId}/completion`                     | Mark the lesson done for the caller                                    |
+| DELETE | `/contents/{contentId}/completion`                     | Take it back off the done list                                         |
 
 `GET /videos` accepts `status`, `limit`, and `nextToken`; `?organizationId=` can
 be combined with `status`.
@@ -1067,14 +1093,14 @@ or **viewer** (see [Members](#members), below).
    admin. The caller's role is `ADMIN`.
 3. `GET /organizations` returns the organizations the caller belongs to,
    newest membership first. `GET /organizations/{orgId}` returns one, and
-   authorizes on membership — being able to see an organization *is* being a
+   authorizes on membership — being able to see an organization _is_ being a
    member of it. An invitation is not membership: both reads skip a row whose
    status is `INVITED`.
 
-| Table | Keys | Purpose |
-| --- | --- | --- |
-| `OrganizationsTable` | `orgId` (hash) | name, slug, description, ownerId, adminCount, timestamps |
-| `OrgMembersTable` | `orgId` (hash) + `userId` (range) | role (`ADMIN`/`EDITOR`/`VIEWER`), status, email, invitedEmail, invitedBy, joinedAt; GSIs `UserOrgIndex` (userId + joinedAt) and `InviteEmailIndex` (invitedEmail + joinedAt) |
+| Table                | Keys                              | Purpose                                                                                                                                                                      |
+| -------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OrganizationsTable` | `orgId` (hash)                    | name, slug, description, ownerId, adminCount, timestamps                                                                                                                     |
+| `OrgMembersTable`    | `orgId` (hash) + `userId` (range) | role (`ADMIN`/`EDITOR`/`VIEWER`), status, email, invitedEmail, invitedBy, joinedAt; GSIs `UserOrgIndex` (userId + joinedAt) and `InviteEmailIndex` (invitedEmail + joinedAt) |
 
 Two tables instead of a members map embedded in the organization:
 
@@ -1086,7 +1112,7 @@ Two tables instead of a members map embedded in the organization:
   single-item write.
 
 DynamoDB authorizes a transaction and the item-level actions inside it
-*separately* (see [Using IAM with DynamoDB
+_separately_ (see [Using IAM with DynamoDB
 transactions](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis-iam.html)),
 which is why the Lambda role grants `dynamodb:TransactWriteItems` **and**
 `dynamodb:PutItem` on both tables.
@@ -1100,11 +1126,11 @@ uniqueness round-trip at creation time.
 The roster is the membership rows of one organization, and the three roles are
 the whole of what differs between them:
 
-| Role | Organization | Courses and videos |
-| --- | --- | --- |
-| **Admin** | Manages the organization and its members | Everything an editor can do |
-| **Editor** | — | Creates and edits courses, sections, lessons, and the library |
-| **Viewer** | — | Reads them; cannot change anything |
+| Role       | Organization                             | Courses and videos                                            |
+| ---------- | ---------------------------------------- | ------------------------------------------------------------- |
+| **Admin**  | Manages the organization and its members | Everything an editor can do                                   |
+| **Editor** | —                                        | Creates and edits courses, sections, lessons, and the library |
+| **Viewer** | —                                        | Reads them; cannot change anything                            |
 
 That split is one table in `src/lib/access.ts`: `read` is any active member,
 `write` is an admin or editor, and managing members is an admin — checked by
@@ -1120,7 +1146,7 @@ courses. It is an offer, and it stays one until somebody takes it up.
    person does not have to have an account yet — the pool may never have heard
    of them — so **the row is keyed by the address**, which is the only
    identifier there is at that point. That is also why `invitedEmail` is stored
-   separately from `email`: it records what the invitation was *for*, and it is
+   separately from `email`: it records what the invitation was _for_, and it is
    what a later acceptance matches on.
 2. Inviting an address that is already a member answers `409`; inviting one that
    is already invited re-sends the offer, role included. A conditional
@@ -1128,20 +1154,20 @@ courses. It is an offer, and it stays one until somebody takes it up.
    a re-invite from quietly rewriting a real member's role.
 3. They are emailed a link to `/organizations`, and that page is where the offer
    is shown: it is the one read a person who belongs nowhere yet can make
-   (`GET /me/invitations`, queried through `InviteEmailIndex` by *their own
-   claim's* address, so it cannot return an offer that was not addressed to
+   (`GET /me/invitations`, queried through `InviteEmailIndex` by _their own
+   claim's_ address, so it cannot return an offer that was not addressed to
    them). `POST /organizations/{orgId}/invitation` claims one.
 4. Accepting it **re-keys the row** from the address to the caller's Cognito
    `sub`, in a single `TransactWriteItems`, so the membership is never briefly
    absent. There is no token to carry and nobody approves: Cognito has already
    verified that the caller owns the address the invitation names, so being
-   signed in as it *is* the acceptance. `attribute_not_exists` on the new key
+   signed in as it _is_ the acceptance. `attribute_not_exists` on the new key
    makes a second acceptance — or accepting an invitation to an organization you
    already belong to — a no-op rather than a role rewrite.
 
 Admins change roles through `PATCH .../members/{userId}` and take people off the
 roster with `DELETE`, which revokes an unaccepted invitation just as it removes
-a member: the row *is* the relationship. Two invariants are enforced by the
+a member: the row _is_ the relationship. Two invariants are enforced by the
 write, not by a check that races:
 
 - **An organization always has at least one admin.** `OrganizationsTable`
@@ -1149,7 +1175,7 @@ write, not by a check that races:
   admin out is a transaction whose condition is `adminCount > 1`. Two admins
   demoting each other at the same moment cannot both pass — DynamoDB evaluates
   the condition on the same item the counter moves on. Withdrawing an invitation
-  moves nothing: only *active* admins are counted.
+  moves nothing: only _active_ admins are counted.
 - **The owner stays.** `ownerId` is what the organization is attributed to and
   nothing hands ownership on yet, so demoting or removing the owner answers
   `409` rather than leaving an organization whose owner has no access to it. The
@@ -1185,7 +1211,7 @@ cd services/api
    unset. `--from` verifies the identity with SES and stores it; the verification
    email SES sends must be clicked before anything can be sent as it.
 2. **Out of the SES sandbox — or a verified recipient.** In the sandbox SES will
-   only deliver to *verified* addresses, so an invitation to an unverified
+   only deliver to _verified_ addresses, so an invitation to an unverified
    address is rejected with `MessageRejected`. The script prints the sandbox
    state and the verified identities, because this is the single thing that most
    often makes "I never got the email" true.
@@ -1212,27 +1238,27 @@ A **space** is a course an organization publishes: the container its videos will
 be grouped and sequenced in. It is created by an admin or editor and readable by
 every member of the organization.
 
-| Field | Notes |
-| --- | --- |
-| `spaceId` | ULID, the table key |
-| `organizationId` | the owning organization; a space never exists outside one |
-| `title` | required, 2–80 characters (whitespace collapsed) |
-| `description` | optional, ≤ 500 characters |
-| `type` | `SELF_PACED` or `SCHEDULED` |
-| `color` | optional `#rrggbb` accent |
-| `startAt`, `dripIntervalDays` | scheduled spaces only: when it starts, and how many days apart sections unlock (default 7, 1–365) |
-| `thumbnailKey` | optional cover image key |
-| `listed` | whether the course appears in the marketplace catalog; absent means private |
-| `createdBy`, `createdAt`, `updatedAt` | provenance |
+| Field                                 | Notes                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `spaceId`                             | ULID, the table key                                                                               |
+| `organizationId`                      | the owning organization; a space never exists outside one                                         |
+| `title`                               | required, 2–80 characters (whitespace collapsed)                                                  |
+| `description`                         | optional, ≤ 500 characters                                                                        |
+| `type`                                | `SELF_PACED` or `SCHEDULED`                                                                       |
+| `color`                               | optional `#rrggbb` accent                                                                         |
+| `startAt`, `dripIntervalDays`         | scheduled spaces only: when it starts, and how many days apart sections unlock (default 7, 1–365) |
+| `thumbnailKey`                        | optional cover image key                                                                          |
+| `listed`                              | whether the course appears in the marketplace catalog; absent means private                       |
+| `createdBy`, `createdAt`, `updatedAt` | provenance                                                                                        |
 
 The two types are the whole of the scheduling model, and they differ in what the
-clock is measured *from*:
+clock is measured _from_:
 
 - **Self-paced** — the course starts when a member enrolls and everything is
   available immediately. Nothing else is stored: a start date here would be a
   second, contradictory source of truth, so the API ignores one if it is sent.
 - **Scheduled** — the course starts on a specific date and its sections unlock
-  relative to *that* date rather than to enrollment.
+  relative to _that_ date rather than to enrollment.
 
 `type` is stored as a string rather than a number so a third type can be added
 later without migrating existing rows; only these two exist today, and the form
@@ -1240,7 +1266,7 @@ offers only these two.
 
 A date-only start (`2025-01-15`, what an `<input type="date">` submits) is pinned
 to **UTC midnight** on the way in, and formatted back in UTC on the way out. A
-scheduled space starts on a *day*, so reading it back in the viewer's timezone
+scheduled space starts on a _day_, so reading it back in the viewer's timezone
 would shift it by a day for anyone west of UTC.
 
 Colour is optional and validated as `#rrggbb`. A space without one is drawn in a
@@ -1248,8 +1274,8 @@ colour derived from its id, so a wall of spaces is still legible and a space kee
 one colour in the list, the sidebar, and its own page. The hash is over the id
 rather than the title, because titles get edited.
 
-| Table | Keys | Purpose |
-| --- | --- | --- |
+| Table         | Keys             | Purpose                                                                                                                                                                          |
+| ------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SpacesTable` | `spaceId` (hash) | title, description, type, colour, schedule, cover key, `listed`; GSIs `OrganizationCreatedIndex` (organizationId + createdAt) and `CatalogCreatedIndex` (catalogKey + createdAt) |
 
 One index per listing: an organization's spaces newest-first, and the
@@ -1276,13 +1302,13 @@ its sections should unlock — the rules are stored, not yet applied.
 
 ### The catalog
 
-| Method | Path | Auth | What it does |
-| --- | --- | --- | --- |
-| `GET` | `/catalog/courses` | **none** | A page of listed courses: the course, the organization's name, section/lesson/student counts, and a signed cover URL |
-| `GET` | `/catalog/courses?query=…` | **none** | Searches those courses instead: title, description or community name, case-insensitive, no `nextToken` |
-| `GET` | `/catalog/courses/{spaceId}` | **none** | One listed course and its syllabus: sections, and the titles of the lessons in them |
-| `POST` | `/spaces/{spaceId}/enrollment` | JWT | Register the caller for a listed course |
-| `DELETE` | `/spaces/{spaceId}/enrollment` | JWT | Drop the caller out of a course |
+| Method   | Path                           | Auth     | What it does                                                                                                         |
+| -------- | ------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/catalog/courses`             | **none** | A page of listed courses: the course, the organization's name, section/lesson/student counts, and a signed cover URL |
+| `GET`    | `/catalog/courses?query=…`     | **none** | Searches those courses instead: title, description or community name, case-insensitive, no `nextToken`               |
+| `GET`    | `/catalog/courses/{spaceId}`   | **none** | One listed course and its syllabus: sections, and the titles of the lessons in them                                  |
+| `POST`   | `/spaces/{spaceId}/enrollment` | JWT      | Register the caller for a listed course                                                                              |
+| `DELETE` | `/spaces/{spaceId}/enrollment` | JWT      | Drop the caller out of a course                                                                                      |
 
 `query` filters what a card shows — the course's title, its description, and the
 name of the community it is from — by case-insensitive substring, so `film`
@@ -1306,7 +1332,7 @@ lies about the course on the page whose whole job is to describe it.
 
 Registering writes the same `SpaceMembersTable` row an invitation does, as a
 `STUDENT`: it is the one membership nobody was invited to. It is idempotent, and
-an invitation already waiting for the caller's address *is* the registration —
+an invitation already waiting for the caller's address _is_ the registration —
 the row is re-keyed from the email to their `sub`, keeping the role it offered.
 
 ### Sections and content
@@ -1321,11 +1347,11 @@ Space ─┬─ Section 1 ─┬─ Content (video + notes + files)
        └─ Section 2 ─── Content
 ```
 
-| Table | Keys | Purpose |
-| --- | --- | --- |
-| `SectionsTable` | `sectionId` (hash) | title, description, position, spaceId, organizationId; GSI `SpacePositionIndex` (spaceId + position) |
-| `ContentsTable` | `contentId` (hash) | title, type, videoId, notes, position, counters; GSIs `SectionPositionIndex` (sectionId + position) and `SpacePositionIndex` (spaceId + position) |
-| `ContentFilesTable` | `contentId` (hash) + `fileId` (range) | name, S3 key, MIME type, size, who attached it |
+| Table               | Keys                                  | Purpose                                                                                                                                           |
+| ------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SectionsTable`     | `sectionId` (hash)                    | title, description, position, spaceId, organizationId; GSI `SpacePositionIndex` (spaceId + position)                                              |
+| `ContentsTable`     | `contentId` (hash)                    | title, type, videoId, notes, position, counters; GSIs `SectionPositionIndex` (sectionId + position) and `SpacePositionIndex` (spaceId + position) |
+| `ContentFilesTable` | `contentId` (hash) + `fileId` (range) | name, S3 key, MIME type, size, who attached it                                                                                                    |
 
 **Order is stored, not inferred.** Sections and content each carry a `position`
 that the author decides, rather than being read in the order they happened to be
@@ -1378,13 +1404,13 @@ content and the playlist are infrastructure ahead of the classroom UI that will
 use them; commenting, loops and progress are built end to end, on the lesson
 page.
 
-| Table | Keys | Purpose |
-| --- | --- | --- |
-| `FavouritesTable` | `userId` (hash) + `targetKey` (range) | a favourite of content or of a comment |
-| `PlaylistTable` | `userId` (hash) + `contentId` (range) | what a learner means to watch; GSI `UserAddedIndex` (userId + addedAt) |
-| `CommentsTable` | `contentId` (hash) + `commentId` (range) | a lesson's discussion, replies included |
-| `ContentLoopsTable` | `userId` (hash) + `loopKey` (range) | a learner's named stretches of a lesson's video |
-| `CompletionsTable` | `userId` (hash) + `spaceKey` (range) | what a learner has finished in a course |
+| Table               | Keys                                     | Purpose                                                                |
+| ------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
+| `FavouritesTable`   | `userId` (hash) + `targetKey` (range)    | a favourite of content or of a comment                                 |
+| `PlaylistTable`     | `userId` (hash) + `contentId` (range)    | what a learner means to watch; GSI `UserAddedIndex` (userId + addedAt) |
+| `CommentsTable`     | `contentId` (hash) + `commentId` (range) | a lesson's discussion, replies included                                |
+| `ContentLoopsTable` | `userId` (hash) + `loopKey` (range)      | a learner's named stretches of a lesson's video                        |
+| `CompletionsTable`  | `userId` (hash) + `spaceKey` (range)     | what a learner has finished in a course                                |
 
 **Counts live on the thing being counted.** Content carries `favouriteCount` and
 `commentCount`, a comment carries `favouriteCount` and `replyCount`, and content
@@ -1439,12 +1465,12 @@ because milliseconds are what a player seeks by and a loop should survive the
 transcript being re-cut. Its colour is derived from its id rather than stored, so
 a list is told apart at a glance without anyone choosing.
 
-**A loop is made by marking its two ends.** Press *New loop* where it starts,
-press *Set end* where it ends, and it is saved and named in place — the way every
+**A loop is made by marking its two ends.** Press _New loop_ where it starts,
+press _Set end_ where it ends, and it is saved and named in place — the way every
 A–B repeat has ever been made, and the only flow that works while the video is
 playing, which is when you notice the piece you want again. Playing one repeats
 it: a frame loop watches the playhead and puts it back at the start when it
-leaves the end, and it holds even when you scrub *out* of the loop, because a
+leaves the end, and it holds even when you scrub _out_ of the loop, because a
 loop you can fall out of by touching the scrubber is one that stops when you are
 least sure it will.
 
@@ -1470,16 +1496,16 @@ on `POST /videos`, and the caller must hold the admin or editor role there.
 **Reading one is wider than listing them**, and the difference is the whole of
 the marketplace's playback:
 
-| Question | Who may ask it |
-| --- | --- |
+| Question                                                              | Who may ask it                                                                                 |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `GET /videos/{videoId}` (and its stream, subtitles, thumbnail, audio) | a member of the owning organization, **or** a member of a course whose lessons play that video |
-| `GET /videos?organizationId=…` (the library) | a member of that organization only |
-| `POST`/`PATCH`/`DELETE /videos/{videoId}`, regenerate, retry | admin or editor of the owning organization |
+| `GET /videos?organizationId=…` (the library)                          | a member of that organization only                                                             |
+| `POST`/`PATCH`/`DELETE /videos/{videoId}`, regenerate, retry          | admin or editor of the owning organization                                                     |
 
 A learner registers for a course, not for the organization that wrote it — they
 may never have heard of that organization — so authorizing their playback
 against the organization alone refuses the one thing the course is for. The
-second way in is deliberately narrow: it is a *course* membership, and only for a
+second way in is deliberately narrow: it is a _course_ membership, and only for a
 video that course actually teaches with, so a learner in one course has no claim
 on the rest of the organization's video library (and still cannot list it).
 
@@ -1487,22 +1513,22 @@ That question — which courses teach with this video — is one query, over the
 `VideoSpaceIndex` on `ContentsTable` (`videoId` + `spaceId`, keys only, sparse
 because only a lesson that plays a video carries one):
 
-| Index | Keys | Answers |
-| --- | --- | --- |
-| `SectionPositionIndex` | `sectionId` + `position` | a section's lessons, in order |
-| `SpacePositionIndex` | `spaceId` + `position` | a whole course's outline in one query |
-| `VideoSpaceIndex` | `videoId` + `spaceId` | which courses play this video |
+| Index                  | Keys                     | Answers                               |
+| ---------------------- | ------------------------ | ------------------------------------- |
+| `SectionPositionIndex` | `sectionId` + `position` | a section's lessons, in order         |
+| `SpacePositionIndex`   | `spaceId` + `position`   | a whole course's outline in one query |
+| `VideoSpaceIndex`      | `videoId` + `spaceId`    | which courses play this video         |
 
 A video carries **both** its owner and its organization. `ownerId` records who
 uploaded it; `organizationId` decides who can see it. That is why the videos
 table has two parallel index families:
 
-| Index | Keys | Answers |
-| --- | --- | --- |
-| `OwnerCreatedIndex` | `ownerId` + `createdAt` | "everything I uploaded" |
-| `OwnerStatusIndex` | `ownerId` + `status` | my uploads in one state |
+| Index                      | Keys                           | Answers                                  |
+| -------------------------- | ------------------------------ | ---------------------------------------- |
+| `OwnerCreatedIndex`        | `ownerId` + `createdAt`        | "everything I uploaded"                  |
+| `OwnerStatusIndex`         | `ownerId` + `status`           | my uploads in one state                  |
 | `OrganizationCreatedIndex` | `organizationId` + `createdAt` | the organization's library, newest first |
-| `OrganizationStatusIndex` | `organizationId` + `status` | the organization's library in one state |
+| `OrganizationStatusIndex`  | `organizationId` + `status`    | the organization's library in one state  |
 
 An organization's library is therefore a single `Query`, not a scan or an
 in-memory filter, and `listVideosByIndex` in `src/lib/dynamodb.ts` implements
@@ -1525,8 +1551,8 @@ both key spaces once.
 > 2. Add `OrganizationStatusIndex` back and deploy again.
 >
 > Between the two deploys a status-filtered organization listing (`GET
-> /videos?organizationId=…&status=…`) fails, because the code asks for an index
-> that does not exist yet; the unfiltered listing works. A *fresh* stack is
+/videos?organizationId=…&status=…`) fails, because the code asks for an index
+> that does not exist yet; the unfiltered listing works. A _fresh_ stack is
 > unaffected — the limit applies to updates, not to creation, so a new stage
 > creates all four indexes in one go.
 >
@@ -1535,25 +1561,25 @@ both key spaces once.
 >
 > ```bash
 > while [ "$(aws dynamodb describe-table --table-name "$VIDEOS_TABLE" \
->   --profile yoserverless --region us-east-1 \
+>   --region us-east-1 \
 >   --query "Table.GlobalSecondaryIndexes[?IndexName=='OrganizationCreatedIndex'].IndexStatus" \
 >   --output text)" != "ACTIVE" ]; do sleep 20; done
 >
-> npm run deploy -- --aws-profile yoserverless
+> npm run deploy
 > ```
 
 #### Who can touch a video
 
 `src/lib/access.ts` is the single place this policy lives:
 
-| | Read | Write (edit, delete, re-encode, retitle) | Manage members and roles |
-| --- | --- | --- | --- |
-| Organization admin | yes | yes | yes |
-| Organization editor | yes | yes | no |
-| Organization viewer | yes | no | no |
-| Someone invited, not yet accepted | no | no | no |
-| The uploader | yes | yes | no |
-| Anyone else | no | no | no |
+|                                   | Read | Write (edit, delete, re-encode, retitle) | Manage members and roles |
+| --------------------------------- | ---- | ---------------------------------------- | ------------------------ |
+| Organization admin                | yes  | yes                                      | yes                      |
+| Organization editor               | yes  | yes                                      | no                       |
+| Organization viewer               | yes  | no                                       | no                       |
+| Someone invited, not yet accepted | no   | no                                       | no                       |
+| The uploader                      | yes  | yes                                      | no                       |
+| Anyone else                       | no   | no                                       | no                       |
 
 Two deliberate choices:
 
@@ -1603,7 +1629,7 @@ assignment made after the scan.
 > The outputs it reads (`VideosTableName`, `OrganizationsTableName`,
 > `OrgMembersTableName`) are new — redeploy before running it, or pass
 > `--videos-table=` / `--organizations-table=` / `--members-table=` explicitly.
-> Note that `describe-stack-resources` is *not* usable for this: it silently
+> Note that `describe-stack-resources` is _not_ usable for this: it silently
 > truncates at 100 resources on this stack and returns no `NextToken`, so the
 > DynamoDB tables never appear in it.
 
@@ -1630,7 +1656,7 @@ and an account out of the SES sandbox, or the mail is delivered nowhere (see
   the data path for large files).
 - CORS is enabled on both API Gateway and the S3 bucket for the upload flow.
 - Secrets are read from SSM Parameter Store at deploy time and never live in the
-  repo. Note that `${ssm:...}` is *resolved into* the template, so the CloudFront
+  repo. Note that `${ssm:...}` is _resolved into_ the template, so the CloudFront
   private key and the Google client secret are both visible to anyone who can
   read the CloudFormation stack. For tighter handling, store the Google secret
   under a path that only the deploying role can read, or use

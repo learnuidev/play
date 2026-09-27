@@ -20,7 +20,7 @@
  * Options:
  *   --organization-id=<id>       (required) organization to assign videos to
  *   --dry-run                    report what would change, write nothing
- *   --profile=<aws-profile>      default: yoserverless
+ *   --profile=<aws-profile>      default: the profile in scripts/api-config.env
  *   --region=<aws-region>        default: us-east-1
  *   --stack=<stack-name>         default: play-backend-dev
  *   --videos-table=<name>        override table name resolution
@@ -34,6 +34,8 @@
  */
 
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const {
   DynamoDBDocumentClient,
@@ -43,8 +45,29 @@ const {
   UpdateCommand,
 } = require('@aws-sdk/lib-dynamodb');
 
+// The profile is not written down here: `scripts/api-config.env` is the one place
+// that names it. An AWS_PROFILE already in the environment wins over it.
+const API_CONFIG_FILE = path.join(__dirname, '..', '..', '..', 'scripts', 'api-config.env');
+
+function readApiConfig() {
+  const config = {};
+  for (const line of fs.readFileSync(API_CONFIG_FILE, 'utf8').split('\n')) {
+    const text = line.trim();
+    if (!text || text.startsWith('#')) continue;
+    const separator = text.indexOf('=');
+    if (separator === -1) {
+      throw new Error(`${API_CONFIG_FILE}: expected a KEY=value line, found '${text}'.`);
+    }
+    config[text.slice(0, separator).trim()] = text.slice(separator + 1).trim();
+  }
+  if (!config.API_AWS_PROFILE) {
+    throw new Error(`${API_CONFIG_FILE}: API_AWS_PROFILE is not set.`);
+  }
+  return config;
+}
+
 const DEFAULTS = {
-  profile: 'yoserverless',
+  profile: process.env.AWS_PROFILE || readApiConfig().API_AWS_PROFILE,
   region: 'us-east-1',
   stack: 'play-backend-dev',
 };

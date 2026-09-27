@@ -23,12 +23,16 @@
 #   --show               Print the current configuration and SES status, then exit
 #   --delete             Remove the parameters (disables invitation email)
 #   --stage=<name>       Backend stage  (default: dev)
-#   --profile=<name>     AWS profile    (default: yoserverless)
+#   --profile=<name>     AWS profile    (default: scripts/api-config.env)
 #   --region=<name>      AWS region     (default: us-east-1)
 #   --help               Show this help
 set -euo pipefail
 
-PROFILE="yoserverless"
+# The AWS profile is not written down here: `scripts/api-config.env` is the one
+# place that names it, and an AWS_PROFILE in the environment wins over that file.
+# shellcheck source=../../../scripts/api-config.env
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/api-config.env"
+PROFILE="${AWS_PROFILE:-$API_AWS_PROFILE}"
 REGION="us-east-1"
 STAGE="dev"
 FROM=""
@@ -38,7 +42,10 @@ SHOW=false
 DELETE=false
 
 usage() {
-  sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  # The header comment as written, minus the shebang and the `# ` that marks it:
+  # every leading comment line, stopping at the first line of code. Reading it by
+  # line number (as this used to) breaks the moment the comment changes length.
+  awk 'NR > 1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
 }
 
 while [[ $# -gt 0 ]]; do

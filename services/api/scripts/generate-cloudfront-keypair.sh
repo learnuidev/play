@@ -15,7 +15,11 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"
 
-PROFILE="yoserverless"
+# The AWS profile is not written down here: `scripts/api-config.env` is the one
+# place that names it, and an AWS_PROFILE in the environment wins over that file.
+# shellcheck source=../../../scripts/api-config.env
+. "$DIR/../../scripts/api-config.env"
+PROFILE="${AWS_PROFILE:-$API_AWS_PROFILE}"
 REGION="us-east-1"
 
 while [[ $# -gt 0 ]]; do

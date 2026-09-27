@@ -12,7 +12,7 @@
  *   node ../../scripts/get-env.mjs [options]
  *
  * Options:
- *   --profile=<name>     AWS profile to use          (default: yoserverless)
+ *   --profile=<name>     AWS profile to use          (default: scripts/api-config.env)
  *   --stage=<name>       Backend stage               (default: dev)
  *   --stack-name=<name>  Full CloudFormation stack   (default: play-backend-<stage>)
  *   --region=<name>      AWS region                  (default: us-east-1)
@@ -23,6 +23,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 
@@ -32,7 +33,7 @@ if (args.includes("--help") || args.includes("-h")) {
       "Usage: node ../../scripts/get-env.mjs [options]",
       "",
       "Options:",
-      "  --profile=<name>     AWS profile to use          (default: yoserverless)",
+      "  --profile=<name>     AWS profile to use          (default: scripts/api-config.env)",
       "  --stage=<name>       Backend stage               (default: dev)",
       "  --stack-name=<name>  Full CloudFormation stack   (default: play-backend-<stage>)",
       "  --region=<name>      AWS region                  (default: us-east-1)",
@@ -49,12 +50,38 @@ function getArg(name, fallback) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
-// Replace this with your own profile
-const DEFAULT_AWS_PROFILE = "yoserverless";
+// The profile is not written down here: `api-config.env`, beside this script, is
+// the one place that names it. It is resolved from the script's own directory
+// rather than the working directory, because this runs from inside an app.
+const API_CONFIG_FILE = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "api-config.env",
+);
+
+function readApiConfig() {
+  const config = {};
+  for (const line of fs.readFileSync(API_CONFIG_FILE, "utf8").split("\n")) {
+    const text = line.trim();
+    if (!text || text.startsWith("#")) continue;
+    const separator = text.indexOf("=");
+    if (separator === -1) {
+      throw new Error(
+        `${API_CONFIG_FILE}: expected a KEY=value line, found '${text}'.`,
+      );
+    }
+    config[text.slice(0, separator).trim()] = text
+      .slice(separator + 1)
+      .trim();
+  }
+  if (!config.API_AWS_PROFILE) {
+    throw new Error(`${API_CONFIG_FILE}: API_AWS_PROFILE is not set.`);
+  }
+  return config;
+}
 
 const profile = getArg(
   "profile",
-  process.env.AWS_PROFILE || DEFAULT_AWS_PROFILE,
+  process.env.AWS_PROFILE || readApiConfig().API_AWS_PROFILE,
 );
 const stage = getArg("stage", process.env.STAGE || "dev");
 const stackName = getArg(

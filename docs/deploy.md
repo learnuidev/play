@@ -28,6 +28,7 @@ the two settings that matter are in the dashboard and are called out below.
 | The repo pushed to GitHub (`origin`) | Vercel builds from the remote, not from your machine |
 | A Vercel account with access to that repo | Two projects, both importing it |
 | A deployed backend — `play-backend-dev` exists | The apps are useless without an API URL and a user pool |
+| The AWS profile from `scripts/api-config.env`, exported as `AWS_PROFILE` | The `aws` and `serverless` commands below take the profile from the environment, not from a flag ([AWS profile](../README.md#aws-profile)) |
 | `npm run build` passing locally | It does; both apps compile clean, which is the whole build Vercel runs |
 
 The values Vercel needs are the ones already in each app's `.env.local`, written
@@ -133,16 +134,16 @@ to pass `--callback-urls` is to say something different:
 ```bash
 # the four origins, each as a /auth/callback path and a bare origin: the path is
 # where a sign-in returns to, the bare origin is where a sign-out does
-services/api/scripts/set-auth-urls.sh --stage=dev --profile=yoserverless
+services/api/scripts/set-auth-urls.sh --stage=dev
 
 # Cognito only re-reads the list at deploy time, so the pool still holds the old
 # one until you do this
-npm run deploy --workspace play-backend -- --stage dev --aws-profile yoserverless
+npm run deploy --workspace play-backend -- --stage dev
 
 # what the pool actually accepts now
 aws cognito-idp describe-user-pool-client \
   --user-pool-id us-east-1_D7mJYJiqy --client-id 1j0lniedu2vmlelautok8bhurb \
-  --profile yoserverless --region us-east-1 \
+  --region us-east-1 \
   --query 'UserPoolClient.CallbackURLs'
 ```
 
@@ -163,11 +164,11 @@ come from two more SSM parameters rather than from anything Vercel knows:
 
 ```bash
 aws ssm put-parameter --name /play/mail/app-base-url --type String \
-  --value "https://studio.lets-play.xyz" --overwrite --profile yoserverless --region us-east-1
+  --value "https://studio.lets-play.xyz" --overwrite --region us-east-1
 aws ssm put-parameter --name /play/mail/marketplace-base-url --type String \
-  --value "https://lets-play.xyz" --overwrite --profile yoserverless --region us-east-1
+  --value "https://lets-play.xyz" --overwrite --region us-east-1
 
-npm run deploy --workspace play-backend -- --stage dev --aws-profile yoserverless
+npm run deploy --workspace play-backend -- --stage dev
 ```
 
 Leave them unset and an invitation to a real person points at

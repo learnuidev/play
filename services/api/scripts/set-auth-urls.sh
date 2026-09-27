@@ -26,7 +26,7 @@
 #   --callback-urls=<urls>  comma-separated  (default: both apps, localhost + deployed)
 #   --logout-urls=<urls>    comma-separated  (default: both apps, localhost + deployed)
 #   --stage=<name>          Backend stage    (default: dev)
-#   --profile=<name>        AWS profile      (default: yoserverless)
+#   --profile=<name>        AWS profile      (default: scripts/api-config.env)
 #   --region=<name>         AWS region       (default: us-east-1)
 #   --show                  Print what is stored and exit
 #   --delete                Remove the parameters, falling back to the defaults
@@ -34,7 +34,11 @@
 #   --help                  Show this help
 set -euo pipefail
 
-PROFILE="yoserverless"
+# The AWS profile is not written down here: `scripts/api-config.env` is the one
+# place that names it, and an AWS_PROFILE in the environment wins over that file.
+# shellcheck source=../../../scripts/api-config.env
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/api-config.env"
+PROFILE="${AWS_PROFILE:-$API_AWS_PROFILE}"
 REGION="us-east-1"
 STAGE="dev"
 CALLBACK_URLS="http://localhost:3000/auth/callback,http://localhost:3000,http://localhost:3001/auth/callback,http://localhost:3001,https://studio.lets-play.xyz/auth/callback,https://studio.lets-play.xyz,https://lets-play.xyz/auth/callback,https://lets-play.xyz"
