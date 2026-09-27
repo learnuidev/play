@@ -177,16 +177,16 @@ gets out of the way. It is the one route that is *read* rather than browsed, so
 it takes the whole window:
 
 ```
-┌───────────────────────────────────┬───────────────────────────────┐
-│ ‹ GET STARTED                     │ Course Transcript Notes …  ✓  │
-│ ┌───────────────────────────────┐ │ ──────────────────────────────│
-│ │      video, playing           │ │ 01 GET STARTED                │
-│ │      where it is talked       │ │  │ ● Why a cut lands          │
-│ │      about                    │ │  │   Cutting on motion        │
-│ └───────────────────────────────┘ │ 02 LIGHT AND SHADOW           │
-│ Why rhythm matters                │  │   Reading a histogram      │
-│ Comments                          │                               │
-│ ┌───────────────────────────────┐ │                               │
+┌───────────────────────────────────────────────────────────────────┐
+│ ‹ Why rhythm matters                            ✓ Complete lesson │
+├───────────────────────────────────┬───────────────────────────────┤
+│ ┌───────────────────────────────┐ │ Course Transcript Notes …     │
+│ │      video, playing           │ │ ──────────────────────────────│
+│ │      where it is talked       │ │ 01 GET STARTED                │
+│ │      about                    │ │  │ ● Why a cut lands          │
+│ └───────────────────────────────┘ │  │   Cutting on motion        │
+│ Comments                          │ 02 LIGHT AND SHADOW           │
+│ ┌───────────────────────────────┐ │  │   Reading a histogram      │
 │ │ Add a comment…                │ │                               │
 │ └───────────────────────────────┘ │                               │
 └───────────────────────────────────┴───────────────────────────────┘
@@ -209,17 +209,25 @@ it takes the whole window:
   is in it", and it is reached for less often than the rest — which is exactly
   why it is not a column of its own any more. The panel still opens on the
   transcript, which is what is watched *with*.
+- **One breadcrumb line, not a heading.** The lesson's name sits at the top left
+  in the same voice as the way back on a course's own page — 13px, muted, with
+  the chevron — and is itself the way back to the course, so the section the
+  lesson sits in is not named twice. What the page does *not* have is a 24px
+  title over the picture: the video is the subject, and a heading that size above
+  it made the lesson the subject instead. Beside the name are the counts of what
+  the lesson carries and, for an author, the `⋯` actions; the "Complete lesson"
+  pill keeps the far corner. Below `md` the row wraps — breadcrumb, counts and
+  actions, then the pill — because a name squeezed between two controls is not a
+  name. The tab strip and the picture then start on the same line, which is what
+  the title being under the picture made impossible.
 - **Two columns, six to four.** The video takes 60% of the width and the tab
   panel the rest — watched and read at once, which is the whole point of a
   transcript that follows the playhead. It is a ratio rather than a floor, so
   both tracks grow with the window and the panel stays a readable column of prose
-  on anything wide enough to hold two. The title sits in the video's half, under
-  the picture: the video is what the lesson was opened for, so it gets the top of
-  the page and its name reads as a caption to it. The panel still starts on the
-  video's first line. Below `lg` they stack and the page scrolls normally, because
-  a phone has no second half to give. The classroom gets a wider canvas than the
-  rest of the app for the same reason: three fifths of a reading measure is not a
-  video.
+  on anything wide enough to hold two. Below `lg` they stack and the page scrolls
+  normally, because a phone has no second half to give. The classroom gets a
+  wider canvas than the rest of the app for the same reason: three fifths of a
+  reading measure is not a video.
 - **The discussion is under the video**
   (`components/content/content-comments.tsx`), not in the panel beside it. A
   comment is about what is playing, so it is read where the playing is; as a tab

@@ -157,7 +157,11 @@ const NO_SCROLLBAR =
   "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 
 /**
- * What the lesson carries, on one quiet line above its name.
+ * What the lesson carries, on the breadcrumb line beside its name.
+ *
+ * Beside rather than above, which is where it sat when the name was the page's
+ * one large heading: a heading has room to be annotated, a 13px line does not,
+ * and the counts are small enough to be the tail of it.
  *
  * The comments are not counted here any more, and no longer on the tab strip
  * either: the discussion sits under the video and says how many it has where it
@@ -916,22 +920,92 @@ function ClassroomBody({
   const completed = data?.viewer.completed ?? false;
 
   return (
-    // Two rows on a desktop screen: the way back, and a split that fills
-    // whatever is left. `minmax(0, 1fr)` rather than `1fr` so the split can be
-    // shorter than its contents — which is what lets the panel scroll inside
-    // itself instead of the page scrolling as a whole.
-    <div className="grid gap-x-5 gap-y-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-5">
-      <div className="flex items-center justify-between gap-4">
+    // Two rows on a desktop screen: the breadcrumb — which lesson this is, what
+    // it carries, and the way out of it — and a split that fills whatever is
+    // left. `minmax(0, 1fr)` rather than `1fr` so the split can be shorter than
+    // its contents, which is what lets the columns scroll inside themselves
+    // instead of the page scrolling as a whole.
+    <div className="grid gap-x-4 gap-y-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-4">
+      {/* A breadcrumb, not a heading: one quiet line saying which lesson this
+          is, in the same voice as the way back on a course's own page. The way
+          back *is* that line — the lesson's name is the one thing up here worth
+          clicking to leave the lesson, and where it goes is said by `title`
+          rather than by a section's name sitting beside it, which is what this
+          line used to carry.
+
+          What it replaced was a 24px title under the picture, and that is the
+          part worth keeping gone: a heading that size made the lesson the
+          subject of its own page, when the video is. Below `md` the row wraps —
+          the breadcrumb, then what the lesson carries and its actions, then the
+          pill — because a name squeezed between two controls is not a name at
+          700 pixels either. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <Link
           href={routes.course(spaceId)}
-          className="inline-flex w-fit items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          title={`Back to ${section ? section.title : "your courses"}`}
+          className="inline-flex min-w-0 items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
-          <ChevronLeftIcon className="size-4" />
-          {section ? section.title : "Spaces"}
+          <ChevronLeftIcon className="size-4 shrink-0" />
+          {/* The name is the link's own text, so what a screen reader reads is
+              what is on the screen — and it truncates, because a lesson called
+              half a sentence must not push the pill off the page. */}
+          <h1 className="truncate">{content.title}</h1>
         </Link>
 
+        <div className="flex w-full min-w-0 items-center gap-3 md:w-auto md:flex-1">
+          <Meta content={content} />
+
+          {canEdit && orgId && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    // Filed to the right beside the pill on a wide screen, and
+                    // left next to the counts on a narrow one, where it shares
+                    // the line with them rather than with a button a row below.
+                    className="size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground md:ml-auto"
+                    aria-label="Lesson actions"
+                  >
+                    <MoreHorizontalIcon />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  {/* The menu closes before this opens: a dialog inside a menu
+                      item fights the menu for focus. */}
+                  <DropdownMenuItem
+                    onSelect={() => setTimeout(() => setEditing(true), 0)}
+                  >
+                    <PencilIcon />
+                    Edit details
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={deleteContent}
+                  >
+                    <Trash2Icon />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <ContentDetailsDialog
+                orgId={orgId}
+                spaceId={spaceId}
+                content={content}
+                open={editing}
+                onOpenChange={setEditing}
+              />
+            </>
+          )}
+        </div>
+
         {/* The opposite corner to the way back, and the opposite thing: one
-            leaves the lesson, the other finishes it. */}
+            leaves the lesson, the other finishes it. `ml-auto` is what keeps it
+            in that corner on a narrow window, where the counts and the lesson's
+            actions have taken a line of their own. */}
         <Button
           variant={completed ? "outline" : "default"}
           size="lg"
@@ -940,8 +1014,8 @@ function ClassroomBody({
           // so without a second colour saying it.
           className={
             completed
-              ? "shrink-0 gap-1.5 rounded-full border-emerald-600/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:text-emerald-200"
-              : "shrink-0 gap-1.5 rounded-full"
+              ? "ml-auto shrink-0 gap-1.5 rounded-full border-emerald-600/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:text-emerald-200"
+              : "ml-auto shrink-0 gap-1.5 rounded-full"
           }
           onClick={() =>
             completion.mutate(completed, {
@@ -990,12 +1064,8 @@ function ClassroomBody({
           now lives in there too. Below `lg` the two stack and the page scrolls
           normally, because a phone has no second half to give.
 
-          The title sits in the video's own column, under the picture: the video
-          is what you opened the lesson for, so it gets the top of the page, and
-          the name of what you are watching reads as a caption to it — with the
-          lesson's conversation under that, addressed to the lesson the caption
-          names. The panel still starts on the video's first line, because it is
-          the column that was never pushed down. */}
+          Both columns start on the same line, under the header: the video at the
+          top of its own column, and the panel's tab strip at the top of its. */}
       {/* Fixed to the corner of the page, not of the video: see the card. */}
       {next && upNext.seconds !== null && (
         <PlayingNext
@@ -1088,68 +1158,7 @@ function ClassroomBody({
             </div>
           )}
 
-          {/* Under the picture, over the panel's shoulder: the lesson's name and
-              what it carries, with its own actions on the right.
-
-              `pr-2` is there to be bled into: the actions button hangs its glyph
-              eight pixels outside the text edge with a negative margin so the
-              dots line up with the video, and the column around this is a scroll
-              container now — an overflow of eight pixels would be a horizontal
-              scroll area the width of a glint. The padding is the room the
-              margin needs, so the row still ends where the picture does. */}
-          <header className="mt-5 flex items-start justify-between gap-4 pr-2">
-            <div className="min-w-0">
-              <Meta content={content} />
-              <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight">
-                {content.title}
-              </h1>
-            </div>
-
-            {canEdit && orgId && (
-              <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="-mr-2 size-8 shrink-0 text-muted-foreground/60 transition-colors hover:text-foreground"
-                      aria-label="Lesson actions"
-                    >
-                      <MoreHorizontalIcon />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    {/* The menu closes before this opens: a dialog inside a menu
-                        item fights the menu for focus. */}
-                    <DropdownMenuItem
-                      onSelect={() => setTimeout(() => setEditing(true), 0)}
-                    >
-                      <PencilIcon />
-                      Edit details
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={deleteContent}
-                    >
-                      <Trash2Icon />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-
-                <ContentDetailsDialog
-                  orgId={orgId}
-                  spaceId={spaceId}
-                  content={content}
-                  open={editing}
-                  onOpenChange={setEditing}
-                />
-              </>
-            )}
-          </header>
-
-          {/* Under the video, with the lesson's name: a discussion is about what
+          {/* Under the video, where the picture is: a discussion is about what
               is playing, so it reads where the playing is. It was the last of
               the panel's tabs before this — in a column beside the picture on a
               wide screen, and behind a press below it on a phone, which is a
@@ -1169,8 +1178,6 @@ function ClassroomBody({
               no playhead to move, and a control that seeks nowhere is worse than
               plain text. */}
           <section className="mt-6 grid gap-3">
-            <h2 className="text-xl font-semibold tracking-tight">Comments</h2>
-
             <ContentComments
               contentId={content.contentId}
               viewerId={viewerId}

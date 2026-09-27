@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { usePathname } from 'next/navigation';
-import { SidebarInset, SidebarProvider } from '@ui/components/ui/sidebar';
-import { cn } from '@ui/lib/utils';
-import { lessonRoute } from '@/lib/routes';
-import { CommunitySidebar } from './community-sidebar';
-import { OrgRail } from './org-rail';
-import { OrgTabs } from './org-tabs';
+import { usePathname } from "next/navigation";
+import { SidebarInset, SidebarProvider } from "@ui/components/ui/sidebar";
+import { cn } from "@ui/lib/utils";
+import { lessonRoute } from "@/lib/routes";
+import { CommunitySidebar } from "./community-sidebar";
+import { OrgRail } from "./org-rail";
+import { OrgTabs } from "./org-tabs";
 
 /**
  * The three-column community frame: the organization rail, the community's
@@ -23,7 +23,13 @@ import { OrgTabs } from './org-tabs';
  * course it belongs to is one of the lesson's own tabs now, and the link back
  * to the space sits at the top of the page.
  */
-export function AppShell({ orgId, children }: { orgId: string; children: React.ReactNode }) {
+export function AppShell({
+  orgId,
+  children,
+}: {
+  orgId: string;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const lesson = lessonRoute(pathname);
 
@@ -41,8 +47,8 @@ export function AppShell({ orgId, children }: { orgId: string; children: React.R
                 past this the two halves stop being a pair. */}
             <div
               className={cn(
-                'mx-auto w-full',
-                lesson ? 'h-full max-w-[1600px] px-6 py-6' : 'max-w-5xl px-6 py-8',
+                "mx-auto w-full",
+                lesson ? "h-full max-w-[1600px] p-4" : "max-w-5xl p-4",
               )}
             >
               {children}
