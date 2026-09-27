@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# builds
+build/
+dist/
+.tsbuildinfo
+*.tsbuildinfo
+
+# serverless
+.serverless/
+.build/
+
+# misc
+.DS_Store
+
+# debug
+*.log
+npm-debug.log*
+
+# env / secrets — the .example files are tracked, the real ones are not
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.local.example
+
+# pem
+*.pem

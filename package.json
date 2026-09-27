@@ -1,0 +1,29 @@
+{
+  "name": "play",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Play — one repository for the creator studio, the learner marketplace, and the AWS backend they share.",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm run dev:studio",
+    "dev:studio": "npm run dev --workspace play-studio",
+    "dev:marketplace": "npm run dev --workspace play-marketplace",
+    "build": "npm run build --workspace play-studio && npm run build --workspace play-marketplace",
+    "build:studio": "npm run build --workspace play-studio",
+    "build:marketplace": "npm run build --workspace play-marketplace",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "get-env": "npm run get-env --workspace play-studio && npm run get-env --workspace play-marketplace",
+    "deploy": "npm run deploy --workspace play-backend",
+    "deploy:dev": "npm run deploy:dev --workspace play-backend"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
