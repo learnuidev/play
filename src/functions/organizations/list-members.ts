@@ -2,7 +2,7 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireOrganizationAccess } from '../../lib/access';
 import { requireUser } from '../../lib/auth';
 import { encodeNextToken, handle, ok, parsePaging, pathParam } from '../../lib/http';
-import { toApiMember } from '../../lib/members';
+import { invitationUrl, toApiMember } from '../../lib/members';
 import { getOrganization, listMembers } from '../../lib/organizations';
 
 /**
@@ -10,7 +10,8 @@ import { getOrganization, listMembers } from '../../lib/organizations';
  *
  * Readable by every member — knowing who else is in the room is part of being
  * in it — but only an admin is shown email addresses, because only an admin can
- * do anything with one.
+ * do anything with one. Admins also get the invitation link, which is the
+ * invite path that does not depend on mail being set up at all.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const user = requireUser(event);
@@ -25,6 +26,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     members: members.map((member) => toApiMember(member, user, role === 'ADMIN')),
     role,
     ownerId: organization?.ownerId,
+    ...(role === 'ADMIN' ? { inviteUrl: invitationUrl(orgId) } : {}),
     nextToken: encodeNextToken(lastEvaluatedKey),
   });
 }

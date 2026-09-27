@@ -210,13 +210,19 @@ provider:
           Action:
             - translate:TranslateText
           Resource: "*"
-        # Invitation email. Scoped to the configured sending identity rather
-        # than to "*": sending invitations is the only thing here that sends
-        # mail, and it only ever sends as that one address.
+        # Invitation email. The condition rather than a scoped ARN is what
+        # keeps this harmless when no sender is configured: Serverless will not
+        # take an `Fn::If` inside a role statement, and an ARN built from an
+        # empty identity name would not resolve. With the from-address unset the
+        # condition matches nothing, so the grant is inert — which is exactly the
+        # state this deployment is in until scripts/set-mail-sender.sh has run.
         - Effect: Allow
           Action:
             - ses:SendEmail
-          Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${self:custom.mail.fromAddress}"
+          Resource: "*"
+          Condition:
+            StringEquals:
+              ses:FromAddress: ${self:custom.mail.fromAddress}
         - Effect: Allow
           Action: iam:PassRole
           Resource:
