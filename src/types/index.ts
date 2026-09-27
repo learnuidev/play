@@ -422,6 +422,359 @@ export interface SpaceThumbnailResponse {
   expiresAt: number;
 }
 
+/** Editing what a course says about itself, from the overview tab. */
+export interface UpdateSpacePayload {
+  title?: string;
+  description?: string;
+  /** An empty string clears the accent colour back to one derived from the id. */
+  color?: string;
+  type?: SpaceType;
+  /** A date-only string or epoch ms; only meaningful on a scheduled course. */
+  startAt?: number | string;
+  dripIntervalDays?: number;
+}
+
+/** What the overview's four cards read. */
+export interface SpaceStats {
+  students: number;
+  sections: number;
+  contents: number;
+  /**
+   * Always zero today: nothing in this API is a quiz yet. The tile is here so
+   * the overview has its full shape when quizzes arrive.
+   */
+  quizzes: number;
+}
+
+export interface SpaceStatsResponse {
+  stats: SpaceStats;
+  /** Whether a count hit a read ceiling and is short of the real total. */
+  truncated: boolean;
+}
+
+/**
+ * What somebody is to a course.
+ *
+ * Not the organization's roles: an organization's viewer can be a course's
+ * instructor, and a course is taken by people who are not in the organization at
+ * all.
+ */
+export type SpaceMemberRole = 'STUDENT' | 'ASSISTANT' | 'INSTRUCTOR';
+
+export const SPACE_MEMBER_ROLES: SpaceMemberRole[] = ['STUDENT', 'ASSISTANT', 'INSTRUCTOR'];
+
+export const SPACE_MEMBER_ROLE_LABELS: Record<SpaceMemberRole, string> = {
+  STUDENT: 'Student',
+  ASSISTANT: 'Assistant',
+  INSTRUCTOR: 'Instructor',
+};
+
+export const SPACE_MEMBER_ROLE_DESCRIPTIONS: Record<SpaceMemberRole, string> = {
+  STUDENT: 'Taking the course — the people the student count is made of.',
+  ASSISTANT: 'Helping run it: sees the roster and everything in the course.',
+  INSTRUCTOR: 'Runs the course, and is named as the one who does.',
+};
+
+/** A membership of a course, as the API hands it out. */
+export interface SpaceMemberApi {
+  /** Cognito `sub`, or the invited address while the invitation is pending. */
+  userId: string;
+  role: SpaceMemberRole;
+  /** The invitation has not been accepted, so the role is not in force yet. */
+  pending: boolean;
+  /** Sent to whoever may manage the roster, and to the invited person. */
+  email?: string;
+  isYou: boolean;
+  /** This pending invitation is addressed to the signed-in user. */
+  isInvitationForYou: boolean;
+  invitedBy?: string;
+  joinedAt: number;
+}
+
+export interface ListSpaceMembersResponse {
+  members: SpaceMemberApi[];
+  /** Whether the caller may invite, remove, or change roles. */
+  canManage: boolean;
+  /** Where an invitation to this course is claimed, for handing out by hand. */
+  inviteUrl?: string;
+  nextToken?: string;
+}
+
+export interface InviteSpaceMemberPayload {
+  email: string;
+  role: SpaceMemberRole;
+}
+
+export interface InviteSpaceMemberResponse {
+  member: SpaceMemberApi;
+  delivery: MailDelivery;
+  inviteUrl: string;
+}
+
+/** Re-sending an outstanding course invitation, optionally correcting its role. */
+export interface ResendSpaceInvitationResponse {
+  member: SpaceMemberApi;
+  delivery: MailDelivery;
+  inviteUrl: string;
+}
+
+export interface SpaceMemberResponse {
+  member: SpaceMemberApi;
+}
+
+/**
+ * A course invitation addressed to the signed-in user's own email address,
+ * wherever it came from: the offer, and enough of the course to decide about it.
+ */
+export interface MySpaceInvitation {
+  spaceId: string;
+  spaceTitle: string;
+  orgId: string;
+  organizationName: string;
+  role: SpaceMemberRole;
+  invitedBy?: string;
+  invitedAt: number;
+}
+
+export interface ListMySpaceInvitationsResponse {
+  invitations: MySpaceInvitation[];
+}
+
+/**
+ * A course the caller is in.
+ *
+ * The organization's name travels with it because a course member need not be a
+ * member of the organization around it: for a guest, the course list is the only
+ * thing they can see, and a course with no indication of where it came from is
+ * half a name.
+ */
+export interface MyCourse {
+  space: Space;
+  role: SpaceMemberRole;
+  organizationName: string;
+}
+
+export interface ListMyCoursesResponse {
+  courses: MyCourse[];
+}
+
+/**
+ * A group of a course's members — a September intake, a team, a tutorial group.
+ *
+ * A member may be in several: a cohort is a label they wear, not a container they
+ * live in.
+ */
+export interface Cohort {
+  cohortId: string;
+  spaceId: string;
+  organizationId: string;
+  name: string;
+  description: string;
+  /** When its run begins, epoch ms. Absent means unscheduled. */
+  startAt?: number;
+  /** When it ends, epoch ms. Absent means open-ended. */
+  endAt?: number;
+  memberCount: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A cohort together with the members in it: ids, resolved against the roster. */
+export interface CohortWithMembers extends Cohort {
+  memberIds: string[];
+}
+
+export interface CreateCohortPayload {
+  name: string;
+  description?: string;
+  /** A date-only string or epoch ms. */
+  startAt?: number | string;
+  endAt?: number | string;
+}
+
+export interface UpdateCohortPayload {
+  name?: string;
+  description?: string;
+  /** `null` clears the date rather than storing an empty one. */
+  startAt?: number | string | null;
+  endAt?: number | string | null;
+}
+
+export interface ListCohortsResponse {
+  cohorts: CohortWithMembers[];
+}
+
+export interface CohortResponse {
+  cohort: CohortWithMembers;
+  /** Whether the call is what put the member in — absent on create and update. */
+  added?: boolean;
+  removed?: boolean;
+}
+
+/** What a reward is, which is also how it is handed over. */
+export type RewardKind = 'COUPON' | 'GIFT_CARD' | 'CUSTOM';
+
+export const REWARD_KINDS: RewardKind[] = ['COUPON', 'GIFT_CARD', 'CUSTOM'];
+
+export const REWARD_KIND_LABELS: Record<RewardKind, string> = {
+  COUPON: 'Coupon',
+  GIFT_CARD: 'Gift card',
+  CUSTOM: 'Custom',
+};
+
+export const REWARD_KIND_DESCRIPTIONS: Record<RewardKind, string> = {
+  COUPON: 'A discount code, generated for each member who earns it.',
+  GIFT_CARD: 'A code for a stated amount, generated for each member who earns it.',
+  CUSTOM: 'Something handed over by hand — the reward says what to do.',
+};
+
+/** What a learner has to do to earn a reward. */
+export type RewardMilestoneType = 'LESSONS_COMPLETED' | 'PERCENT_COMPLETE';
+
+export const REWARD_MILESTONE_TYPES: RewardMilestoneType[] = [
+  'LESSONS_COMPLETED',
+  'PERCENT_COMPLETE',
+];
+
+export const REWARD_MILESTONE_LABELS: Record<RewardMilestoneType, string> = {
+  LESSONS_COMPLETED: 'Lessons completed',
+  PERCENT_COMPLETE: 'Course completed',
+};
+
+/** The unit a milestone's value is counted in, for a form and a list. */
+export const REWARD_MILESTONE_UNITS: Record<RewardMilestoneType, string> = {
+  LESSONS_COMPLETED: 'lessons',
+  PERCENT_COMPLETE: '% of the course',
+};
+
+export interface RewardMilestone {
+  type: RewardMilestoneType;
+  value: number;
+}
+
+/** A reward a course offers for reaching a milestone. */
+export interface SpaceReward {
+  rewardId: string;
+  spaceId: string;
+  organizationId: string;
+  name: string;
+  description: string;
+  kind: RewardKind;
+  milestone: RewardMilestone;
+  /** Face value in cents. Only meaningful on a gift card. */
+  amountCents?: number;
+  /** ISO-4217 code, e.g. `USD`. Only meaningful on a gift card. */
+  currency?: string;
+  /** Prefix generated codes carry. */
+  codePrefix?: string;
+  /** What to do to claim it, for a reward handed over by hand. */
+  instructions?: string;
+  /** How many may ever be granted. Absent means as many as are earned. */
+  grantLimit?: number;
+  active: boolean;
+  grantCount: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type RewardGrantStatus = 'ISSUED' | 'REDEEMED' | 'REVOKED';
+
+export const REWARD_GRANT_STATUS_LABELS: Record<RewardGrantStatus, string> = {
+  ISSUED: 'Issued',
+  REDEEMED: 'Redeemed',
+  REVOKED: 'Revoked',
+};
+
+/** One reward, held by one member. */
+export interface RewardGrant {
+  rewardId: string;
+  userId: string;
+  spaceId: string;
+  organizationId: string;
+  /** The code the member redeems, on the kinds that carry one. */
+  code?: string;
+  status: RewardGrantStatus;
+  /** An instructor's `sub`, or `SYSTEM` when a milestone issued it. */
+  grantedBy: string;
+  progress?: number;
+  note?: string;
+  grantedAt: number;
+  redeemedAt?: number;
+  updatedAt: number;
+}
+
+/** A reward and the grants made under it, as the rewards tab reads it. */
+export interface RewardWithGrants extends SpaceReward {
+  grants: RewardGrant[];
+}
+
+export interface CreateRewardPayload {
+  name: string;
+  description?: string;
+  kind: RewardKind;
+  milestone: RewardMilestone;
+  amountCents?: number;
+  currency?: string;
+  codePrefix?: string;
+  instructions?: string;
+  grantLimit?: number;
+  active?: boolean;
+}
+
+/** Every field optional: the form sends what changed and nothing else. */
+export interface UpdateRewardPayload {
+  name?: string;
+  description?: string;
+  milestone?: RewardMilestone;
+  amountCents?: number | null;
+  currency?: string | null;
+  codePrefix?: string | null;
+  instructions?: string | null;
+  grantLimit?: number | null;
+  active?: boolean;
+}
+
+export interface ListRewardsResponse {
+  rewards: RewardWithGrants[];
+}
+
+export interface RewardResponse {
+  reward: RewardWithGrants;
+}
+
+export interface GrantRewardPayload {
+  /** One of these two addresses the member. */
+  userId?: string;
+  email?: string;
+  code?: string;
+  note?: string;
+}
+
+export interface RewardGrantResponse {
+  grant: RewardGrant;
+  /** Whether this call is what created the grant. */
+  created: boolean;
+}
+
+export interface RevokeRewardGrantResponse {
+  /** Absent when an unused grant was removed rather than marked revoked. */
+  grant: RewardGrant | null;
+  removed: boolean;
+}
+
+/** A reward the signed-in learner holds, with what it is and where it came from. */
+export interface MyReward extends RewardGrant {
+  reward: SpaceReward;
+  spaceTitle: string;
+  orgId: string;
+}
+
+export interface ListMyRewardsResponse {
+  rewards: MyReward[];
+}
+
 /** What a piece of content *is*. One value today, a union so more can join it. */
 export type ContentType = 'VIDEO';
 
@@ -508,6 +861,11 @@ export interface ContentViewerState {
 /** The answer to marking a lesson done, or taking it back. */
 export interface CompletionResponse {
   completed: boolean;
+  /**
+   * Rewards this lesson's completion earned, if any — the milestone check runs
+   * in the same request, so the page can say what was won straight away.
+   */
+  earned?: RewardGrant[];
 }
 
 export interface CreateSectionPayload {

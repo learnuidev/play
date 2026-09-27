@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { contentKeys } from './content.queries';
+import { rewardKeys } from '@/modules/reward/reward.queries';
 import { sectionKeys } from '@/modules/section/section.queries';
+import { spaceKeys } from '@/modules/space/space.queries';
 import type { ContentResponse } from '@/types';
 
 /**
@@ -19,7 +21,7 @@ export function useToggleCompletion(contentId: string, spaceId: string) {
     mutationFn: (completed: boolean) =>
       completed ? api.uncompleteContent(contentId) : api.completeContent(contentId),
 
-    onSuccess: ({ completed }) => {
+    onSuccess: ({ completed, earned }) => {
       qc.setQueryData<ContentResponse>(contentKeys.detail(contentId), (prev) =>
         prev ? { ...prev, viewer: { ...prev.viewer, completed } } : prev,
       );
@@ -28,6 +30,15 @@ export function useToggleCompletion(contentId: string, spaceId: string) {
       // page does, so they are refetched rather than left showing the old state.
       qc.invalidateQueries({ queryKey: contentKeys.detail(contentId) });
       qc.invalidateQueries({ queryKey: sectionKeys.outline(spaceId) });
+
+      // Finishing a lesson is the moment a milestone can be crossed, so the
+      // course's rewards may have changed too — what the caller now holds is
+      // refetched rather than left stale until something else asks for it.
+      if (earned && earned.length > 0) {
+        qc.invalidateQueries({ queryKey: rewardKeys.mine() });
+        qc.invalidateQueries({ queryKey: rewardKeys.list(spaceId) });
+        qc.invalidateQueries({ queryKey: spaceKeys.stats(spaceId) });
+      }
     },
   });
 }

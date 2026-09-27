@@ -6,6 +6,7 @@ export const spaceKeys = {
   list: (orgId: string) => ['spaces', 'list', orgId] as const,
   detail: (spaceId: string) => ['space', spaceId] as const,
   thumbnail: (spaceId: string) => ['space', spaceId, 'thumbnail'] as const,
+  stats: (spaceId: string) => ['space', spaceId, 'stats'] as const,
 };
 
 /** Every space the organization owns. Newest first, as the API returns them. */
@@ -60,6 +61,39 @@ export function useUploadSpaceThumbnail() {
     onSuccess: ({ space }) => {
       qc.setQueryData(spaceKeys.detail(space.spaceId), { space });
       qc.invalidateQueries({ queryKey: spaceKeys.thumbnail(space.spaceId) });
+    },
+  });
+}
+
+/**
+ * The overview's four cards.
+ *
+ * Held apart from the space itself: the page renders on the course, and these
+ * numbers arrive beside it — a count that is slow to read must not hold up the
+ * title above it.
+ */
+export function useSpaceStats(spaceId: string) {
+  return useQuery({
+    queryKey: spaceKeys.stats(spaceId),
+    queryFn: () => api.getSpaceStats(spaceId),
+    enabled: Boolean(spaceId),
+  });
+}
+
+/**
+ * Edits what a course says about itself.
+ *
+ * The list is invalidated as well as the detail: a course's title is on the
+ * spaces page too, and renaming it here must not leave the old name behind
+ * there.
+ */
+export function useUpdateSpace(spaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Parameters<typeof api.updateSpace>[1]) => api.updateSpace(spaceId, patch),
+    onSuccess: ({ space }) => {
+      qc.setQueryData(spaceKeys.detail(spaceId), { space });
+      qc.invalidateQueries({ queryKey: spaceKeys.list(space.organizationId) });
     },
   });
 }

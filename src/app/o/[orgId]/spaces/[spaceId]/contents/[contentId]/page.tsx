@@ -880,8 +880,24 @@ export default function ContentPage() {
           }
           onClick={() =>
             completion.mutate(completed, {
-              onSuccess: ({ completed: nowComplete }) => {
+              onSuccess: ({ completed: nowComplete, earned }) => {
                 if (nowComplete) toast.success("Lesson marked as complete");
+
+                // What the milestone check issued, said out loud: a reward
+                // nobody is told about is not a reward, and the tab it lives on
+                // is not where somebody finishing a lesson is looking.
+                if (earned && earned.length > 0) {
+                  toast.success(
+                    earned.length === 1
+                      ? "You earned a reward"
+                      : `You earned ${earned.length} rewards`,
+                    {
+                      description: earned
+                        .map((grant) => grant.code ?? "A reward to claim")
+                        .join(" · "),
+                    },
+                  );
+                }
               },
               onError: (err) =>
                 toast.error(

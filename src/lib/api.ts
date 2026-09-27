@@ -1,24 +1,31 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
   AudioResponse,
+  CohortResponse,
   Comment,
   ContentFileResponse,
   ContentMutationResponse,
   ContentResponse,
   CompletionResponse,
+  CreateCohortPayload,
   CreateCommentPayload,
   CreateContentPayload,
   CreateLoopPayload,
   CreateOrganizationPayload,
   CreateOrganizationResponse,
+  CreateRewardPayload,
   CreateSectionPayload,
   CreateSpacePayload,
   CreateSpaceResponse,
   CreateVideoPayload,
   CreateVideoResponse,
   FavouriteResponse,
+  GrantRewardPayload,
   InviteMemberPayload,
   InviteMemberResponse,
+  InviteSpaceMemberPayload,
+  InviteSpaceMemberResponse,
+  ListCohortsResponse,
   ListCommentsResponse,
   ListContentFilesResponse,
   ListLoopsResponse,
@@ -26,25 +33,40 @@ import type {
   ListContentsResponse,
   ListFavouritesResponse,
   ListMyInvitationsResponse,
+  ListMyCoursesResponse,
+  ListMyRewardsResponse,
+  ListMySpaceInvitationsResponse,
   ListOrgMembersResponse,
   ListOrganizationsResponse,
   ListPlaylistResponse,
+  ListRewardsResponse,
   ListSectionsResponse,
+  ListSpaceMembersResponse,
   ListSpacesResponse,
   ListVideosResponse,
   LoopResponse,
   OrgMemberResponse,
   OrgRole,
   ResendInvitationResponse,
+  ResendSpaceInvitationResponse,
   PlaylistResponse,
+  RevokeRewardGrantResponse,
+  RewardGrantResponse,
+  RewardResponse,
   SectionResponse,
+  SpaceMemberResponse,
+  SpaceMemberRole,
+  SpaceStatsResponse,
   SpaceThumbnailResponse,
   StreamResponse,
   SubtitleResponse,
   ThumbnailResponse,
+  UpdateCohortPayload,
   UpdateContentPayload,
   UpdateLoopPayload,
+  UpdateRewardPayload,
   UpdateSectionPayload,
+  UpdateSpacePayload,
   UploadContentFilePayload,
   UploadContentFileResponse,
   UploadSpaceThumbnailResponse,
@@ -248,6 +270,125 @@ export const api = {
    * filed under it. One request paints the whole course page.
    */
   listSections: (spaceId: string) => request<ListSectionsResponse>(`/spaces/${spaceId}/sections`),
+
+  /** Edits what a course says about itself, from the overview tab. */
+  updateSpace: (spaceId: string, patch: UpdateSpacePayload) =>
+    request<CreateSpaceResponse>(`/spaces/${spaceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  /** The overview's four cards: students, sections, lessons, quizzes. */
+  getSpaceStats: (spaceId: string) => request<SpaceStatsResponse>(`/spaces/${spaceId}/stats`),
+
+  /**
+   * The course's roster: who is taking it, and which invitations are still
+   * outstanding. Addresses come back only for whoever may manage it.
+   */
+  listSpaceMembers: (spaceId: string) =>
+    request<ListSpaceMembersResponse>(`/spaces/${spaceId}/members`),
+
+  inviteSpaceMember: (spaceId: string, payload: InviteSpaceMemberPayload) =>
+    request<InviteSpaceMemberResponse>(`/spaces/${spaceId}/members`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * A course member's id goes in the path, and while their invitation is
+   * pending that id is their email address — hence the encoding.
+   */
+  updateSpaceMember: (spaceId: string, memberId: string, role: SpaceMemberRole) =>
+    request<SpaceMemberResponse>(`/spaces/${spaceId}/members/${encodeURIComponent(memberId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+
+  /** Removes a member, or withdraws an invitation nobody accepted yet. */
+  removeSpaceMember: (spaceId: string, memberId: string) =>
+    request<void>(`/spaces/${spaceId}/members/${encodeURIComponent(memberId)}`, {
+      method: 'DELETE',
+    }),
+
+  /** Sends an outstanding course invitation again, optionally fixing its role. */
+  resendSpaceInvitation: (spaceId: string, memberId: string, role?: SpaceMemberRole) =>
+    request<ResendSpaceInvitationResponse>(
+      `/spaces/${spaceId}/members/${encodeURIComponent(memberId)}/invitation`,
+      { method: 'POST', body: JSON.stringify(role ? { role } : {}) },
+    ),
+
+  /** Claims the course invitation addressed to the caller's own verified email. */
+  acceptSpaceInvitation: (spaceId: string) =>
+    request<SpaceMemberResponse>(`/spaces/${spaceId}/invitation`, { method: 'POST' }),
+
+  /** Course invitations addressed to the caller, in every organization. */
+  listMySpaceInvitations: () =>
+    request<ListMySpaceInvitationsResponse>('/me/space-invitations'),
+
+  /** The courses the caller is in, wherever they are. */
+  listMyCourses: () => request<ListMyCoursesResponse>('/me/spaces'),
+
+  /** A course's cohorts, each with the ids of the members in it. */
+  listCohorts: (spaceId: string) => request<ListCohortsResponse>(`/spaces/${spaceId}/cohorts`),
+
+  createCohort: (spaceId: string, payload: CreateCohortPayload) =>
+    request<CohortResponse>(`/spaces/${spaceId}/cohorts`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateCohort: (cohortId: string, patch: UpdateCohortPayload) =>
+    request<CohortResponse>(`/cohorts/${cohortId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteCohort: (cohortId: string) => request<void>(`/cohorts/${cohortId}`, { method: 'DELETE' }),
+
+  /** Putting a member in a cohort, and taking them out of it. Both idempotent. */
+  addCohortMember: (cohortId: string, memberId: string) =>
+    request<CohortResponse>(`/cohorts/${cohortId}/members/${encodeURIComponent(memberId)}`, {
+      method: 'PUT',
+    }),
+
+  removeCohortMember: (cohortId: string, memberId: string) =>
+    request<CohortResponse>(`/cohorts/${cohortId}/members/${encodeURIComponent(memberId)}`, {
+      method: 'DELETE',
+    }),
+
+  /** A course's rewards, each with the grants made under it. */
+  listRewards: (spaceId: string) => request<ListRewardsResponse>(`/spaces/${spaceId}/rewards`),
+
+  createReward: (spaceId: string, payload: CreateRewardPayload) =>
+    request<RewardResponse>(`/spaces/${spaceId}/rewards`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateReward: (rewardId: string, patch: UpdateRewardPayload) =>
+    request<RewardResponse>(`/rewards/${rewardId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteReward: (rewardId: string) => request<void>(`/rewards/${rewardId}`, { method: 'DELETE' }),
+
+  /** Hands a reward to a member by hand, rather than by their earning it. */
+  grantReward: (rewardId: string, payload: GrantRewardPayload) =>
+    request<RewardGrantResponse>(`/rewards/${rewardId}/grants`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /** Takes a reward back: removed while unused, revoked once it has been used. */
+  revokeRewardGrant: (rewardId: string, memberId: string) =>
+    request<RevokeRewardGrantResponse>(
+      `/rewards/${rewardId}/grants/${encodeURIComponent(memberId)}`,
+      { method: 'DELETE' },
+    ),
+
+  /** What the caller has earned, across every course. */
+  listMyRewards: () => request<ListMyRewardsResponse>('/me/rewards'),
 
   getSection: (sectionId: string) => request<SectionResponse>(`/sections/${sectionId}`),
 

@@ -1,109 +1,42 @@
-'use client';
-
-import { ArrowRightIcon, Loader2Icon, MailPlusIcon } from 'lucide-react';
-import { toast } from 'sonner';
-import { ORG_ROLE_LABELS, type MyInvitation } from '@/types';
-import { useAcceptInvitation } from '@/modules/organization/member.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { PageCard } from '@/components/shell/page-card';
-import { cn } from '@/lib/utils';
+import { InvitationsList } from './invitations-list';
+import type { MyInvitation, MySpaceInvitation } from '@/types';
 
 /**
- * One invitation, with the one thing that can be done about it.
+ * The invitations waiting for the signed-in account, wherever they came from, as
+ * a panel on a page that has other things on it.
  *
- * Accepting is all there is: there is no token to carry and nobody to approve —
- * the invitation names an email address, and being signed in as that address is
- * what accepting means.
- */
-function InvitationRow({
-  invitation,
-  highlighted,
-}: {
-  invitation: MyInvitation;
-  /** The invitation the link that brought them here named. */
-  highlighted: boolean;
-}) {
-  const accept = useAcceptInvitation(invitation.orgId);
-
-  async function handleAccept() {
-    try {
-      await accept.mutateAsync();
-      toast.success(`You have joined ${invitation.organizationName}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not accept the invitation');
-    }
-  }
-
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-3 rounded-xl border bg-muted/30 px-4 py-3',
-        highlighted ? 'border-ring' : 'border-ring/40',
-      )}
-    >
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-full border bg-background">
-        <MailPlusIcon className="size-4 text-muted-foreground" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{invitation.organizationName}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          You were invited as {ORG_ROLE_LABELS[invitation.role].toLowerCase()}.
-        </p>
-      </div>
-      <Badge variant="outline" className="shrink-0">
-        {ORG_ROLE_LABELS[invitation.role]}
-      </Badge>
-      <Button size="sm" onClick={() => void handleAccept()} disabled={accept.isPending}>
-        {accept.isPending && <Loader2Icon className="animate-spin" />}
-        Accept
-      </Button>
-      <Button size="icon" variant="ghost" asChild>
-        <a
-          href={`/o/${invitation.orgId}/members`}
-          aria-label={`Open ${invitation.organizationName}`}
-        >
-          <ArrowRightIcon />
-        </a>
-      </Button>
-    </div>
-  );
-}
-
-/**
- * The invitations waiting for the signed-in account, wherever they came from.
+ * The rows themselves are `InvitationsList`, because the invitations *are* the
+ * page at `/invites` — there it is a list under a heading, and here it is a card
+ * above whichever page is being read.
  *
- * This is the only place somebody who belongs nowhere yet can find out they
- * were invited at all, so it is rendered on the page listing communities rather
- * than inside one — there is no organization to be inside yet.
- *
- * `highlightOrgId` is the one an invitation link named: the email points here,
- * and pointing at a *page* rather than at a token means the link still has to
- * say which offer it was about.
+ * `highlightOrgId` is the one an invitation link named: an email points here with
+ * the offer it was about, and pointing at a *page* rather than at a token means
+ * the link still has to say which offer it meant.
  */
 export function PendingInvitationsCard({
   invitations,
+  spaceInvitations = [],
   highlightOrgId,
 }: {
   invitations: MyInvitation[];
+  /** Course invitations addressed to the same address, if any. */
+  spaceInvitations?: MySpaceInvitation[];
   highlightOrgId?: string;
 }) {
-  if (invitations.length === 0) return null;
+  const total = invitations.length + spaceInvitations.length;
+  if (total === 0) return null;
 
   return (
     <PageCard
-      title={invitations.length === 1 ? 'You have an invitation' : 'You have invitations'}
+      title={total === 1 ? 'You have an invitation' : 'You have invitations'}
       description="Addressed to your email address. Nothing is visible until you accept."
     >
-      <div className="grid gap-3">
-        {invitations.map((invitation) => (
-          <InvitationRow
-            key={invitation.orgId}
-            invitation={invitation}
-            highlighted={invitation.orgId === highlightOrgId}
-          />
-        ))}
-      </div>
+      <InvitationsList
+        orgInvitations={invitations}
+        spaceInvitations={spaceInvitations}
+        highlightOrgId={highlightOrgId}
+      />
     </PageCard>
   );
 }

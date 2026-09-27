@@ -11,6 +11,7 @@ import {
   SettingsIcon,
 } from 'lucide-react';
 import { useOrganization } from '@/modules/organization/organization.queries';
+import { useMyCourses } from '@/modules/space-member/space-member.queries';
 import { useSpaces } from '@/modules/space/space.queries';
 import { cn } from '@/lib/utils';
 import { spaceAccentColor } from '@/components/space/space-avatar';
@@ -39,14 +40,36 @@ export function CommunitySidebar({ orgId }: { orgId: string }) {
   const { data, isError } = useOrganization(orgId);
   const organization = data?.organization;
   const base = `/o/${orgId}`;
-  // A bad organization id in the URL should read as missing, not spin forever.
-  const name = organization?.name ?? (isError ? 'Not found' : 'Loading…');
 
   const { data: spaceData, isLoading: spacesLoading } = useSpaces(orgId);
   const spaces = spaceData?.spaces ?? [];
   // Viewers can read an organization but not add to it, so the affordance is
   // absent rather than present-and-rejected.
   const canCreate = organization ? organization.role !== 'VIEWER' : false;
+
+  /**
+   * Somebody who is only taking a course here.
+   *
+   * A course invitation can be addressed to a person with no business in the
+   * organization around it, and for them every other read on this panel is a
+   * refusal: no organization, no library, no settings. What they came for is the
+   * course, so the panel shows their courses in this organization and none of the
+   * navigation that would not open.
+   *
+   * Read here rather than on a page because it is navigation: the courses are
+   * what somebody outside the organization moves between.
+   */
+  const { data: myCoursesData } = useMyCourses();
+  const myCourses = (myCoursesData?.courses ?? []).filter(
+    (course) => course.space.organizationId === orgId,
+  );
+  const guest = !organization && isError && myCourses.length > 0;
+  const name =
+    organization?.name ??
+    myCourses[0]?.organizationName ??
+    // A bad organization id in the URL should read as missing, not spin forever.
+    (isError ? 'Not found' : 'Loading…');
+  const shown = guest ? myCourses.map((course) => course.space) : spaces;
 
   return (
     <aside
@@ -97,20 +120,22 @@ export function CommunitySidebar({ orgId }: { orgId: string }) {
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-3 pb-3">
         <section className="grid gap-1">
-          <h2 className="px-2.5 text-xs font-medium text-muted-foreground">Spaces</h2>
+          <h2 className="px-2.5 text-xs font-medium text-muted-foreground">
+            {guest ? 'Your courses' : 'Spaces'}
+          </h2>
 
-          {spacesLoading ? (
+          {spacesLoading && !guest ? (
             <div className="grid gap-1 px-2.5 pt-1">
               <Skeleton className="h-4 w-3/4" />
               <Skeleton className="h-4 w-1/2" />
             </div>
-          ) : spaces.length === 0 ? (
+          ) : shown.length === 0 ? (
             <p className="px-2.5 text-xs leading-relaxed text-muted-foreground/80">
               No spaces yet. A space is a course: a title, how it unfolds, and the
               videos in it.
             </p>
           ) : (
-            spaces.slice(0, VISIBLE_SPACES).map((space) => {
+            shown.slice(0, VISIBLE_SPACES).map((space) => {
               const href = `${base}/spaces/${space.spaceId}`;
               const active = pathname === href;
               return (
@@ -136,7 +161,7 @@ export function CommunitySidebar({ orgId }: { orgId: string }) {
             })
           )}
 
-          {spaces.length > VISIBLE_SPACES && (
+          {!guest && spaces.length > VISIBLE_SPACES && (
             <Link
               href={`${base}/spaces`}
               className="px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
@@ -156,6 +181,9 @@ export function CommunitySidebar({ orgId }: { orgId: string }) {
           )}
         </section>
 
+        {/* The library and the settings are the organization's, and a guest is
+            refused both. Offering them would be offering a refusal. */}
+        {!guest && (
         <section className="grid gap-1">
           <h2 className="flex items-center gap-1.5 px-2.5 text-xs font-medium text-muted-foreground">
             <LinkIcon className="size-3" />
@@ -176,6 +204,7 @@ export function CommunitySidebar({ orgId }: { orgId: string }) {
             <span className="truncate">Organization settings</span>
           </Link>
         </section>
+        )}
       </div>
     </aside>
   );

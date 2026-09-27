@@ -1,7 +1,8 @@
 'use client';
 
 import { useAuthenticator } from '@aws-amplify/ui-react';
-import { LogOutIcon } from 'lucide-react';
+import Link from 'next/link';
+import { BuildingIcon, GraduationCapIcon, LogOutIcon, MailPlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -35,6 +36,28 @@ export function AccountMenu() {
           <span className="block text-xs text-muted-foreground">Signed in as</span>
           <span className="block truncate text-sm font-medium">{email}</span>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {/* The courses you can open, across every organization. Here rather than
+            in the community rail because it is not about the community you are
+            in: a course can be taken by somebody who belongs to none. */}
+        <DropdownMenuItem asChild>
+          <Link href="/spaces">
+            <GraduationCapIcon />
+            Your spaces
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/invites">
+            <MailPlusIcon />
+            Invitations
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/organizations">
+            <BuildingIcon />
+            Your organizations
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={signOut}>
           <LogOutIcon />

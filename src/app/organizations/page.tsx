@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { BuildingIcon, PlusIcon } from 'lucide-react';
 import { useOrganizations } from '@/modules/organization/organization.queries';
 import { useMyInvitations } from '@/modules/organization/member.queries';
+import { useMySpaceInvitations } from '@/modules/space-member/space-member.queries';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, PageCard } from '@/components/shell/page-card';
@@ -14,8 +15,14 @@ import { PendingInvitationsCard } from '@/components/organization/pending-invita
 export default function OrganizationsPage() {
   const { data, isLoading, isError, error } = useOrganizations();
   const { data: invitationData } = useMyInvitations();
+  const { data: spaceInvitationData } = useMySpaceInvitations();
   const organizations = data?.organizations ?? [];
   const invitations = invitationData?.invitations ?? [];
+  // Courses are listed with the organizations because a course invitation is the
+  // other way somebody who belongs nowhere yet is told about something: it can be
+  // addressed to somebody outside the organization entirely, and if the email
+  // never arrived this is the only place it can be found.
+  const spaceInvitations = spaceInvitationData?.invitations ?? [];
   // An invitation email links here with the offer it was about, so the page can
   // point at it. The link carries no token — being signed in as the invited
   // address is what accepting means — so this is a hint, not a credential.
@@ -25,7 +32,11 @@ export default function OrganizationsPage() {
     <div className="grid gap-6">
       {/* Above the communities, because it is the one thing here addressed to
           somebody who is not in any of them yet. */}
-      <PendingInvitationsCard invitations={invitations} highlightOrgId={highlightOrgId} />
+      <PendingInvitationsCard
+        invitations={invitations}
+        spaceInvitations={spaceInvitations}
+        highlightOrgId={highlightOrgId}
+      />
 
       <PageCard
         title="Organizations"
