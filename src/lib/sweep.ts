@@ -41,8 +41,6 @@ export interface SweepRuntime {
   pop: Float32Array;
   lastProgress: Float32Array;
   lastPop: Float32Array;
-  /** 1 while this word is the one moving, so only it is promoted. */
-  promoted: Uint8Array;
 }
 
 export function createSweepRuntime(count: number): SweepRuntime {
@@ -52,7 +50,6 @@ export function createSweepRuntime(count: number): SweepRuntime {
     // was animated before always lands in a clean state.
     lastProgress: new Float32Array(count).fill(-1),
     lastPop: new Float32Array(count).fill(-1),
-    promoted: new Uint8Array(count),
   };
 }
 
@@ -62,6 +59,12 @@ export function createSweepRuntime(count: number): SweepRuntime {
  * The swell is deliberately asymmetric: about 250ms to build while a word is
  * being said and slower to release, so the word you are on never snaps back the
  * moment it is finished.
+ *
+ * Nothing here promotes anything to a compositor layer. It used to raise
+ * `will-change` on whichever word was moving, which is one layer built and torn
+ * down per word — a compositor commit each time, for a lift of three quarters of
+ * a pixel. The fill is cheap to paint where it is: it is the *rest* of the sheet
+ * that had to stop being expensive (see `globals.css`).
  */
 export function applySweepFrame(targets: SweepTarget[], runtime: SweepRuntime): void {
   for (let index = 0; index < targets.length; index += 1) {
@@ -83,20 +86,7 @@ export function applySweepFrame(targets: SweepTarget[], runtime: SweepRuntime): 
       runtime.lastPop[index] = roundedPop;
       el.style.setProperty('--pop', `${roundedPop}`);
     }
-
-    // Promote only the word that is actually moving, so a sheet keeps one or
-    // two composited layers instead of hundreds.
-    const promoted = roundedPop > 0 ? 1 : 0;
-    if (promoted !== runtime.promoted[index]) {
-      runtime.promoted[index] = promoted;
-      el.style.willChange = promoted ? 'transform' : '';
-    }
   }
-}
-
-/** Drops the compositor promotion of every word the loop was driving. */
-export function releaseSweep(targets: SweepTarget[]): void {
-  for (const { el } of targets) el.style.willChange = '';
 }
 
 /** How far the playhead has swept through one timed word. */

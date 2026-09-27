@@ -21,7 +21,6 @@ import {
   applySweepFrame,
   createSweepRuntime,
   getSweepProgress,
-  releaseSweep,
   type SweepTarget,
 } from '@/lib/sweep';
 import { findActiveLine, groupIntoParagraphs, type TranscriptLine } from '@/lib/transcript';
@@ -40,7 +39,14 @@ import { findActiveLine, groupIntoParagraphs, type TranscriptLine } from '@/lib/
  * being said — and lets the page read as a page being *read* rather than one
  * being written over and over. Nothing is lost by it: the words are still there,
  * and a scroll back up or a seek restores them sharp the moment the playhead is
- * over them again.
+ * over them again. A paragraph the playhead has left recedes in one piece,
+ * because there the same picture costs a filtered surface per word.
+ *
+ * Only what is being said is expensive, and that is the point: the fill is a
+ * clipped shader over a glyph run, so it is written onto the one line being said
+ * (`tt-live`) and every other word on the sheet is plain ink. The panel is
+ * several hundred words tall, and an ordinary scroll repaints what is visible —
+ * which is why the resting state is not allowed to cost anything.
  *
  * Three things never go through React, because all three would cost more than
  * the illusion is worth:
@@ -83,34 +89,12 @@ const bottomSpacer = { height: `calc(100% - ${ANCHOR_PX}px)` };
 /** Reading `scrollTop` forces a style flush, so it is trusted for a few frames. */
 const RESYNC_FRAMES = 12;
 
-/** Resets a line that is not being said into a clean, unswept state. */
-function useStaticLine(
-  isActive: boolean,
-  isPast: boolean,
-  tokenRefs: React.MutableRefObject<(HTMLSpanElement | null)[]>,
-  lineKey: string,
-) {
-  useLayoutEffect(() => {
-    if (isActive) return;
-    const value = isPast ? '1' : '0';
-
-    // Written directly rather than through React: a line that was live-animated
-    // keeps whatever the last frame left on it, and React would skip re-writing
-    // an inline style it believes is unchanged.
-    for (const el of tokenRefs.current) {
-      if (!el) continue;
-      el.style.setProperty('--p', value);
-      el.style.setProperty('--pop', '0');
-    }
-  }, [isActive, isPast, lineKey, tokenRefs]);
-}
-
 /** One line of a paragraph, and the only kind that runs a fill loop. */
 const TranscriptSentence = memo(function TranscriptSentence({
   line,
   index,
   isActive,
-  isPast,
+  softened,
   selected,
   selectionColor,
   getTime,
@@ -122,7 +106,15 @@ const TranscriptSentence = memo(function TranscriptSentence({
   /** Position in the flat transcript, for seeking back to it. */
   index: number;
   isActive: boolean;
-  isPast: boolean;
+  /**
+   * Behind the playhead, and softened on its own.
+   *
+   * Not simply "behind the playhead": a line inside a paragraph the playhead
+   * has left is softened by that paragraph in one piece, and blurring it a
+   * second time, word by word, would cost the surfaces the paragraph rule
+   * exists to save.
+   */
+  softened: boolean;
   /** Inside the passage the loop picker is choosing. */
   selected: boolean;
   /** The colour that passage is drawn in. */
@@ -135,8 +127,6 @@ const TranscriptSentence = memo(function TranscriptSentence({
   registerRef: (index: number, el: HTMLSpanElement | null) => void;
 }) {
   const tokenRefs = useRef<(HTMLSpanElement | null)[]>([]);
-
-  useStaticLine(isActive, isPast, tokenRefs, line.key);
 
   // The fill, for the line being said and no other. One word at a time is not
   // enough to see: this is what makes each word darken through its own letters
@@ -174,7 +164,18 @@ const TranscriptSentence = memo(function TranscriptSentence({
     frame = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(frame);
-      releaseSweep(targets);
+
+      // A line that has stopped being said keeps no fill of its own. The loop
+      // writes `--p` and `--pop` straight onto the words, and those writes
+      // outlive the line being said: without this, the next frame that makes it
+      // live again — a seek back to something already heard — would paint it
+      // with whatever the last animation left on it, at full ink for one frame
+      // before the loop reset it. Removed rather than set to zero, so the words
+      // fall back to the plain ink the resting state declares.
+      for (const slot of slots) {
+        slot.el.style.removeProperty('--p');
+        slot.el.style.removeProperty('--pop');
+      }
     };
   }, [isActive, line.tokens, getTime]);
 
@@ -184,7 +185,9 @@ const TranscriptSentence = memo(function TranscriptSentence({
       // A whole sentence at a time while choosing a passage, so the band the
       // reader is drawing is the same shape as the text they are drawing it on.
       style={selected ? { backgroundColor: `${selectionColor}24`, borderRadius: '4px' } : undefined}
-      className="cursor-pointer"
+      // The fill lives behind this class, so it is on the one line being said
+      // and nowhere else on the sheet.
+      className={cn('cursor-pointer', isActive && 'tt-live')}
       onClick={(event) => {
         // Picking a passage is not watching: a tap that is choosing where a loop
         // ends should not also send the video somewhere.
@@ -212,9 +215,10 @@ const TranscriptSentence = memo(function TranscriptSentence({
             data-t-start={token.start}
             // On the tokens rather than on the sentence: they are the
             // inline-blocks a filter can be relied on to paint, and a line on
-            // screen is a couple of dozen of them, so the blur costs what the
-            // visible lines cost and nothing for the rest of the sheet.
-            className={cn('tt-token whitespace-pre', isPast && 'tt-past')}
+            // screen is a couple of dozen of them. Only a line of the paragraph
+            // the playhead is *in* softens this way — the rest of the sheet is
+            // behind the reader, where the paragraph blurs in one piece.
+            className={cn('tt-token whitespace-pre', softened && 'tt-past')}
           >
             {token.text}
           </span>
@@ -450,28 +454,48 @@ export function AnimatedTranscript({
             of scroll. */}
         <div aria-hidden style={topSpacer} />
 
-        {paragraphs.map((paragraph) => (
-          <p key={paragraph.key} className="tt-para mx-auto max-w-3xl">
-            {paragraph.indices.map((index) => (
-              <TranscriptSentence
-                key={lines[index].key}
-                line={lines[index]}
-                index={index}
-                isActive={index === activeIndex}
-                isPast={activeIndex >= 0 && index < activeIndex}
-                selected={Boolean(selection && lines[index].end > selection.startMs && lines[index].start < selection.endMs)}
-                selectionColor={selectionColor}
-                getTime={getTime}
-                onSeek={onSeek}
-                onSelect={onSelectLine}
-                registerRef={registerRef}
-              />
-            ))}
-          </p>
-        ))}
+        {paragraphs.map((paragraph) => {
+          // Every line of it is behind the playhead, so the paragraph softens
+          // in one piece instead of a blurred surface per word.
+          const leftBehind =
+            activeIndex >= 0 &&
+            paragraph.indices[paragraph.indices.length - 1] < activeIndex;
+
+          return (
+            <p
+              key={paragraph.key}
+              className={cn('tt-para mx-auto max-w-3xl', leftBehind && 'tt-para-past')}
+            >
+              {paragraph.indices.map((index) => (
+                <TranscriptSentence
+                  key={lines[index].key}
+                  line={lines[index]}
+                  index={index}
+                  isActive={index === activeIndex}
+                  softened={activeIndex >= 0 && index < activeIndex && !leftBehind}
+                  selected={Boolean(selection && lines[index].end > selection.startMs && lines[index].start < selection.endMs)}
+                  selectionColor={selectionColor}
+                  getTime={getTime}
+                  onSeek={onSeek}
+                  onSelect={onSelectLine}
+                  registerRef={registerRef}
+                />
+              ))}
+            </p>
+          );
+        })}
 
         <div aria-hidden style={bottomSpacer} />
       </div>
+
+      {/* The fade at the bottom of the sheet: a cover rather than a mask, so
+          that nothing inside the scroller is painted any more than once. It sits
+          over the sheet and under the button below, and takes no pointer events
+          so that scrolling and tapping still reach the words it covers. */}
+      <div
+        aria-hidden
+        className="tt-fade pointer-events-none absolute inset-x-0 bottom-0 h-[10%]"
+      />
 
       {/* Offered, not taken: the sheet has stopped following, and this is the
           way to ask it to start again. */}
