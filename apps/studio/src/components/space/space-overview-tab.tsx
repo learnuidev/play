@@ -12,8 +12,8 @@ import {
   SaveIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-import { putFileToPresignedUrl } from '@/lib/upload';
+import { cn } from '@ui/lib/utils';
+import { putFileToPresignedUrl } from '@api/lib/upload';
 import {
   DEFAULT_DRIP_INTERVAL_DAYS,
   SPACE_COLORS,
@@ -22,18 +22,18 @@ import {
   SPACE_TYPE_LABELS,
   type Space,
   type SpaceType,
-} from '@/types';
+} from '@play/types';
 import {
   useSpaceStats,
   useSpaceThumbnail,
   useUpdateSpace,
   useUploadSpaceThumbnail,
-} from '@/modules/space/space.queries';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
+} from '@api/modules/space/space.queries';
+import { Button } from '@ui/components/ui/button';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
+import { Skeleton } from '@ui/components/ui/skeleton';
+import { Textarea } from '@ui/components/ui/textarea';
 import { BlockLabel } from '@/components/shell/page-card';
 
 // Mirrors the server-side limits, so the form fails fast instead of round-tripping.

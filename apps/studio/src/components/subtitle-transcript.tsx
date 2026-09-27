@@ -2,10 +2,10 @@
 
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { SearchIcon } from "lucide-react";
-import { parseTimestamp } from "@/lib/vtt";
-import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
-import type { SubtitleCue } from "@/types";
+import { parseTimestamp } from "@learning/lib/vtt";
+import { cn } from "@ui/lib/utils";
+import { Input } from "@ui/components/ui/input";
+import type { SubtitleCue } from "@play/types";
 
 interface SubtitleTranscriptProps {
   cues: SubtitleCue[];

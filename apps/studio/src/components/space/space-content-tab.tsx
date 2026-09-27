@@ -1,12 +1,14 @@
 'use client';
 
 import { PlusIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { BlockLabel } from '@/components/shell/page-card';
-import { ContentOutline } from '@/components/content/content-outline';
-import { SectionDialog } from '@/components/content/section-dialog';
-import type { SectionWithContents } from '@/types';
+import { ContentOutline } from '@learning/components/content/content-outline';
+import { LearningRoutesProvider } from '@learning/lib/learning-routes';
+import { SectionDialog } from '@learning/components/content/section-dialog';
+import type { SectionWithContents } from '@play/types';
+import { studioLearningRoutes } from '@/lib/routes';
 
 /**
  * A course's content: its sections in reading order, each holding its lessons.
@@ -65,13 +67,18 @@ export function SpaceContentTab({
           <Skeleton className="h-12 rounded-lg" />
         </div>
       ) : (
-        <ContentOutline
-          orgId={orgId}
-          spaceId={spaceId}
-          sections={sections}
-          truncated={truncated}
-          canEdit={canEdit}
-        />
+        // The outline draws a link per lesson, and the classroom it links into
+        // is shared with the marketplace — so which URLs those are is stated
+        // here rather than assumed by the outline itself.
+        <LearningRoutesProvider routes={studioLearningRoutes(orgId)}>
+          <ContentOutline
+            orgId={orgId}
+            spaceId={spaceId}
+            sections={sections}
+            truncated={truncated}
+            canEdit={canEdit}
+          />
+        </LearningRoutesProvider>
       )}
     </section>
   );

@@ -1,10 +1,10 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { ORG_ROLE_DESCRIPTIONS, ORG_ROLE_LABELS } from '@/types';
-import { useOrganization } from '@/modules/organization/organization.queries';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { ORG_ROLE_DESCRIPTIONS, ORG_ROLE_LABELS } from '@play/types';
+import { useOrganization } from '@api/modules/organization/organization.queries';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ui/components/ui/card';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { PageCard } from '@/components/shell/page-card';
 
 function formatDate(ts: number): string {

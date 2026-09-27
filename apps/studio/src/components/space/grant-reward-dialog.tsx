@@ -3,15 +3,15 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Loader2Icon, SearchIcon, UsersIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn } from '@ui/lib/utils';
 import {
   SPACE_MEMBER_ROLE_LABELS,
   type SpaceMemberApi,
   type SpaceReward,
-} from '@/types';
-import { useGrantReward } from '@/modules/reward/reward.queries';
-import { useSpaceMembers } from '@/modules/space-member/space-member.queries';
-import { Button } from '@/components/ui/button';
+} from '@play/types';
+import { useGrantReward } from '@api/modules/reward/reward.queries';
+import { useSpaceMembers } from '@api/modules/space-member/space-member.queries';
+import { Button } from '@ui/components/ui/button';
 import {
   Dialog,
   DialogClose,
@@ -21,11 +21,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
+} from '@ui/components/ui/dialog';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
+import { Skeleton } from '@ui/components/ui/skeleton';
+import { Textarea } from '@ui/components/ui/textarea';
 
 /** The API's ceiling on the note, mirroring it so the field cannot overrun it. */
 const MAX_NOTE_LENGTH = 500;

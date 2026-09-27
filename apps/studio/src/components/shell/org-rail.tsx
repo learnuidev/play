@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { ClapperboardIcon, PlusIcon } from "lucide-react";
-import { useOrganizations } from "@/modules/organization/organization.queries";
-import { cn } from "@/lib/utils";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useOrganizations } from "@api/modules/organization/organization.queries";
+import { cn } from "@ui/lib/utils";
+import { Separator } from "@ui/components/ui/separator";
+import { Skeleton } from "@ui/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
+} from "@ui/components/ui/tooltip";
 import { OrgAvatar } from "./org-avatar";
 
 /**

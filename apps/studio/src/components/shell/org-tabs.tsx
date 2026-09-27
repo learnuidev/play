@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { cn } from '@/lib/utils';
+import { cn } from '@ui/lib/utils';
 import { lessonRoute } from '@/lib/routes';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { AccountMenu } from './account-menu';

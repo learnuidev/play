@@ -2,9 +2,9 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useOrganizations } from '@/modules/organization/organization.queries';
-import { useMyCourses } from '@/modules/space-member/space-member.queries';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useOrganizations } from '@api/modules/organization/organization.queries';
+import { useMyCourses } from '@api/modules/space-member/space-member.queries';
+import { Skeleton } from '@ui/components/ui/skeleton';
 
 /**
  * The app has no standalone landing page: it opens the first organization you

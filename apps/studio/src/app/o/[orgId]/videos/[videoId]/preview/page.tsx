@@ -5,15 +5,15 @@ import { useParams } from "next/navigation";
 import { ArrowLeftIcon, FilmIcon, Loader2Icon, MusicIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useAudio, useGenerateAudio, useStream, useVideo } from "@/modules/video/video.queries";
-import { useSubtitles } from "@/modules/subtitle/subtitle.queries";
-import { useThumbnail } from "@/modules/thumbnail/thumbnail.queries";
-import { parseVtt } from "@/lib/vtt";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { VideoStatusBadge } from "@/components/video/status-badge";
+import { useAudio, useGenerateAudio, useStream, useVideo } from "@api/modules/video/video.queries";
+import { useSubtitles } from "@api/modules/subtitle/subtitle.queries";
+import { useThumbnail } from "@api/modules/thumbnail/thumbnail.queries";
+import { parseVtt } from "@learning/lib/vtt";
+import { Button } from "@ui/components/ui/button";
+import { Skeleton } from "@ui/components/ui/skeleton";
+import { VideoStatusBadge } from "@learning/components/video/status-badge";
 import { AudioPlayer } from "@/components/audio-player";
-import { VideoPlayer, type VideoPlayerHandle } from "@/components/video-player";
+import { VideoPlayer, type VideoPlayerHandle } from "@learning/components/video-player";
 import { SubtitleTranscript } from "@/components/subtitle-transcript";
 
 export default function PreviewPage() {

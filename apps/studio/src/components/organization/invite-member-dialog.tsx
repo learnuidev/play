@@ -9,9 +9,9 @@ import {
   ORG_ROLE_LABELS,
   type InviteMemberResponse,
   type OrgRole,
-} from '@/types';
-import { useInviteMember } from '@/modules/organization/member.queries';
-import { Button } from '@/components/ui/button';
+} from '@play/types';
+import { useInviteMember } from '@api/modules/organization/member.queries';
+import { Button } from '@ui/components/ui/button';
 import {
   Dialog,
   DialogClose,
@@ -21,10 +21,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
+} from '@ui/components/ui/dialog';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
+import { cn } from '@ui/lib/utils';
 
 /**
  * The same loose check the API makes, so an obvious typo fails without a round

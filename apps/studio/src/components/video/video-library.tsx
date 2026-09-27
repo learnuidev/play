@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { PlusIcon, VideoIcon } from 'lucide-react';
-import type { VideoStatus } from '@/types';
-import { useVideos } from '@/modules/video/video.queries';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import type { VideoStatus } from '@play/types';
+import { useVideos } from '@api/modules/video/video.queries';
+import { cn } from '@ui/lib/utils';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { VideoCard } from '@/components/video/video-card';
 import { EmptyState } from '@/components/shell/page-card';
 

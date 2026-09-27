@@ -8,12 +8,12 @@ import {
   SPACE_MEMBER_ROLE_LABELS,
   type MyInvitation,
   type MySpaceInvitation,
-} from '@/types';
-import { useAcceptInvitation } from '@/modules/organization/member.queries';
-import { useAcceptSpaceInvitation } from '@/modules/space-member/space-member.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+} from '@play/types';
+import { useAcceptInvitation } from '@api/modules/organization/member.queries';
+import { useAcceptSpaceInvitation } from '@api/modules/space-member/space-member.queries';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
+import { cn } from '@ui/lib/utils';
 
 /**
  * Invitations as rows, with no card around them.

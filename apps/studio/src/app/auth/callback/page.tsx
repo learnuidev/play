@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { Hub } from 'aws-amplify/utils';
 import { Loader2Icon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@ui/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ui/components/ui/card';
 
 /**
  * Landing page for OAuth sign-in (Google).

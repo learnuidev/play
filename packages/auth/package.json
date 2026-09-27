@@ -1,0 +1,27 @@
+{
+  "name": "@play/auth",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cognito wiring for both apps: the Amplify configuration, the providers every page renders under, and the sign-in gate.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@aws-amplify/ui-react": "^6.5.2",
+    "@play/api": "*",
+    "@play/ui": "*",
+    "aws-amplify": "^6.7.0",
+    "next-themes": "^0.4.6"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "next": "^14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tanstack/react-query-devtools": "^5.101.4"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

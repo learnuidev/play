@@ -3,16 +3,16 @@
 import { useState, type ReactNode } from 'react';
 import { LinkIcon, Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn } from '@ui/lib/utils';
 import {
   SPACE_MEMBER_ROLES,
   SPACE_MEMBER_ROLE_DESCRIPTIONS,
   SPACE_MEMBER_ROLE_LABELS,
   type InviteSpaceMemberResponse,
   type SpaceMemberRole,
-} from '@/types';
-import { useInviteSpaceMember } from '@/modules/space-member/space-member.queries';
-import { Button } from '@/components/ui/button';
+} from '@play/types';
+import { useInviteSpaceMember } from '@api/modules/space-member/space-member.queries';
+import { Button } from '@ui/components/ui/button';
 import {
   Dialog,
   DialogClose,
@@ -22,9 +22,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from '@ui/components/ui/dialog';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
 
 /**
  * The same loose check the API makes, so an obvious typo fails without a round

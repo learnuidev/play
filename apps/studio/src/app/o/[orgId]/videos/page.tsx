@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { PlusIcon } from 'lucide-react';
-import { useOrganization } from '@/modules/organization/organization.queries';
-import { Button } from '@/components/ui/button';
+import { useOrganization } from '@api/modules/organization/organization.queries';
+import { Button } from '@ui/components/ui/button';
 import { PageCard } from '@/components/shell/page-card';
 import { VideoLibrary } from '@/components/video/video-library';
 

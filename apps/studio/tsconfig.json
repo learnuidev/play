@@ -14,7 +14,16 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@play/types": ["../../packages/types/src/index.ts"],
+      "@play/ui": ["../../packages/ui/src/index.ts"],
+      "@play/api": ["../../packages/api/src/index.ts"],
+      "@play/auth": ["../../packages/auth/src/index.ts"],
+      "@play/learning": ["../../packages/learning/src/index.ts"],
+      "@ui/*": ["../../packages/ui/src/*"],
+      "@api/*": ["../../packages/api/src/*"],
+      "@auth/*": ["../../packages/auth/src/*"],
+      "@learning/*": ["../../packages/learning/src/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

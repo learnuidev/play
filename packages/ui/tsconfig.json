@@ -1,0 +1,43 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@play/types": [
+        "../types/src/index.ts"
+      ],
+      "@play/ui": [
+        "../ui/src/index.ts"
+      ],
+      "@play/api": [
+        "../api/src/index.ts"
+      ],
+      "@play/auth": [
+        "../auth/src/index.ts"
+      ],
+      "@play/learning": [
+        "../learning/src/index.ts"
+      ],
+      "@ui/*": [
+        "../ui/src/*"
+      ],
+      "@api/*": [
+        "../api/src/*"
+      ],
+      "@auth/*": [
+        "../auth/src/*"
+      ],
+      "@learning/*": [
+        "../learning/src/*"
+      ]
+    },
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

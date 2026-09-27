@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { EyeIcon, PlayIcon } from 'lucide-react';
-import type { Video } from '@/types';
-import { Button } from '@/components/ui/button';
-import { useThumbnail } from '@/modules/thumbnail/thumbnail.queries';
-import { VideoStatusBadge } from './status-badge';
+import type { Video } from '@play/types';
+import { Button } from '@ui/components/ui/button';
+import { useThumbnail } from '@api/modules/thumbnail/thumbnail.queries';
+import { VideoStatusBadge } from '@learning/components/video/status-badge';
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';

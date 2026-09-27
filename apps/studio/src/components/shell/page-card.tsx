@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@ui/lib/utils';
 
 /**
  * The content card every page in the community shell renders inside: a titled

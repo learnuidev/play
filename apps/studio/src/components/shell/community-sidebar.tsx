@@ -10,19 +10,19 @@ import {
   PlusIcon,
   SettingsIcon,
 } from 'lucide-react';
-import { useOrganization } from '@/modules/organization/organization.queries';
-import { useMyCourses } from '@/modules/space-member/space-member.queries';
-import { useSpaces } from '@/modules/space/space.queries';
-import { cn } from '@/lib/utils';
-import { spaceAccentColor } from '@/components/space/space-avatar';
+import { useOrganization } from '@api/modules/organization/organization.queries';
+import { useMyCourses } from '@api/modules/space-member/space-member.queries';
+import { useSpaces } from '@api/modules/space/space.queries';
+import { cn } from '@ui/lib/utils';
+import { spaceAccentColor } from '@learning/components/space/space-avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@ui/components/ui/dropdown-menu';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { OrgAvatar } from './org-avatar';
 
 /** Spaces shown in the panel before it links out to the full list. */

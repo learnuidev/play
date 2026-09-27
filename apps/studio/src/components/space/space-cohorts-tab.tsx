@@ -12,15 +12,15 @@ import {
   XIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useDeleteCohort, useCohorts, useRemoveCohortMember } from '@/modules/cohort/cohort.queries';
-import { useSpaceMembers } from '@/modules/space-member/space-member.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useDeleteCohort, useCohorts, useRemoveCohortMember } from '@api/modules/cohort/cohort.queries';
+import { useSpaceMembers } from '@api/modules/space-member/space-member.queries';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { BlockLabel, EmptyState } from '@/components/shell/page-card';
 import { CohortDialog } from '@/components/space/cohort-dialog';
 import { CohortMembersDialog } from '@/components/space/cohort-members-dialog';
-import type { CohortWithMembers, SpaceMemberApi } from '@/types';
+import type { CohortWithMembers, SpaceMemberApi } from '@play/types';
 
 /** The cohort's run in words: both ends, one end, or nothing at all. */
 function runLabel(cohort: CohortWithMembers): string {

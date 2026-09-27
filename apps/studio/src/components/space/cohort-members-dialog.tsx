@@ -3,11 +3,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-import { useSpaceMembers } from '@/modules/space-member/space-member.queries';
-import { useAddCohortMember, useRemoveCohortMember } from '@/modules/cohort/cohort.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { cn } from '@ui/lib/utils';
+import { useSpaceMembers } from '@api/modules/space-member/space-member.queries';
+import { useAddCohortMember, useRemoveCohortMember } from '@api/modules/cohort/cohort.queries';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
 import {
   Dialog,
   DialogClose,
@@ -17,9 +17,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Skeleton } from '@/components/ui/skeleton';
-import { SPACE_MEMBER_ROLE_LABELS, type CohortWithMembers, type SpaceMemberApi } from '@/types';
+} from '@ui/components/ui/dialog';
+import { Skeleton } from '@ui/components/ui/skeleton';
+import { SPACE_MEMBER_ROLE_LABELS, type CohortWithMembers, type SpaceMemberApi } from '@play/types';
 
 /** How a roster row is named here: an address if there is one, its key if not. */
 function displayName(member: SpaceMemberApi): string {

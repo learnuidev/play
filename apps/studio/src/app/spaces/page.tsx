@@ -3,12 +3,12 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowRightIcon, CompassIcon, GraduationCapIcon, MailPlusIcon } from 'lucide-react';
-import { SPACE_MEMBER_ROLE_LABELS, type MyCourse } from '@/types';
-import { useMyCourses, useMySpaceInvitations } from '@/modules/space-member/space-member.queries';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SPACE_MEMBER_ROLE_LABELS, type MyCourse } from '@play/types';
+import { useMyCourses, useMySpaceInvitations } from '@api/modules/space-member/space-member.queries';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { EmptyState } from '@/components/shell/page-card';
-import { SpaceCard } from '@/components/space/space-card';
+import { SpaceCard } from '@learning/components/space/space-card';
 
 /** One organization's courses, as the page groups them. */
 interface CourseGroup {
@@ -154,7 +154,7 @@ export default function MySpacesPage() {
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {group.courses.map((course) => (
                   <div key={course.space.spaceId} className="grid gap-2">
-                    <SpaceCard orgId={group.orgId} space={course.space} />
+                    <SpaceCard href={`/o/${group.orgId}/spaces/${course.space.spaceId}`} space={course.space} />
 
                     {/* What you are to the course, said only when it is not the
                         ordinary thing to be. "Student" under every card would be

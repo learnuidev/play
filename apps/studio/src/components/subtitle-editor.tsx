@@ -3,12 +3,12 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useSaveSubtitles } from '@/modules/subtitle/subtitle.queries';
-import { formatTimestamp, parseTimestamp, parseVtt, serializeVtt } from '@/lib/vtt';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { SubtitleCue, SubtitleResponse } from '@/types';
+import { useSaveSubtitles } from '@api/modules/subtitle/subtitle.queries';
+import { formatTimestamp, parseTimestamp, parseVtt, serializeVtt } from '@learning/lib/vtt';
+import { cn } from '@ui/lib/utils';
+import { Button } from '@ui/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@ui/components/ui/tabs';
+import type { SubtitleCue, SubtitleResponse } from '@play/types';
 
 interface SubtitleEditorProps {
   videoId: string;

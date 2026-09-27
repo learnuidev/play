@@ -1,6 +1,6 @@
 import { PageCard } from '@/components/shell/page-card';
 import { InvitationsList } from './invitations-list';
-import type { MyInvitation, MySpaceInvitation } from '@/types';
+import type { MyInvitation, MySpaceInvitation } from '@play/types';
 
 /**
  * The invitations waiting for the signed-in account, wherever they came from, as

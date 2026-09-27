@@ -12,16 +12,16 @@ import {
   UsersIcon,
   UsersRoundIcon,
 } from 'lucide-react';
-import { useSpace } from '@/modules/space/space.queries';
-import { useSections } from '@/modules/section/section.queries';
-import { useOrganization } from '@/modules/organization/organization.queries';
-import { useMySpaceInvitations } from '@/modules/space-member/space-member.queries';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useSpace } from '@api/modules/space/space.queries';
+import { useSections } from '@api/modules/section/section.queries';
+import { useOrganization } from '@api/modules/organization/organization.queries';
+import { useMySpaceInvitations } from '@api/modules/space-member/space-member.queries';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@ui/components/ui/tabs';
 import { EmptyState } from '@/components/shell/page-card';
-import { SpaceAvatar } from '@/components/space/space-avatar';
-import { spaceScheduleLabel } from '@/components/space/space-card';
+import { SpaceAvatar } from '@learning/components/space/space-avatar';
+import { spaceScheduleLabel } from '@learning/components/space/space-card';
 import { SpaceOverviewTab } from '@/components/space/space-overview-tab';
 import { SpaceContentTab } from '@/components/space/space-content-tab';
 import { SpaceMembersTab, SpaceInvitationCard } from '@/components/space/space-members-tab';

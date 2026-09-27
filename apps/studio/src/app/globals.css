@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* The shared packages are outside this app, so Tailwind has to be told to read
+   them: without this the classes only the packages use — the lesson panel, the
+   course cards — are never generated, and the app renders unstyled where it
+   matters most. */
+@source "../../../../packages/ui/src";
+@source "../../../../packages/learning/src";
+
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

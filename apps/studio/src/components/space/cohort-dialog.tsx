@@ -3,8 +3,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import { useCreateCohort, useUpdateCohort } from '@/modules/cohort/cohort.queries';
-import { Button } from '@/components/ui/button';
+import { useCreateCohort, useUpdateCohort } from '@api/modules/cohort/cohort.queries';
+import { Button } from '@ui/components/ui/button';
 import {
   Dialog,
   DialogClose,
@@ -14,11 +14,11 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import type { CohortWithMembers } from '@/types';
+} from '@ui/components/ui/dialog';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
+import { Textarea } from '@ui/components/ui/textarea';
+import type { CohortWithMembers } from '@play/types';
 
 // Mirrors the server-side limits, so the form fails fast instead of round-tripping.
 const MIN_NAME_LENGTH = 2;

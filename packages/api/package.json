@@ -1,0 +1,19 @@
+{
+  "name": "@play/api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The Play API client and the React Query hooks built on it — one place where a request, its cache key and its invalidation live.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@play/types": "*",
+    "aws-amplify": "^6.7.0"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.101.4",
+    "react": "^18.3.1"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

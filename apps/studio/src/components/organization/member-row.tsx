@@ -16,9 +16,9 @@ import {
   ORG_ROLE_LABELS,
   type OrgMemberApi,
   type OrgRole,
-} from '@/types';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+} from '@play/types';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,13 +26,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@ui/components/ui/dropdown-menu';
 import {
   useRemoveMember,
   useResendInvitation,
   useUpdateMemberRole,
-} from '@/modules/organization/member.queries';
-import { cn } from '@/lib/utils';
+} from '@api/modules/organization/member.queries';
+import { cn } from '@ui/lib/utils';
 
 const ROLE_VARIANT = {
   ADMIN: 'default',

@@ -1,9 +1,9 @@
 'use client';
 
-import type { Video } from '@/types';
-import { VIDEO_STATUS_LABELS } from '@/types';
-import { formatDuration } from '@/lib/utils';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import type { Video } from '@play/types';
+import { VIDEO_STATUS_LABELS } from '@play/types';
+import { formatDuration } from '@ui/lib/utils';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ui/components/ui/card';
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';

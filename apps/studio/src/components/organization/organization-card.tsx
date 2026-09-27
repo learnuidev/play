@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { BuildingIcon } from 'lucide-react';
-import { ORG_ROLE_LABELS, type OrganizationSummary } from '@/types';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { ORG_ROLE_LABELS, type OrganizationSummary } from '@play/types';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
 
 const ROLE_VARIANT = {
   ADMIN: 'default',

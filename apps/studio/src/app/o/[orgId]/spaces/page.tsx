@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { LayoutGridIcon, PlusIcon } from 'lucide-react';
-import { useOrganization } from '@/modules/organization/organization.queries';
-import { useSpaces } from '@/modules/space/space.queries';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useOrganization } from '@api/modules/organization/organization.queries';
+import { useSpaces } from '@api/modules/space/space.queries';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { EmptyState, PageCard } from '@/components/shell/page-card';
-import { SpaceCard } from '@/components/space/space-card';
+import { SpaceCard } from '@learning/components/space/space-card';
 
 const PLACEHOLDER_CARDS = 3;
 
@@ -79,7 +79,7 @@ export default function OrganizationSpacesPage() {
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {spaces.map((space) => (
-            <SpaceCard key={space.spaceId} orgId={orgId} space={space} />
+            <SpaceCard key={space.spaceId} href={`/o/${orgId}/spaces/${space.spaceId}`} space={space} />
           ))}
         </div>
       )}

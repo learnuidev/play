@@ -3,14 +3,14 @@
 import { useState } from 'react';
 import { Loader2Icon, MailPlusIcon, UserPlusIcon, UsersIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAcceptSpaceInvitation, useSpaceMembers } from '@/modules/space-member/space-member.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useAcceptSpaceInvitation, useSpaceMembers } from '@api/modules/space-member/space-member.queries';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { BlockLabel, EmptyState } from '@/components/shell/page-card';
 import { InviteSpaceMemberDialog } from '@/components/space/invite-space-member-dialog';
 import { SpaceMemberRow } from '@/components/space/space-member-row';
-import { SPACE_MEMBER_ROLE_LABELS, type MySpaceInvitation } from '@/types';
+import { SPACE_MEMBER_ROLE_LABELS, type MySpaceInvitation } from '@play/types';
 
 /**
  * The offer that is waiting, shown to somebody the course was shared with.

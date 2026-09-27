@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { EyeIcon } from 'lucide-react';
-import { useVideo } from '@/modules/video/video.queries';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useVideo } from '@api/modules/video/video.queries';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@ui/components/ui/tabs';
 import { PageCard } from '@/components/shell/page-card';
-import { VideoStatusBadge } from '@/components/video/status-badge';
+import { VideoStatusBadge } from '@learning/components/video/status-badge';
 import { VideoGeneralInfo } from '@/components/video/video-general-info';
 import { VideoGeneralForm } from '@/components/video/video-general-form';
 import { VideoThumbnail } from '@/components/video/video-thumbnail';

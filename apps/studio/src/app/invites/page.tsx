@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { MailCheckIcon } from 'lucide-react';
-import { useMyInvitations } from '@/modules/organization/member.queries';
-import { useMySpaceInvitations } from '@/modules/space-member/space-member.queries';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useMyInvitations } from '@api/modules/organization/member.queries';
+import { useMySpaceInvitations } from '@api/modules/space-member/space-member.queries';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { EmptyState } from '@/components/shell/page-card';
 import { InvitationsList } from '@/components/organization/invitations-list';
 

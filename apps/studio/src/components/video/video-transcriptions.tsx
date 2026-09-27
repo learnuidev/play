@@ -3,15 +3,15 @@
 import { useState } from 'react';
 import { CaptionsIcon, LanguagesIcon, Loader2Icon, SparklesIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-import { TRANSLATION_LANGUAGES } from '@/types';
-import type { Video } from '@/types';
-import { useGenerateSubtitles, useSubtitles } from '@/modules/subtitle/subtitle.queries';
-import { useGenerateTranslations } from '@/modules/translations/translations.queries';
+import { cn } from '@ui/lib/utils';
+import { TRANSLATION_LANGUAGES } from '@play/types';
+import type { Video } from '@play/types';
+import { useGenerateSubtitles, useSubtitles } from '@api/modules/subtitle/subtitle.queries';
+import { useGenerateTranslations } from '@api/modules/translations/translations.queries';
 import { SubtitleEditor } from '@/components/subtitle-editor';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@ui/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ui/components/ui/card';
+import { Skeleton } from '@ui/components/ui/skeleton';
 
 const SUBTITLE_STATUS: Record<string, { label: string; className: string }> = {
   NONE: { label: 'None', className: 'text-muted-foreground' },

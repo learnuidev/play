@@ -1,8 +1,8 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
+import { SidebarInset, SidebarProvider } from '@ui/components/ui/sidebar';
+import { cn } from '@ui/lib/utils';
 import { lessonRoute } from '@/lib/routes';
 import { CommunitySidebar } from './community-sidebar';
 import { OrgRail } from './org-rail';

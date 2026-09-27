@@ -3,13 +3,13 @@
 import { useState } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Video } from '@/types';
-import { useUpdateVideo } from '@/modules/video/video.queries';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import type { Video } from '@play/types';
+import { useUpdateVideo } from '@api/modules/video/video.queries';
+import { Button } from '@ui/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ui/components/ui/card';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
+import { Textarea } from '@ui/components/ui/textarea';
 
 export function VideoGeneralForm({ video }: { video: Video }) {
   const [title, setTitle] = useState(video.title);

@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@ui/lib/utils';
 
 function orgInitial(name: string): string {
   const first = name.trim()[0];

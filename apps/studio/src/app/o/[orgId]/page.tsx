@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowRightIcon, PlusIcon, VideoIcon } from 'lucide-react';
-import { ORG_ROLE_LABELS } from '@/types';
-import { useOrganization } from '@/modules/organization/organization.queries';
-import { useVideos } from '@/modules/video/video.queries';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { ORG_ROLE_LABELS } from '@play/types';
+import { useOrganization } from '@api/modules/organization/organization.queries';
+import { useVideos } from '@api/modules/video/video.queries';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { EmptyState, PageCard } from '@/components/shell/page-card';
 import { VideoCard } from '@/components/video/video-card';
 

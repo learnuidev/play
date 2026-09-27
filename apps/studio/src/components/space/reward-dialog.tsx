@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn } from '@ui/lib/utils';
 import {
   REWARD_KINDS,
   REWARD_KIND_DESCRIPTIONS,
@@ -16,10 +16,10 @@ import {
   type RewardMilestoneType,
   type SpaceReward,
   type UpdateRewardPayload,
-} from '@/types';
-import { useCreateReward, useUpdateReward } from '@/modules/reward/reward.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+} from '@play/types';
+import { useCreateReward, useUpdateReward } from '@api/modules/reward/reward.queries';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
 import {
   Dialog,
   DialogClose,
@@ -29,10 +29,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+} from '@ui/components/ui/dialog';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
+import { Textarea } from '@ui/components/ui/textarea';
 
 // The same limits the API enforces, so an obvious mistake fails here instead of
 // after a round trip. They are duplicated deliberately: the server stays the

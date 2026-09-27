@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ClapperboardIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@ui/lib/utils';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { AccountMenu } from './account-menu';
 

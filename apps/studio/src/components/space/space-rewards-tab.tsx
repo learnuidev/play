@@ -24,17 +24,17 @@ import {
   type RewardMilestone,
   type RewardWithGrants,
   type SpaceMemberApi,
-} from '@/types';
+} from '@play/types';
 import {
   useDeleteReward,
   useRevokeRewardGrant,
   useRewards,
   useUpdateReward,
-} from '@/modules/reward/reward.queries';
-import { useSpaceMembers } from '@/modules/space-member/space-member.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@api/modules/reward/reward.queries';
+import { useSpaceMembers } from '@api/modules/space-member/space-member.queries';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { BlockLabel, EmptyState } from '@/components/shell/page-card';
 import { GrantRewardDialog } from '@/components/space/grant-reward-dialog';
 import { RewardDialog } from '@/components/space/reward-dialog';

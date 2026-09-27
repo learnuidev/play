@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { FilmIcon, ImageIcon, Loader2Icon, UploadIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-import type { Video } from '@/types';
+import { cn } from '@ui/lib/utils';
+import type { Video } from '@play/types';
 import {
   isCustomThumbnail,
   thumbnailKeys,
@@ -13,9 +13,9 @@ import {
   useThumbnail,
   useThumbnailCapture,
   useUploadThumbnail,
-} from '@/modules/thumbnail/thumbnail.queries';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+} from '@api/modules/thumbnail/thumbnail.queries';
+import { Button } from '@ui/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ui/components/ui/card';
 
 /** How long to keep polling for a captured frame before giving up. */
 const CAPTURE_TIMEOUT_MS = 120_000;

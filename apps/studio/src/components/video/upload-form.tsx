@@ -3,12 +3,12 @@
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { FilmIcon, Loader2Icon, UploadIcon } from 'lucide-react';
-import { useCreateVideo } from '@/modules/video/video.queries';
-import { cn, computeAspectRatio, resolutionTierFor } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { useCreateVideo } from '@api/modules/video/video.queries';
+import { cn, computeAspectRatio, resolutionTierFor } from '@ui/lib/utils';
+import { Button } from '@ui/components/ui/button';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
+import { Textarea } from '@ui/components/ui/textarea';
 
 function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';

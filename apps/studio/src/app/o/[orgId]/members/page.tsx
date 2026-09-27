@@ -8,13 +8,13 @@ import {
   ORG_ROLE_DESCRIPTIONS,
   ORG_ROLE_LABELS,
   type OrgMemberApi,
-} from '@/types';
-import { ApiError } from '@/lib/api';
-import { useOrganization } from '@/modules/organization/organization.queries';
-import { useAcceptInvitation, useMembers, useMyInvitations } from '@/modules/organization/member.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@play/types';
+import { ApiError } from '@api/lib/api';
+import { useOrganization } from '@api/modules/organization/organization.queries';
+import { useAcceptInvitation, useMembers, useMyInvitations } from '@api/modules/organization/member.queries';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { EmptyState, PageCard } from '@/components/shell/page-card';
 import { InviteMemberDialog } from '@/components/organization/invite-member-dialog';
 import { MemberRow } from '@/components/organization/member-row';

@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { BuildingIcon, PlusIcon } from 'lucide-react';
-import { useOrganizations } from '@/modules/organization/organization.queries';
-import { useMyInvitations } from '@/modules/organization/member.queries';
-import { useMySpaceInvitations } from '@/modules/space-member/space-member.queries';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useOrganizations } from '@api/modules/organization/organization.queries';
+import { useMyInvitations } from '@api/modules/organization/member.queries';
+import { useMySpaceInvitations } from '@api/modules/space-member/space-member.queries';
+import { Button } from '@ui/components/ui/button';
+import { Skeleton } from '@ui/components/ui/skeleton';
 import { EmptyState, PageCard } from '@/components/shell/page-card';
 import { OrganizationCard } from '@/components/organization/organization-card';
 import { PendingInvitationsCard } from '@/components/organization/pending-invitations-card';

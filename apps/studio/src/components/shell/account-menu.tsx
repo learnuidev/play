@@ -3,7 +3,7 @@
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import Link from 'next/link';
 import { BuildingIcon, GraduationCapIcon, LogOutIcon, MailPlusIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@ui/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +11,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@ui/components/ui/dropdown-menu';
 
 /** The signed-in user's avatar menu in the top bar. */
 export function AccountMenu() {

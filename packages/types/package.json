@@ -1,0 +1,11 @@
+{
+  "name": "@play/types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The shapes the API, the studio and the marketplace all agree on.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

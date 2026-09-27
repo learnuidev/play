@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckIcon, ImageIcon, Loader2Icon, XIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-import { putFileToPresignedUrl } from '@/lib/upload';
+import { cn } from '@ui/lib/utils';
+import { putFileToPresignedUrl } from '@api/lib/upload';
 import {
   DEFAULT_DRIP_INTERVAL_DAYS,
   SPACE_COLORS,
@@ -13,12 +13,12 @@ import {
   SPACE_TYPE_DESCRIPTIONS,
   SPACE_TYPE_LABELS,
   type SpaceType,
-} from '@/types';
-import { useCreateSpace, useUploadSpaceThumbnail } from '@/modules/space/space.queries';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+} from '@play/types';
+import { useCreateSpace, useUploadSpaceThumbnail } from '@api/modules/space/space.queries';
+import { Button } from '@ui/components/ui/button';
+import { Input } from '@ui/components/ui/input';
+import { Label } from '@ui/components/ui/label';
+import { Textarea } from '@ui/components/ui/textarea';
 
 // Mirrors the server-side limits, so the form fails fast instead of round-tripping.
 const MIN_TITLE_LENGTH = 2;

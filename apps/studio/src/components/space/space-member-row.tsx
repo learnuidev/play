@@ -11,20 +11,20 @@ import {
   UserMinusIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn } from '@ui/lib/utils';
 import {
   SPACE_MEMBER_ROLES,
   SPACE_MEMBER_ROLE_LABELS,
   type SpaceMemberApi,
   type SpaceMemberRole,
-} from '@/types';
+} from '@play/types';
 import {
   useRemoveSpaceMember,
   useResendSpaceInvitation,
   useUpdateSpaceMember,
-} from '@/modules/space-member/space-member.queries';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+} from '@api/modules/space-member/space-member.queries';
+import { Badge } from '@ui/components/ui/badge';
+import { Button } from '@ui/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,7 +32,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from '@ui/components/ui/dropdown-menu';
 
 /**
  * Who a member is, in words, without giving an address away to somebody who
