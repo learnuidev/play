@@ -615,22 +615,39 @@ Parameters written (secret stored as `SecureString`):
 
 - `/play/auth/google-client-id`
 - `/play/auth/google-client-secret`
-- `/play/auth/callback-urls` (comma-separated, default `http://localhost:3000/auth/callback,http://localhost:3000`)
-- `/play/auth/logout-urls` (comma-separated, default `http://localhost:3000`)
+- `/play/auth/callback-urls` (comma-separated, default: both apps on localhost)
+- `/play/auth/logout-urls` (comma-separated, default: both apps on localhost)
 
-Override the URL lists with `--callback-urls=` / `--logout-urls=` — they must
+Override the URL lists with `--callback-urls=` / `--logout-urls` — they must
 contain every origin the app is served from (dev and deployed), and must match
-the frontend's `NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_IN` / `_SIGN_OUT`.
+the app's `NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_IN` / `_SIGN_OUT`. In development
+neither app sets those: `@play/auth` derives them from the origin the browser is
+on, so the studio gets `localhost:3000/auth/callback` and the marketplace
+`localhost:3001/auth/callback`.
 
-### 3. Deploy and refresh the frontend env
+> **Adding an app or a port?** A value in SSM *wins over* the defaults in
+> `custom.authDefaults`, and Cognito only learns the list at deploy time — so a
+> new origin must be added to the parameter **and** deployed, or signing in from
+> it fails with `redirect_mismatch`. `./scripts/set-auth-urls.sh` rewrites just
+> those two parameters (`--show` prints what is stored, `--delete` falls back to
+> the defaults in `serverless.yml`).
+
+### 3. Deploy and refresh the apps' env
 
 ```bash
-cd services/api
+./scripts/set-auth-urls.sh --profile=yoserverless   # if an app or port is new
 npm run deploy -- --aws-profile yoserverless
 
 cd ../apps/studio
 npm run get-env -- --profile=yoserverless   # adds COGNITO_DOMAIN + GOOGLE_AUTH_ENABLED
 npm run dev
+```
+
+The marketplace reads the same two values, so run `npm run get-env` from
+`apps/marketplace` too — or once from the repository root, which writes both:
+
+```bash
+cd ../.. && npm run get-env -- --profile=yoserverless
 ```
 
 The sign-in screen now shows **Sign In with Google**. Restart the dev server so

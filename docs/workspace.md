@@ -149,13 +149,25 @@ the marketplace are the same account. `@play/auth` is where that lives:
 - `AuthGate` — the sign-in wall, for everything that is only for signed-in
   people. The studio wraps its whole tree in it; the marketplace wraps the pages
   that need an account, and sends anonymous readers to `/sign-in?next=…`.
+- `SignIn` — the sign-in screen itself, and the *only* place `socialProviders` is
+  passed. A page that renders Amplify's `Authenticator` directly would silently
+  offer passwords only, however the deployment is configured.
 - `useIsSignedIn` — for pages that ask the API who the caller is, because "the
   courses I am in" is a 401 when nobody is signed in, not an empty list.
 
 Redirect URLs are derived from `window.location.origin`, so the studio gets
 `localhost:3000/auth/callback` and the marketplace `localhost:3001/auth/callback`
 with no per-app configuration. Both must be registered on the user pool —
-`custom.authDefaults` in `serverless.yml` lists both for local development.
+`custom.authDefaults` in `serverless.yml` lists both for local development, and
+`services/api/scripts/set-auth-urls.sh` rewrites the SSM parameter that overrides
+it (a value there wins over the defaults, and Cognito only re-reads the list at
+deploy time).
+
+Signing in with Google leaves the page entirely, so `?next=` does not survive it:
+`rememberAfterSignIn` leaves a note in session storage and `OAuthCallback` reads
+it on the way back. Anything routed through it is validated by `internalPath` —
+`next` is attacker-supplied, and a sign-in page that forwards to a full URL is a
+phishing link wearing the app's name.
 
 ## The backend
 

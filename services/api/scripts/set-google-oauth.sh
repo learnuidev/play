@@ -26,8 +26,8 @@
 # Options:
 #   --client-id=<id>        Google OAuth client id      (prompted if omitted)
 #   --client-secret=<secret> Google OAuth client secret  (prompted if omitted)
-#   --callback-urls=<urls>  comma-separated              (default: localhost:3000)
-#   --logout-urls=<urls>    comma-separated              (default: localhost:3000)
+#   --callback-urls=<urls>  comma-separated              (default: both apps on localhost)
+#   --logout-urls=<urls>    comma-separated              (default: both apps on localhost)
 #   --stage=<name>          Backend stage                (default: dev)
 #   --profile=<name>        AWS profile                  (default: yoserverless)
 #   --region=<name>         AWS region                   (default: us-east-1)
@@ -40,8 +40,8 @@ REGION="us-east-1"
 STAGE="dev"
 CLIENT_ID=""
 CLIENT_SECRET=""
-CALLBACK_URLS="http://localhost:3000/auth/callback,http://localhost:3000"
-LOGOUT_URLS="http://localhost:3000"
+CALLBACK_URLS="http://localhost:3000/auth/callback,http://localhost:3000,http://localhost:3001/auth/callback,http://localhost:3001"
+LOGOUT_URLS="http://localhost:3000,http://localhost:3001"
 DELETE=false
 
 usage() {
@@ -124,7 +124,7 @@ Now in the Google Cloud Console, set these on your OAuth 2.0 Web client:
   Authorized JavaScript origins: https://$DOMAIN
   Authorized redirect URIs:      https://$DOMAIN/oauth2/idpresponse
 
-Then deploy and refresh the frontend env:
-  cd play-backend  && serverless deploy --stage $STAGE --aws-profile $PROFILE --region $REGION
-  cd play-frontend && npm run get-env -- --profile=$PROFILE --stage=$STAGE
+Then deploy and refresh both apps' env:
+  npm run deploy --workspace play-backend -- --stage $STAGE --aws-profile $PROFILE --region $REGION
+  npm run get-env -- --profile=$PROFILE --stage=$STAGE
 EOF

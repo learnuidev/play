@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Authenticator } from '@aws-amplify/ui-react';
-import { useIsSignedIn } from '@play/auth';
+import { internalPath, rememberAfterSignIn, SignIn, useIsSignedIn } from '@play/auth';
 import { Skeleton } from '@ui/components/ui/skeleton';
 
 /**
@@ -13,11 +12,10 @@ import { Skeleton } from '@ui/components/ui/skeleton';
  * the course page sends the reader here with `?next=` naming it. Without that,
  * signing in would drop them on the front page to find the course again.
  *
- * The Authenticator is Amplify's, unchanged — the same one the studio signs in
- * with, against the same user pool, because a learner and an author are the same
- * person with different intentions.
+ * `SignIn` is the shared screen, so this page offers whatever the deployment
+ * offers — a password, or Google — without listing the providers itself.
  */
-function SignIn() {
+function SignInScreen() {
   const router = useRouter();
   const search = useSearchParams();
   const signedIn = useIsSignedIn();
@@ -27,8 +25,17 @@ function SignIn() {
    * redirect anybody can aim, and an open redirect off a sign-in page is how a
    * phishing link borrows this app's name.
    */
-  const requested = search.get('next') ?? '';
-  const next = requested.startsWith('/') && !requested.startsWith('//') ? requested : '/my-courses';
+  const next = internalPath(search.get('next')) ?? '/my-courses';
+
+  /**
+   * Noted before anything else, because signing in with Google leaves this page
+   * entirely: the browser goes to the Cognito Hosted UI and comes back to
+   * `/auth/callback`, which has no `?next=` to read. The note is what carries it
+   * across.
+   */
+  useEffect(() => {
+    rememberAfterSignIn(next);
+  }, [next]);
 
   useEffect(() => {
     if (signedIn) router.replace(next);
@@ -37,10 +44,10 @@ function SignIn() {
   // Rendered only once the session is known, so somebody who is already signed
   // in never sees the form flash before being redirected.
   if (signedIn) {
-    return <Skeleton className="h-80 w-full max-w-sm rounded-2xl" />;
+    return <Skeleton className="h-80 w-full rounded-2xl" />;
   }
 
-  return <Authenticator />;
+  return <SignIn />;
 }
 
 export default function SignInPage() {
@@ -49,7 +56,7 @@ export default function SignInPage() {
       <div className="w-full max-w-sm">
         {/* `useSearchParams` needs a boundary in the app router. */}
         <Suspense fallback={<Skeleton className="h-80 w-full rounded-2xl" />}>
-          <SignIn />
+          <SignInScreen />
         </Suspense>
       </div>
     </div>

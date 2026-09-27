@@ -1,11 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import { Hub } from 'aws-amplify/utils';
 import { Loader2Icon } from 'lucide-react';
+import {
+  forgetAfterSignIn,
+  readAfterSignIn,
+} from '@auth/lib/after-sign-in';
 import { Button } from '@ui/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@ui/components/ui/card';
 
@@ -37,25 +41,41 @@ export function OAuthCallback({ redirectTo = '/' }: { redirectTo?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [isStuck, setIsStuck] = useState(false);
 
+  /**
+   * Where this round trip was for.
+   *
+   * The sign-in page leaves a note before sending the browser to the provider,
+   * because the provider sends it back here and this page has no other way to
+   * know that somebody was on their way to a course. Read without clearing it —
+   * this component's effects run twice under React's strict mode, and the second
+   * read has to give the same answer — and cleared once it has been acted on.
+   */
+  const destination = useMemo(() => readAfterSignIn() ?? redirectTo, [redirectTo]);
+
+  const arrive = useCallback(() => {
+    forgetAfterSignIn();
+    router.replace(destination);
+  }, [destination, router]);
+
   // Once the tokens are stored, the session flips to authenticated, and the
-  // reader is handed to wherever this app considers "where you were going".
+  // reader is handed to wherever they were going.
   useEffect(() => {
     if (authStatus === 'authenticated') {
-      router.replace(redirectTo);
+      arrive();
     }
-  }, [authStatus, redirectTo, router]);
+  }, [arrive, authStatus]);
 
   useEffect(() => {
     const unsubscribe = Hub.listen('auth', ({ payload }) => {
       if (payload.event === 'signInWithRedirect') {
-        router.replace(redirectTo);
+        arrive();
       } else if (payload.event === 'signInWithRedirect_failure') {
         setError(errorMessage(payload.data));
       }
     });
 
     return unsubscribe;
-  }, [redirectTo, router]);
+  }, [arrive]);
 
   // Cognito redirects back with ?error=... when the provider rejects the sign-in.
   useEffect(() => {

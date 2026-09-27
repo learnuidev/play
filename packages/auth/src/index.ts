@@ -7,5 +7,6 @@ export * from './components/oauth-callback';
 export * from './components/query-provider';
 export * from './hooks/use-signed-in';
 export * from './hooks/use-viewer';
+export * from './lib/after-sign-in';
 export * from './lib/amplify';
 export * from './providers';
