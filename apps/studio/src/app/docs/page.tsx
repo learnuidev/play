@@ -76,9 +76,10 @@ export default function ApiDocsPage() {
                 Read Play from your own code.
               </h1>
               <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
-                The same catalog a creator publishes to, and the same syllabus their learners read —
-                reachable by a script, a partner&rsquo;s backend, or a nightly export with one header
-                and no sign-in.
+                The catalog a creator publishes to, the syllabus their learners read, and the
+                lessons themselves — the video, the transcript, the notes and the files — reachable
+                by a script, a partner&rsquo;s backend, or a classroom you build somewhere else. One
+                header, no sign-in.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-card-foreground">
@@ -102,7 +103,7 @@ export default function ApiDocsPage() {
                 <Fact
                   icon={<ShieldCheckIcon className="size-4" />}
                   title="Read-only"
-                  body="A key reads courses and catalog. It cannot write, publish, or change anything."
+                  body="A key reads courses, lessons and their media. It cannot write, publish, or change anything."
                 />
                 <Fact
                   icon={<ZapIcon className="size-4" />}
@@ -175,7 +176,35 @@ export default function ApiDocsPage() {
                 </pre>
               </div>
 
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              {/* The reach of a key is the question every 403 raises, so it is
+                answered where authentication is explained rather than left to
+                be inferred from which endpoints happen to work. */}
+            <div className="mt-6 rounded-3xl border border-border/60 bg-card p-5 text-card-foreground">
+              <h3 className="text-base font-semibold tracking-tight">What a key can read</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                The published catalog is open to any key. Everything else is authorized the way the
+                signed-in apps are, with the key standing in for the person who made it:
+              </p>
+              <div className="mt-4 grid gap-3">
+                <div className="grid gap-1 rounded-2xl border border-border/60 px-4 py-3 sm:grid-cols-[15rem_1fr] sm:gap-4">
+                  <p className="text-sm font-medium">A personal key</p>
+                  <p className="text-sm text-muted-foreground">
+                    Reaches what its owner may read: their own organizations&rsquo; courses, and the
+                    courses they are registered for.
+                  </p>
+                </div>
+                <div className="grid gap-1 rounded-2xl border border-border/60 px-4 py-3 sm:grid-cols-[15rem_1fr] sm:gap-4">
+                  <p className="text-sm font-medium">A key made for an organization</p>
+                  <p className="text-sm text-muted-foreground">
+                    Reaches everything that organization owns — every course, published or not, and
+                    its lessons. That is the key to build a classroom with, and any member can make
+                    one; its admins can see it and revoke it.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 <Fact
                   icon={<BracesIcon className="size-4" />}
                   title="The secret is stored as a hash"
