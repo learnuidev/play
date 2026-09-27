@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { GraduationCapIcon } from 'lucide-react';
 import { useAuthStatus } from '@play/auth';
 import { Button } from '@ui/components/ui/button';
+import { ThemeToggle } from '@ui/components/theme-toggle';
 import { AccountMenu } from '@/components/account-menu';
 
 /**
@@ -13,6 +14,13 @@ import { AccountMenu } from '@/components/account-menu';
  * is one line of small text over a blurred backdrop rather than a piece of
  * furniture with borders and buttons in it — and it is the same bar whether
  * somebody is signed in or not, with the one control that differs at the end.
+ *
+ * Light or dark is the studio's control too, in the same place and the same
+ * shape: one product read in two apps, and a reader should not have to find the
+ * switch in a different corner on each. It is `@play/ui`'s `ThemeToggle` rather
+ * than a marketplace copy for the same reason. (Each app remembers its own
+ * answer — they are separate origins, so `next-themes`' storage is not shared —
+ * but the thing itself is one control.)
  */
 export function SiteHeader() {
   const status = useAuthStatus();
@@ -41,6 +49,10 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* The theme is not about who you are, so it is out here rather than
+              inside the account menu, and it comes before the one control that
+              does differ. */}
+          <ThemeToggle />
           {/* Nothing while the session is still being restored: a button that
               says "Sign in" to somebody who is signed in is a worse answer than
               no button for a moment. */}
