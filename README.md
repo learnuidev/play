@@ -179,18 +179,21 @@ it takes the whole window:
 ```
 ┌───────────────────────────────────┬───────────────────────────────┐
 │ ‹ GET STARTED                     │ Course Transcript Notes …  ✓  │
-│ Why rhythm matters                │ ──────────────────────────────│
-│ ┌───────────────────────────────┐ │ 01 GET STARTED                │
-│ │                               │ │  │ ● Why a cut lands          │
-│ │      video, playing           │ │  │   Cutting on motion        │
-│ │      where it is talked       │ │ 02 LIGHT AND SHADOW           │
-│ │      about                    │ │  │   Reading a histogram      │
+│ ┌───────────────────────────────┐ │ ──────────────────────────────│
+│ │      video, playing           │ │ 01 GET STARTED                │
+│ │      where it is talked       │ │  │ ● Why a cut lands          │
+│ │      about                    │ │  │   Cutting on motion        │
+│ └───────────────────────────────┘ │ 02 LIGHT AND SHADOW           │
+│ Why rhythm matters                │  │   Reading a histogram      │
+│ Comments                          │                               │
+│ ┌───────────────────────────────┐ │                               │
+│ │ Add a comment…                │ │                               │
 │ └───────────────────────────────┘ │                               │
 └───────────────────────────────────┴───────────────────────────────┘
          60%                                    40%
-         the video                              everything filed
-                                                under it, and the
-                                                course it is in
+         the video, and                        everything filed
+         the discussion                        under it, and the
+         under it                              course it is in
 ```
 
 - **No tab bar, no organization rail, no column beside it.** A row offering
@@ -210,27 +213,38 @@ it takes the whole window:
   panel the rest — watched and read at once, which is the whole point of a
   transcript that follows the playhead. It is a ratio rather than a floor, so
   both tracks grow with the window and the panel stays a readable column of prose
-  on anything wide enough to hold two. The title sits above both rather than
-  inside the video's half, so the video and the panel start on the same line.
-  Below `lg` they stack and the page scrolls normally, because a phone has no
-  second half to give. The classroom gets a wider canvas than the rest of the app
-  for the same reason: three fifths of a reading measure is not a video.
+  on anything wide enough to hold two. The title sits in the video's half, under
+  the picture: the video is what the lesson was opened for, so it gets the top of
+  the page and its name reads as a caption to it. The panel still starts on the
+  video's first line. Below `lg` they stack and the page scrolls normally, because
+  a phone has no second half to give. The classroom gets a wider canvas than the
+  rest of the app for the same reason: three fifths of a reading measure is not a
+  video.
+- **The discussion is under the video**
+  (`components/content/content-comments.tsx`), not in the panel beside it. A
+  comment is about what is playing, so it is read where the playing is; as a tab
+  it was a conversation in a narrow column next to the transcript, and on a phone
+  behind a press below the video — which is a strange place for the one part of
+  the page that everybody else writes.
 - **The video plays on the page.** Playback lives here now rather than behind a
   link to the library: a lesson *is* the video and the material around it, and
   being sent elsewhere to watch it is what made the two feel like separate
   things. Captions are deliberately not switched on — the transcript tab is the
   words, animated and seekable, and a second copy of the same sentence over the
   picture would only be in the way.
-- **The panel scrolls, not the page.** The two columns fill the window's height
-  and the tab panel scrolls inside itself, so the video never leaves the screen
-  while you read. The transcript owns its own scroll — the sheet follows the
-  playhead itself — so the panel must not scroll it a second time.
-- **Six tabs.** Course, Transcript, Notes, Files, Loops, Comments. Files earned a
-  tab rather than being dropped: the content model has attachments, and a tab
-  keeps the page one structure instead of a tab bar plus a stray block. The
-  course earned one the other way round — it was chrome that had a column of its
-  own, and the column was the expensive way to keep it. Comments is the one tab
-  that is about the people watching rather than about the lesson.
+- **Both columns scroll, not the page.** The two columns fill the window's height
+  and each scrolls inside itself: the tab panel, and the video's own column, which
+  carries the discussion and is therefore as long as the class is talkative.
+  Nothing moves the window, so reading the transcript never scrolls the picture
+  away — the one scroll that does take the video off screen is the one you made to
+  reach the comments under it. The transcript owns its own scroll — the sheet
+  follows the playhead itself — so the panel must not scroll it a second time.
+- **Five tabs.** Course, Transcript, Notes, Files, Loops. Files earned a tab
+  rather than being dropped: the content model has attachments, and a tab keeps
+  the page one structure instead of a tab bar plus a stray block. The course
+  earned one the other way round — it was chrome that had a column of its own, and
+  the column was the expensive way to keep it. The sixth, Comments, stopped being
+  a tab when the discussion moved under the video.
 - **The panel remembers where you were.** Choosing the next lesson out of the
   Course tab used to throw the reader back to the transcript at the top of the
   list, which made the tab useless for working through a course
@@ -316,10 +330,18 @@ time it is spoken over.
 
 ### The discussion
 
-The Comments tab (`components/content/content-comments.tsx`) is the lesson's
-discussion: what everybody watching it said, each with a heart, a reply box, and
-a palette of emoji for the sentence itself.
+The lesson's discussion (`components/content/content-comments.tsx`) sits under the
+video: what everybody watching it said, each with a heart, a reply box, and a
+palette of emoji for the sentence itself.
 
+- **Set in `text-lg`, and everything else on the scale below it.** A comment is
+  the thing being read, in a column under a video rather than in a sidebar, so it
+  is the largest prose on the page — with the name a step down (`text-base`), the
+  time, the heart and the reply a step down again (`text-xs`), and the section
+  heading a step up (`text-xl`) so it introduces that text rather than captioning
+  it. The box a comment is written in is the same size as the comment it becomes,
+  which is why its textarea pins `md:text-lg` as well: the design system's own
+  field steps down at that breakpoint.
 - **Comments, replies, nothing deeper.** A thread is a comment and its answers,
   and an answer to an answer is filed under the same top-level comment with the
   name of whoever it answers written above it. Depth is capped on purpose — the

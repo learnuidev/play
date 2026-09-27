@@ -171,7 +171,15 @@ function MomentChip({
   );
 }
 
-/** What a comment says, with its line breaks kept, its links live, and its moments playable. */
+/**
+ * What a comment says, with its line breaks kept, its links live, and its moments playable.
+ *
+ * The largest type in the discussion, and the one size in it that is not a
+ * label: a comment is the thing being read, in a column under a video rather
+ * than in a sidebar, and 13px of it was a caption to a page of prose. Everything
+ * around it — the name, the heart, the time — stays on the small side of it, so
+ * the words are what the eye lands on.
+ */
 function CommentBody({
   body,
   onSeek,
@@ -184,7 +192,7 @@ function CommentBody({
   onSeek?: (timeMs: number) => void;
 }) {
   return (
-    <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+    <p className="mt-0.5 whitespace-pre-wrap break-words text-lg leading-relaxed">
       {body.split(LINK_PATTERN).map((part, index) => {
         // Links are cut out first, so a moment written inside an address stays
         // part of the address: `https://x.test/@2:00` is a link, not a seek.
@@ -355,7 +363,10 @@ function Composer({
         aria-label={placeholder}
         rows={compact ? 1 : 2}
         className={cn(
-          'min-h-0 resize-none border-0 bg-transparent px-3 pb-1 pt-2 text-[13px] leading-relaxed shadow-none focus-visible:ring-0',
+          // `md:text-lg` as well as `text-lg`: the design system's own textarea
+          // steps *down* at that breakpoint, and the box a comment is written in
+          // is the same size as the comment it becomes.
+          'min-h-0 resize-none border-0 bg-transparent px-3 pb-1 pt-2 text-lg leading-relaxed shadow-none focus-visible:ring-0 md:text-lg',
           compact && 'pt-1.5',
         )}
       />
@@ -364,11 +375,11 @@ function Composer({
         <EmojiPicker onPick={addEmoji} />
 
         {hint && !compact && (
-          <span className="text-[11px] text-muted-foreground/60 max-sm:hidden">{hint}</span>
+          <span className="text-xs text-muted-foreground/60 max-sm:hidden">{hint}</span>
         )}
 
         {!compact && (
-          <span className="text-[11px] text-muted-foreground/60 max-sm:hidden">
+          <span className="text-xs text-muted-foreground/60 max-sm:hidden">
             ⌘↵ to post
           </span>
         )}
@@ -377,7 +388,7 @@ function Composer({
           {body.length >= COUNTER_FROM && (
             <span
               className={cn(
-                'text-[11px] tabular-nums',
+                'text-xs tabular-nums',
                 over ? 'font-medium text-destructive' : 'text-muted-foreground/70',
               )}
             >
@@ -401,7 +412,13 @@ function Composer({
   );
 }
 
-/** Who wrote it, and when. */
+/**
+ * Who wrote it, and when.
+ *
+ * A step under the comment itself — `text-base` against the body's `text-lg` —
+ * so the line above a comment introduces it rather than competing with it, and
+ * the time is a step under the name again.
+ */
 function Byline({
   comment,
   now,
@@ -414,15 +431,15 @@ function Byline({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="truncate text-[13px] font-medium">{comment.authorName}</span>
+      <span className="truncate text-base font-medium">{comment.authorName}</span>
 
-      <span className="shrink-0 text-[11px] text-muted-foreground" title={exactTime(comment.createdAt)}>
+      <span className="shrink-0 text-xs text-muted-foreground" title={exactTime(comment.createdAt)}>
         {timeAgo(comment.createdAt, now)}
       </span>
 
       {comment.editedAt && (
         <span
-          className="shrink-0 text-[11px] text-muted-foreground/60"
+          className="shrink-0 text-xs text-muted-foreground/60"
           title={`Edited ${exactTime(comment.editedAt)}`}
         >
           edited
@@ -494,7 +511,7 @@ function CommentRow({
     <div className={cn('group/comment flex gap-2.5 py-3', editing === comment.commentId && 'py-2')}>
       <span
         aria-hidden
-        className="mt-0.5 flex size-7 shrink-0 select-none items-center justify-center rounded-full text-[11px] font-semibold text-white"
+        className="mt-0.5 flex size-7 shrink-0 select-none items-center justify-center rounded-full text-xs font-semibold text-white"
         style={{ backgroundColor: avatarColor(comment.authorId) }}
       >
         {comment.authorName.trim()[0]?.toUpperCase() ?? '?'}
@@ -514,7 +531,7 @@ function CommentRow({
                 aria-label={comment.favourited ? 'Remove your like' : 'Like this comment'}
                 title={comment.favourited ? 'Remove your like' : 'Like this comment'}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] tabular-nums transition-colors hover:bg-accent',
+                  'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs tabular-nums transition-colors hover:bg-accent',
                   comment.favourited
                     ? 'text-rose-600 dark:text-rose-400'
                     : 'text-muted-foreground/70 hover:text-foreground',
@@ -531,7 +548,7 @@ function CommentRow({
                     replyTo === comment.commentId ? onCancelReply() : onReply(comment, root.commentId)
                   }
                   title={`Reply to ${comment.authorName}`}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
                 >
                   <ReplyIcon className="size-3.5" />
                   <span className="max-sm:hidden">Reply</span>
@@ -580,7 +597,7 @@ function CommentRow({
         </Byline>
 
         {deleted ? (
-          <p className="mt-0.5 text-[13px] italic text-muted-foreground/60">
+          <p className="mt-0.5 text-base italic text-muted-foreground/60">
             This comment was deleted.
           </p>
         ) : editing === comment.commentId ? (
@@ -599,7 +616,7 @@ function CommentRow({
         ) : (
           <>
             {answeredName && (
-              <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+              <p className="mt-0.5 text-xs text-muted-foreground/70">
                 Replying to {answeredName}
               </p>
             )}
@@ -875,7 +892,7 @@ export function ContentComments({
       />
 
       {threads.length === 0 ? (
-        <p className="grid min-h-32 place-items-center px-6 text-center text-[13px] leading-relaxed text-muted-foreground">
+        <p className="grid min-h-32 place-items-center px-6 text-center text-base leading-relaxed text-muted-foreground">
           <span className="inline-flex flex-col items-center gap-2">
             <MessageSquareIcon className="size-4 text-muted-foreground/60" />
             No comments yet — ask a question about this lesson, or say what you
@@ -884,14 +901,14 @@ export function ContentComments({
         </p>
       ) : (
         <>
-          <p className="pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <p className="pb-1 pt-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {total} comment{total === 1 ? '' : 's'}
           </p>
 
           {/* The ceiling cuts the *oldest* part of a discussion, so the note
               belongs at the top of what is shown rather than the bottom. */}
           {data?.truncated && (
-            <p className="pb-1 text-[12px] text-muted-foreground">
+            <p className="pb-1 text-sm text-muted-foreground">
               Showing the most recent comments — the start of this discussion is
               older than this page reads.
             </p>

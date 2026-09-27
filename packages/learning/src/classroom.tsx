@@ -10,7 +10,6 @@ import {
   HeartIcon,
   ListTreeIcon,
   Loader2Icon,
-  MessageSquareIcon,
   MoreHorizontalIcon,
   NotebookPenIcon,
   PaperclipIcon,
@@ -112,7 +111,7 @@ import type { Content, ContentLoop, NotesDocument, Video } from "@play/types";
 /**
  * Quiet tabs: an underline, not pills, on a page whose subject is the video.
  *
- * The icons are sized here rather than at each call site so the six of them
+ * The icons are sized here rather than at each call site so the five of them
  * cannot drift apart, and at 20px rather than Lucide's 24px default, which reads
  * as a row of buttons in a panel this narrow.
  *
@@ -124,7 +123,7 @@ const QUIET_TAB =
   "shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none [&_svg]:size-5";
 
 /**
- * The tab strip: six icons, spread evenly across the panel.
+ * The tab strip: five icons, spread evenly across the panel.
  *
  * `justify-evenly` rather than a fixed gap, because the panel is a different
  * width on every screen: a row of icons bunched at one end with a gap between
@@ -141,12 +140,29 @@ const TAB_STRIP =
   "h-auto w-full justify-evenly gap-1 overflow-x-auto rounded-none border-b border-border/60 bg-transparent p-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 
 /**
+ * A column that scrolls without saying so.
+ *
+ * A lesson is watched: its columns scroll the whole time they are open — the
+ * transcript sheet follows the playhead — and a native bar parked beside the
+ * video is chrome on the one page that is a picture with a little around it.
+ * It is worse than decoration, because it also takes its width from the video
+ * the moment it appears and gives it back when it goes, so the picture changes
+ * size on its own. `scrollbar-width` and `-ms-overflow-style` are the two
+ * engines that are not WebKit, and the arbitrary variant is the rest.
+ *
+ * The transcript sheet has always been treated this way (`.tt-scroll` in
+ * `globals.css`), so a bar beside it would be the odd one out.
+ */
+const NO_SCROLLBAR =
+  "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+
+/**
  * What the lesson carries, on one quiet line above its name.
  *
- * The comments are not counted here any more: the number belongs beside the
- * icon it is a number *of*, and the discussion already has one on the tab
- * strip — a second copy above the title only made the line longer than the
- * thing it was annotating.
+ * The comments are not counted here any more, and no longer on the tab strip
+ * either: the discussion sits under the video and says how many it has where it
+ * is written, and a copy up here only made the line longer than the thing it was
+ * annotating.
  */
 function Meta({ content }: { content: Content }) {
   const stats = [
@@ -175,46 +191,34 @@ function Meta({ content }: { content: Content }) {
 /**
  * One tab: an icon, and what it holds when you point at it.
  *
- * The labels went because six of them over a video read as a row of words
+ * The labels went because five of them over a video read as a row of words
  * competing with the picture. The name has not gone anywhere — it is the
  * accessible name, and the tooltip — and the tooltip says what is *inside*
  * rather than only repeating the name, which is the question an icon-only strip
- * actually raises. The course is the widest of the six to name, so it asks for
- * the tooltip most.
+ * actually raises. The course is the widest of what is left to name, so it asks
+ * for the tooltip most.
+ *
+ * Nothing here is counted any more. The one tab that carried a number was the
+ * discussion, and it went under the video with the discussion: the count is
+ * where the comments are, rather than on the icon you have to press to see
+ * whether it is worth pressing.
  */
 function LessonTab({
   value,
   icon,
   label,
   hint,
-  badge,
 }: {
   value: string;
   icon: React.ReactNode;
   label: string;
   hint: string;
-  /**
-   * A number the tab itself is counting — only the comments have one, because
-   * how much discussion is waiting is the thing you want to know before you go
-   * looking. It sits beside the icon rather than in the tooltip so the strip
-   * answers that without a hover.
-   */
-  badge?: number;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <TabsTrigger
-          value={value}
-          className={QUIET_TAB}
-          aria-label={badge ? `${label} (${badge})` : label}
-        >
+        <TabsTrigger value={value} className={QUIET_TAB} aria-label={label}>
           {icon}
-          {badge ? (
-            <span className="-ml-1 text-xs font-semibold tabular-nums">
-              {badge}
-            </span>
-          ) : null}
         </TabsTrigger>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-56 text-center">
@@ -977,18 +981,21 @@ function ClassroomBody({
         </Button>
       </div>
 
-      {/* The video on the left, everything filed under it on the right. The
-          video is what the lesson is, so it takes the larger share — but only
-          just, because the panel is where the reading happens: the transcript
+      {/* The video on the left, everything filed under it on the right — except
+          the discussion, which is filed under the video itself, because it is
+          about the picture rather than a place to read beside it. The video is
+          what the lesson is, so it takes the larger share — but only just,
+          because the panel is where a lot of the reading happens: the transcript
           follows the playhead, the notes are read, and the course it belongs to
           now lives in there too. Below `lg` the two stack and the page scrolls
           normally, because a phone has no second half to give.
 
           The title sits in the video's own column, under the picture: the video
           is what you opened the lesson for, so it gets the top of the page, and
-          the name of what you are watching reads as a caption to it. The panel
-          still starts on the video's first line, because it is the column that
-          was never pushed down. */}
+          the name of what you are watching reads as a caption to it — with the
+          lesson's conversation under that, addressed to the lesson the caption
+          names. The panel still starts on the video's first line, because it is
+          the column that was never pushed down. */}
       {/* Fixed to the corner of the page, not of the video: see the card. */}
       {next && upNext.seconds !== null && (
         <PlayingNext
@@ -1003,9 +1010,17 @@ function ClassroomBody({
       {/* Six to four, as a ratio rather than a floor: the two tracks grow with
           the window, so the panel is a comfortable column of prose on a wide
           screen and still one on a laptop. The video keeps its own aspect
-          ratio, so the smaller share costs it height rather than shape. */}
+          ratio, so the smaller share costs it height rather than shape.
+
+          Both columns scroll themselves on a desktop screen, and they have to
+          now that the discussion is under the picture: a lesson's comments are
+          as long as the class is talkative, and the page around them is exactly
+          one screen tall. The video column takes the scroll so a long discussion
+          goes on below the fold of the column rather than pushing the whole
+          lesson — panel included — past the bottom of the window. Below `lg`
+          neither column is a screenful, so both grow and the page scrolls. */}
       <div className="grid min-h-0 gap-6 lg:mt-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div>
+        <div className={`min-h-0 lg:overflow-y-auto ${NO_SCROLLBAR}`}>
           {content.videoId ? (
             // Opened, and playing: a lesson is a thing you came to watch, and
             // having to press play on the thing you just asked for is a step
@@ -1074,8 +1089,15 @@ function ClassroomBody({
           )}
 
           {/* Under the picture, over the panel's shoulder: the lesson's name and
-              what it carries, with its own actions on the right. */}
-          <header className="mt-5 flex items-start justify-between gap-4">
+              what it carries, with its own actions on the right.
+
+              `pr-2` is there to be bled into: the actions button hangs its glyph
+              eight pixels outside the text edge with a negative margin so the
+              dots line up with the video, and the column around this is a scroll
+              container now — an overflow of eight pixels would be a horizontal
+              scroll area the width of a glint. The padding is the room the
+              margin needs, so the row still ends where the picture does. */}
+          <header className="mt-5 flex items-start justify-between gap-4 pr-2">
             <div className="min-w-0">
               <Meta content={content} />
               <h1 className="mt-1.5 text-2xl font-semibold leading-tight tracking-tight">
@@ -1126,6 +1148,36 @@ function ClassroomBody({
               </>
             )}
           </header>
+
+          {/* Under the video, with the lesson's name: a discussion is about what
+              is playing, so it reads where the playing is. It was the last of
+              the panel's tabs before this — in a column beside the picture on a
+              wide screen, and behind a press below it on a phone, which is a
+              strange place for the one thing on the page that is written by
+              everybody else.
+
+              It is a section rather than another card: the composer draws its
+              own box, the threads are separated by hairlines, and a frame around
+              all of it would be a box drawn around a box.
+
+              The heading is a size up from the usual section heading because the
+              discussion is set in `text-lg`: a heading under the text it
+              introduces is a caption, whatever it is called.
+
+              A time in a comment is a place in *this* lesson's own video, so a
+              lesson without one leaves those times the words they were: there is
+              no playhead to move, and a control that seeks nowhere is worse than
+              plain text. */}
+          <section className="mt-6 grid gap-3">
+            <h2 className="text-xl font-semibold tracking-tight">Comments</h2>
+
+            <ContentComments
+              contentId={content.contentId}
+              viewerId={viewerId}
+              canModerate={canEdit}
+              onSeek={content.videoId ? playFrom : undefined}
+            />
+          </section>
         </div>
 
         {/* Controlled rather than defaulted: the tab is a place the reader is
@@ -1170,17 +1222,6 @@ function ClassroomBody({
               label="Loops"
               hint="Passages worth hearing again, kept under a name."
             />
-            <LessonTab
-              value="comments"
-              icon={<MessageSquareIcon />}
-              label="Comments"
-              badge={content.commentCount}
-              hint={
-                content.commentCount > 0
-                  ? `${content.commentCount} comment${content.commentCount === 1 ? "" : "s"} on this lesson.`
-                  : "The discussion — it opens with the classroom."
-              }
-            />
           </TabsList>
 
           {/* The course leads the strip, and the transcript stays what the panel
@@ -1192,7 +1233,7 @@ function ClassroomBody({
           <TabsContent
             value="course"
             ref={courseListRef}
-            className="mt-4 min-h-0 flex-1 overflow-y-auto"
+            className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR}`}
           >
             <CourseContents spaceId={spaceId} contentId={contentId} />
           </TabsContent>
@@ -1219,21 +1260,21 @@ function ClassroomBody({
 
           <TabsContent
             value="notes"
-            className="mt-4 min-h-0 flex-1 overflow-y-auto"
+            className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR}`}
           >
             <NotesTab content={content} spaceId={spaceId} canEdit={canEdit} />
           </TabsContent>
 
           <TabsContent
             value="files"
-            className="mt-4 min-h-0 flex-1 overflow-y-auto"
+            className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR}`}
           >
             <ContentFiles contentId={content.contentId} canEdit={canEdit} />
           </TabsContent>
 
           <TabsContent
             value="loops"
-            className="mt-4 min-h-0 flex-1 overflow-y-auto"
+            className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR}`}
           >
             <ContentLoops
               contentId={content.contentId}
@@ -1250,22 +1291,6 @@ function ClassroomBody({
               viewerId={viewerId}
               onSeek={playFrom}
               canEdit={canEdit}
-            />
-          </TabsContent>
-
-          <TabsContent
-            value="comments"
-            className="mt-4 min-h-0 flex-1 overflow-y-auto"
-          >
-            {/* A time in a comment is a place in *this* lesson's own video, so a
-                lesson without one leaves those times the words they were: there
-                is no playhead to move, and a control that seeks nowhere is worse
-                than plain text. */}
-            <ContentComments
-              contentId={content.contentId}
-              viewerId={viewerId}
-              canModerate={canEdit}
-              onSeek={content.videoId ? playFrom : undefined}
             />
           </TabsContent>
         </Tabs>
