@@ -102,6 +102,13 @@ response, it is added in both.
 The lesson experience is the one screen both apps render, and it is the pattern
 to copy for the next one.
 
+A lesson is *read* rather than browsed, so both apps strip their frame for it —
+the studio's `AppShell` drops the rail, the community panel and the tab bar; the
+marketplace's `SiteChrome` drops the top bar and the `max-w-6xl` reading measure
+and hands the classroom the window. Each app decides that in one place, from its
+own `lessonRoute(pathname)`, so the frame and the page cannot disagree about
+which pages are lessons.
+
 `<Classroom spaceId contentId />` takes what it is showing, whether the reader may
 edit it (`canEdit`), the organization to pick videos from (`orgId`, studio only)
 and a `LearningRoutes` object that says where a course and a lesson live. It puts

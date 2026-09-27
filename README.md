@@ -533,7 +533,7 @@ an account:
 | --- | --- |
 | `/` | The catalog: every course its author has listed, with covers, lesson counts and how many people are taking it |
 | `/courses/{spaceId}` | One course — its syllabus, section by section — and the button that registers you for it |
-| `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom |
+| `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom, with no top bar and the whole window |
 | `/my-courses` | The courses you are registered for, wherever they came from |
 | `/sign-in` | Amplify's sign-in, then straight back to whatever you were doing (`?next=`) |
 

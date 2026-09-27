@@ -12,3 +12,25 @@ export const marketplaceLearningRoutes: LearningRoutes = {
   course: (spaceId) => `/courses/${spaceId}`,
   lesson: (spaceId, contentId) => `/courses/${spaceId}/lessons/${contentId}`,
 };
+
+/** `/courses/{spaceId}/lessons/{contentId}` */
+const LESSON_ROUTE = /^\/courses\/([^/]+)\/lessons\/([^/]+)\/?$/;
+
+export interface LessonRoute {
+  spaceId: string;
+  contentId: string;
+}
+
+/**
+ * The lesson a path points at, or nothing when it points somewhere else.
+ *
+ * The marketplace's mirror of the studio's `lessonRoute`, and the same reason
+ * for it: a lesson is read rather than browsed, so the frame has to know which
+ * pages are one. Keeping the pattern here rather than in the frame means the
+ * header and the page cannot disagree about it.
+ */
+export function lessonRoute(pathname: string): LessonRoute | null {
+  const match = LESSON_ROUTE.exec(pathname);
+  if (!match) return null;
+  return { spaceId: match[1], contentId: match[2] };
+}

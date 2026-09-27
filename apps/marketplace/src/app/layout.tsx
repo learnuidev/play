@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 // @ts-ignore
 import './globals.css';
 import { AppProviders } from '@play/auth';
-import { SiteHeader } from '@/components/site-header';
+import { SiteChrome } from '@/components/site-chrome';
 
 export const metadata: Metadata = {
   title: 'Play Marketplace',
@@ -11,20 +11,20 @@ export const metadata: Metadata = {
 };
 
 /**
- * The marketplace's frame: a top bar and a column of content.
+ * The marketplace's frame, such as it is.
  *
- * Note what is *not* here: the sign-in gate. The studio is a place you are signed
- * in to; the marketplace is a front page, and a front page behind a login is one
- * nobody reads. The pages that need an account ask for one themselves, at the
- * moment somebody tries to register for something.
+ * Note what is *not* here: the sign-in gate, and the chrome itself. The studio is
+ * a place you are signed in to; the marketplace is a front page, and a front page
+ * behind a login is one nobody reads — so the pages that need an account ask for
+ * one themselves. The bar and the reading measure are `SiteChrome`'s business
+ * rather than this layout's, because a lesson wants neither of them.
  */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body>
         <AppProviders>
-          <SiteHeader />
-          <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:py-10">{children}</main>
+          <SiteChrome>{children}</SiteChrome>
         </AppProviders>
       </body>
     </html>
