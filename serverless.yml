@@ -43,6 +43,20 @@ custom:
     # NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_IN / _SIGN_OUT values.
     callbackUrls: ${ssm:/play/auth/callback-urls, self:custom.authDefaults.callbackUrls}
     logoutUrls: ${ssm:/play/auth/logout-urls, self:custom.authDefaults.logoutUrls}
+  # Invitation email. The sender must be an identity SES has verified in this
+  # region — write it with scripts/set-mail-sender.sh, which verifies the
+  # address and stores it here. Empty (the default) means the service does not
+  # send mail: invitations are still created, and the admin is handed the link.
+  #
+  # `appBaseUrl` is where an invitation email points. Set it to the deployed
+  # frontend (`--app-url=https://…`) before inviting real people, or every
+  # invitation will point at localhost.
+  mailDefaults:
+    fromAddress: ""
+    appBaseUrl: "http://localhost:3000"
+  mail:
+    fromAddress: ${ssm:/play/mail/from-address, self:custom.mailDefaults.fromAddress}
+    appBaseUrl: ${ssm:/play/mail/app-base-url, self:custom.mailDefaults.appBaseUrl}
 
 # Every function is packaged on its own.
 #
@@ -85,6 +99,8 @@ provider:
     TRANSCRIBE_ROLE_ARN: !GetAtt TranscribeRole.Arn
     SUBTITLE_LANGUAGE: en-US
     STREAM_URL_TTL_SECONDS: 900
+    MAIL_FROM_ADDRESS: ${self:custom.mail.fromAddress}
+    APP_BASE_URL: ${self:custom.mail.appBaseUrl}
     AWS_SDK_JS_NODE_VERSION_SUPPORT_WARNING_DISABLED: "true"
 
   iam:
@@ -194,6 +210,13 @@ provider:
           Action:
             - translate:TranslateText
           Resource: "*"
+        # Invitation email. Scoped to the configured sending identity rather
+        # than to "*": sending invitations is the only thing here that sends
+        # mail, and it only ever sends as that one address.
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+          Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${self:custom.mail.fromAddress}"
         - Effect: Allow
           Action: iam:PassRole
           Resource:
@@ -411,6 +434,18 @@ functions:
       - http:
           path: organizations/{orgId}/members/{userId}
           method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # Sending an outstanding invitation again, to the address it was made to —
+  # the answer to "they never got the email", and to "I gave them the wrong
+  # role", since an offer that has not been accepted is still editable.
+  resend-invitation:
+    handler: src/functions/organizations/resend-invitation.handler
+    events:
+      - http:
+          path: organizations/{orgId}/members/{userId}/invitation
+          method: post
           cors: true
           authorizer: ${self:custom.authorizer}
 

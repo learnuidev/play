@@ -1,0 +1,148 @@
+import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
+import { env } from './config';
+import type { MailDelivery } from './members';
+import type { OrgRole } from '../types';
+
+/**
+ * Sends the invitation emails.
+ *
+ * Delivery is kept apart from the invitation for one reason: inviting somebody
+ * and telling them are two things that fail separately. The invitation row *is*
+ * the offer and it is already written by the time this runs, so a send that
+ * fails must not fail the invite — it is reported back to the admin, who still
+ * has the link to pass on by hand. That is why nothing here throws.
+ */
+const client = new SESv2Client({});
+
+/** Whether this deployment can send mail at all. */
+export function mailConfigured(): boolean {
+  return Boolean(env.mailFromAddress);
+}
+
+export interface SendInvitationEmailInput {
+  /** Address the invitation names. */
+  to: string;
+  /** Organization the invitation is for. */
+  organizationName: string;
+  /** Role they were invited with. Rendered by lower-casing, as the rest of
+   *  the API does (`src/lib/access.ts`). */
+  role: OrgRole;
+  /** Who sent it. A `sub` when the inviter has no name or email to show. */
+  invitedBy: string;
+  /** Where the recipient claims it, signed in as `to`. */
+  inviteUrl: string;
+}
+
+/**
+ * Escapes text interpolated into the HTML part.
+ *
+ * Every value here is somebody's own words — an organization name, a person's
+ * name — and a name with an angle bracket in it must not become markup.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function subjectFor(input: SendInvitationEmailInput): string {
+  return `${input.invitedBy} invited you to ${input.organizationName} on Play`;
+}
+
+/** The plain-text part: sent alongside the HTML, and what a text client reads. */
+function textBody(input: SendInvitationEmailInput): string {
+  return [
+    `${input.invitedBy} invited you to join ${input.organizationName} on Play as ${input.role.toLowerCase()}.`,
+    '',
+    `Open this link and sign in with ${input.to} to accept:`,
+    input.inviteUrl,
+    '',
+    'Nothing in the organization is visible to you until you accept.',
+    'If you were not expecting this, you can ignore this email.',
+  ].join('\n');
+}
+
+/**
+ * The HTML part: one column, inline styles, no images and no tracking.
+ *
+ * Mail clients strip stylesheets and block remote images, so the layout is
+ * carried entirely by the markup — which is also the honest shape for something
+ * whose whole job is one sentence and one link.
+ */
+function htmlBody(input: SendInvitationEmailInput): string {
+  const org = escapeHtml(input.organizationName);
+  const inviter = escapeHtml(input.invitedBy);
+  const role = escapeHtml(input.role.toLowerCase());
+  const url = escapeHtml(input.inviteUrl);
+  const to = escapeHtml(input.to);
+
+  return `<div style="margin:0;padding:24px;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#18181b">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;padding:32px">
+    <p style="margin:0 0 8px;font-size:15px;line-height:1.6">${inviter} invited you to join</p>
+    <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3">${org}</h1>
+    <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#52525b">
+      You have been invited as <strong>${role}</strong>.
+    </p>
+    <a href="${url}" style="display:inline-block;background:#18181b;color:#fafafa;text-decoration:none;padding:12px 20px;border-radius:8px;font-size:15px;font-weight:600">Accept invitation</a>
+    <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#71717a">
+      Sign in with <strong>${to}</strong> — that is the address the invitation was sent to.
+      Nothing in the organization is visible to you until you accept.
+    </p>
+    <p style="margin:16px 0 0;font-size:12px;line-height:1.6;color:#a1a1aa">
+      If you were not expecting this, you can ignore this email.
+    </p>
+  </div>
+</div>`;
+}
+
+/**
+ * Sends one invitation. Never throws: the caller has an invitation to report on
+ * either way, and a delivery failure is information for the admin rather than a
+ * reason to unwind the invite.
+ */
+export async function sendInvitationEmail(input: SendInvitationEmailInput): Promise<MailDelivery> {
+  if (!mailConfigured()) {
+    return {
+      sent: false,
+      error: 'No sending address is configured for this deployment, so nothing was emailed.',
+    };
+  }
+
+  try {
+    await client.send(
+      new SendEmailCommand({
+        FromEmailAddress: env.mailFromAddress,
+        Destination: { ToAddresses: [input.to] },
+        Content: {
+          Simple: {
+            Subject: { Data: subjectFor(input), Charset: 'UTF-8' },
+            Body: {
+              Text: { Data: textBody(input), Charset: 'UTF-8' },
+              Html: { Data: htmlBody(input), Charset: 'UTF-8' },
+            },
+          },
+        },
+      }),
+    );
+
+    return { sent: true, from: env.mailFromAddress };
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'UnknownError';
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Invitation email failed', { to: input.to, name, message });
+
+    return {
+      sent: false,
+      from: env.mailFromAddress,
+      // The SDK's own words, because the two failures an admin actually hits
+      // are named precisely by it: `MessageRejected` ("Email address is not
+      // verified. The following identities failed the check…") while the
+      // account is in the SES sandbox, and `AccessDenied` when the deployment
+      // was never granted `ses:SendEmail`.
+      error: `${name}: ${message}`,
+    };
+  }
+}

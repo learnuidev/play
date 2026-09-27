@@ -1,9 +1,9 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireOrganizationAdmin } from '../../lib/access';
-import { requireUser } from '../../lib/auth';
+import { displayNameOf, requireUser } from '../../lib/auth';
 import { HttpError, handle, jsonBody, ok, pathParam } from '../../lib/http';
-import { isValidEmail, normalizeEmail, toApiMember } from '../../lib/members';
-import { AlreadyAMemberError, getMembership, putInvitation } from '../../lib/organizations';
+import { invitationUrl, isValidEmail, normalizeEmail, sendInvitationFor, toApiMember } from '../../lib/members';
+import { AlreadyAMemberError, getMembership, getOrganization, putInvitation } from '../../lib/organizations';
 import { ORG_ROLES } from '../../types';
 import type { OrgRole } from '../../types';
 
@@ -13,12 +13,17 @@ interface InviteMemberBody {
 }
 
 /**
- * Invites an email address to the organization with a role.
+ * Invites an email address to the organization with a role, and emails them.
  *
  * Nobody has to have signed up: the invitation is written against the address,
- * and whoever can sign in as that address claims it from the Members page. That
- * is also why an invitation grants nothing until it is accepted — it is an
- * offer, not a membership.
+ * and whoever can sign in as that address claims it. That is also why an
+ * invitation grants nothing until it is accepted — it is an offer, not a
+ * membership.
+ *
+ * The invitation is written *before* the email is sent, and the send never
+ * fails the request: an admin whose mail is misconfigured (no verified sender,
+ * an account still in the SES sandbox) still has a real offer to hand over, and
+ * the response says plainly whether the email went out.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const user = requireUser(event);
@@ -50,19 +55,31 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     throw new HttpError(409, `${email} is already a member of this organization`);
   }
 
+  let member;
   try {
-    const member = await putInvitation({
-      orgId,
-      email,
-      role,
-      invitedBy: user.userId,
-    });
-
-    return ok({ member: toApiMember(member, user, true) }, 201);
+    member = await putInvitation({ orgId, email, role, invitedBy: user.userId });
   } catch (err) {
     if (err instanceof AlreadyAMemberError) throw new HttpError(409, err.message);
     throw err;
   }
+
+  const organization = await getOrganization(orgId);
+  const delivery = await sendInvitationFor({
+    invitation: member,
+    organizationName: organization?.name ?? 'an organization',
+    inviterName: displayNameOf(user),
+  });
+
+  return ok(
+    {
+      member: toApiMember(member, user, true),
+      delivery,
+      // Carried in the response whether or not the email went out: the admin is
+      // the fallback delivery mechanism, and the link is the offer itself.
+      inviteUrl: invitationUrl(orgId),
+    },
+    201,
+  );
 }
 
 export const handler = handle(main);

@@ -26,4 +26,20 @@ export const env = {
   transcribeRoleArn: required('TRANSCRIBE_ROLE_ARN', process.env.TRANSCRIBE_ROLE_ARN),
   subtitleLanguage: process.env.SUBTITLE_LANGUAGE ?? 'en-US',
   streamTtlSeconds: Number(process.env.STREAM_URL_TTL_SECONDS ?? 900),
+
+  /**
+   * Address invitation emails are sent from. Must be an identity SES has
+   * verified in this region — see scripts/set-mail-sender.sh. Empty means this
+   * deployment does not send mail at all, which is a supported state: the
+   * invitation is still written, and the admin is handed the link to pass on.
+   */
+  mailFromAddress: process.env.MAIL_FROM_ADDRESS ?? '',
+
+  /**
+   * Where an invitation email points. The page it lands on is where the offer
+   * is listed and claimed, so the email carries a link to the app rather than a
+   * link with a token in it — there is no token, and being signed in as the
+   * invited address is what accepting means.
+   */
+  appBaseUrl: (process.env.APP_BASE_URL ?? 'http://localhost:3000').replace(/\/+$/, ''),
 };

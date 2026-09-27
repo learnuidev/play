@@ -1,3 +1,5 @@
+import { env } from './config';
+import { sendInvitationEmail } from './mail';
 import type { AuthUser } from './auth';
 import type { OrgMember, OrgRole } from '../types';
 
@@ -78,4 +80,63 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 
 export function isValidEmail(email: string): boolean {
   return EMAIL_PATTERN.test(email);
+}
+
+/**
+ * The page an invitation is claimed on.
+ *
+ * It is the organizations list rather than the organization itself, because the
+ * recipient is not a member yet: there is no organization page for them to
+ * open, and the list is where an offer addressed to them is shown. The
+ * `invitation` parameter points at the right one when somebody holds several.
+ *
+ * The link carries no token. An invitation names an email address, and Cognito
+ * has already verified that whoever is signed in as that address owns it, so
+ * the link is a place to go rather than a secret to present.
+ */
+export function invitationUrl(orgId: string): string {
+  return `${env.appBaseUrl}/organizations?invitation=${encodeURIComponent(orgId)}`;
+}
+
+/**
+ * What became of the invitation email.
+ *
+ * Reported to the admin rather than thrown, because the invitation itself is
+ * already written when the send happens: a deployment in the SES sandbox, or
+ * one with no verified sender, still produces a real offer — it just has to be
+ * passed on by hand, and this is what says so.
+ */
+export interface MailDelivery {
+  sent: boolean;
+  /** Address it went out as. */
+  from?: string;
+  /** Why it did not, when it did not. */
+  error?: string;
+}
+
+/**
+ * Sends the invitation addressed to a pending membership, and reports what
+ * happened.
+ *
+ * One function for inviting and for re-sending, because they are the same act:
+ * if an offer is already outstanding, sending it again *is* the invite, and the
+ * only difference is whether the admin meant to send it the first time.
+ */
+export async function sendInvitationFor(input: {
+  invitation: OrgMember;
+  organizationName: string;
+  inviterName: string;
+}): Promise<MailDelivery> {
+  const email = input.invitation.invitedEmail ?? input.invitation.email;
+  if (!email) {
+    return { sent: false, error: 'This invitation has no email address on it.' };
+  }
+
+  return sendInvitationEmail({
+    to: email,
+    organizationName: input.organizationName,
+    role: input.invitation.role,
+    invitedBy: input.inviterName,
+    inviteUrl: invitationUrl(input.invitation.orgId),
+  });
 }
