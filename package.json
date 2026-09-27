@@ -20,8 +20,8 @@
     "build:marketplace": "npm run build --workspace play-marketplace",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "get-env": "npm run get-env --workspace play-studio && npm run get-env --workspace play-marketplace",
-    "deploy": "npm run deploy --workspace play-backend",
-    "deploy:dev": "npm run deploy:dev --workspace play-backend"
+    "deploy": "npm run deploy --workspace play-backend --",
+    "deploy:dev": "npm run deploy:dev --workspace play-backend --"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

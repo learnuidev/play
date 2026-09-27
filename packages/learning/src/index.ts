@@ -1,44 +1,20 @@
 /**
  * Taking a course, and listing one.
  *
- * One line per module beside it, so a new file is a new export and nothing else.
+ * Curated rather than `export *` of every file beside it. This package holds
+ * screens that carry real weight — the player and its HLS engine, the TipTap
+ * editor behind the notes, the authoring dialogs — and a barrel that re-exported
+ * all of them would put every one of those in the bundle of any page that
+ * imported the classroom alone. Measured, that is about 130 kB of JavaScript a
+ * lesson page never renders.
+ *
+ * So the barrel is the package's public surface: the classroom, the routes it
+ * asks the app for, and the card a course is listed with. Everything else — the
+ * transcript, the loops, the outline, the authoring dialogs — is imported by its
+ * own path, which is what the studio's screens already do.
  */
 export * from './classroom';
-export * from './components/content/animated-transcript';
-export * from './components/content/content-comments';
-export * from './components/content/content-details-dialog';
-export * from './components/content/content-dialog';
-export * from './components/content/content-files';
-export * from './components/content/content-loops';
-export * from './components/content/content-outline';
-export * from './components/content/course-contents';
-export * from './components/content/emoji-picker';
-export * from './components/content/loop-bar';
-export * from './components/content/loop-name-field';
-export * from './components/content/notes-editor';
-export * from './components/content/notes-view';
-export * from './components/content/notes';
-export * from './components/content/playing-next';
-export * from './components/content/rich-text-editor';
-export * from './components/content/section-dialog';
-export * from './components/content/video-picker';
-export * from './components/space/space-avatar';
-export * from './components/space/space-card';
-export * from './components/space/space-type-badge';
-export * from './components/video-player';
-export * from './components/video/status-badge';
-export * from './components/video/video-poster';
-export * from './hooks/use-lesson-tab';
-export * from './hooks/use-loop-playback';
-export * from './hooks/use-playing-next';
-export * from './hooks/use-remembered-scroll';
-export * from './hooks/use-transcript-lines';
-export * from './lib/course';
-export * from './lib/emoji';
-export * from './lib/glide';
 export * from './lib/learning-routes';
-export * from './lib/loop-color';
-export * from './lib/sweep';
-export * from './lib/timecode';
-export * from './lib/transcript';
-export * from './lib/vtt';
+export * from './components/space/space-avatar';
+export * from './components/space/space-type-badge';
+export * from './components/space/space-card';

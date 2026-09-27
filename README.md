@@ -5,17 +5,26 @@ described in `streaming_tutorial_source.vtt` (private S3 bucket + CloudFront CDN
 in front of it) and extended into a production-style service with authentication,
 encoding, adaptive-bitrate playback, and a REST API.
 
+It is one repository with two apps on top of one backend. **Play Studio** is
+where a creator makes a course — uploading videos, arranging sections and
+lessons, inviting the people taking it. **Play Marketplace** is where a learner
+finds a published course, registers for it, and takes its lessons. Both render
+the same classroom, from the same shared packages, against the same API and the
+same Cognito user pool: an author and a learner are the same person with
+different intentions.
+
 ## Architecture
 
 ```
-┌────────────────┐   REST (HTTPS + JWT)   ┌──────────────────────────────┐
-│  play-frontend │ ─────────────────────▶ │ API Gateway (REST)           │
-│  (Next.js)     │                        │  ├─ Cognito User Pool auth   │
-│                │                        │  └─ Lambda (Node.js/TS)      │
-└───────┬────────┘                        └──────┬───────────────┬───────┘
-        │ 1. presigned PUT                        │               │
-        │ 2. GET /videos, /videos/{id}/stream     │               │
-        ▼                                        ▼               ▼
+┌────────────────────┐
+│  apps/studio       │──┐
+│  apps/marketplace  │──┼─ REST (HTTPS + JWT) ─▶ ┌──────────────────────────────┐
+│  (Next.js, shared  │  │                        │ API Gateway (REST)           │
+│   @play/* packages)│  │                        │  ├─ Cognito User Pool auth   │
+└─────────┬──────────┘  │                        │  └─ Lambda (Node.js/TS)      │
+          │ 1. presigned PUT                      └──────┬───────────────┬───────┘
+          │ 2. GET /videos, /videos/{id}/stream           │               │
+          ▼                                               ▼               ▼
 ┌────────────────┐   uploads/  ┌──────────────────────┐   ┌─────────────┐
 │  S3 (private)  │ ◀────────── │  S3 event → Lambda    │   │  DynamoDB   │
 │  play-videos   │             │  → MediaConvert (HLS) │   │  (metadata) │
@@ -65,10 +74,40 @@ encoding, adaptive-bitrate playback, and a REST API.
 
 ## Repository layout
 
-- `play-backend/` — Serverless Framework + TypeScript (Node.js 20).
-- `play-frontend/` — Next.js 14 (App Router) + TypeScript.
+One npm workspace, four kinds of package:
 
-## Frontend layout
+```
+play/
+├── apps/
+│   ├── studio/           Play Studio — the creator's app (Next.js, port 3000)
+│   └── marketplace/      Play Marketplace — the learner's app (Next.js, port 3001)
+├── packages/             shared source, consumed by both apps
+│   ├── types/            the shapes the API and both apps agree on
+│   ├── api/              the API client and every React Query hook on it
+│   ├── auth/             Cognito wiring, the provider stack, the sign-in gate
+│   ├── ui/               design primitives: button, card, dialog, tabs, …
+│   └── learning/         the classroom, the player, the outline, course cards
+├── services/
+│   └── api/              Serverless Framework + TypeScript (Node.js 22)
+└── scripts/              get-env.mjs, used by both apps
+```
+
+Both apps depend on `@play/*` packages by name, and the packages ship **source**
+(`src/*.ts`, no build step): Next compiles them as part of the app through
+`transpilePackages`, so a change to a shared component is a change both apps
+typecheck. Each package declares its own dependencies, and its own tsconfig gives
+it `@ui/*`, `@api/*`, `@auth/*` and `@learning/*` aliases so no file inside a
+package needs a chain of `../../`.
+
+Where two apps need the same *screen* rather than the same component, the screen
+asks the app for what differs. The classroom is the example: it takes the course
+and lesson it is showing, and a `LearningRoutes` object saying where a course and
+a lesson live — `/o/{orgId}/spaces/{spaceId}/contents/{contentId}` in the studio,
+`/courses/{spaceId}/lessons/{contentId}` in the marketplace. See
+[docs/workspace.md](docs/workspace.md) for the full layout and the conventions
+that keep it that way.
+
+## The studio's layout
 
 The app is a **community shell**, modelled on the three-column community layout:
 
@@ -373,8 +412,8 @@ This writes to `~/.aws/credentials` and `~/.aws/config`. To use a different
 profile/region, pass `--profile=<name>` / `--region=<name>` to the commands
 below, or change the defaults in:
 
-- `play-backend/scripts/generate-cloudfront-keypair.sh` (`PROFILE`, `REGION`)
-- `play-frontend/scripts/get-env.js` (`DEFAULT_AWS_PROFILE`)
+- `services/api/scripts/generate-cloudfront-keypair.sh` (`PROFILE`, `REGION`)
+- `scripts/get-env.mjs` (`DEFAULT_AWS_PROFILE`)
 
 ## Where configuration lives
 
@@ -383,7 +422,7 @@ below, or change the defaults in:
 | CloudFront signing key pair | AWS SSM Parameter Store (see below) — **not** `.env` |
 | Google OAuth client id/secret | AWS SSM Parameter Store (see [Google sign-in](#google-sign-in-optional)) |
 | Backend stage/region | CLI flags on `serverless deploy` |
-| Frontend API/Cognito values | `play-frontend/.env.local` |
+| Frontend API/Cognito values | `apps/studio/.env.local` |
 
 The backend has **no `.env` requirements** — the CloudFront keys are read from
 SSM via `${ssm:...}` in `serverless.yml`.
@@ -391,7 +430,7 @@ SSM via `${ssm:...}` in `serverless.yml`.
 ## 1. Deploy the backend
 
 ```bash
-cd play-backend
+cd services/api
 npm install
 
 # Generate the CloudFront key pair (for signed URLs) and write it to SSM
@@ -422,18 +461,32 @@ npx serverless info --verbose --aws-profile yoserverless
 > (create a new key + key group, update the distribution). The
 > `generate-cloudfront-keypair.sh` script overwrites the SSM parameters.
 
-## 2. Run the frontend
+## 2. Run the apps
+
+From the repository root, once:
 
 ```bash
-cd play-frontend
 npm install
+```
 
-# Fetch stack outputs and write them to .env.local (uses the yoserverless profile)
+Each app reads the same stack outputs into its own `.env.local`. From the root,
+`npm run get-env` writes both:
+
+```bash
 npm run get-env -- --profile=yoserverless
 ```
 
-This runs `scripts/get-env.js`, which reads the `play-backend-dev` stack
-outputs and writes `play-frontend/.env.local`:
+or one at a time, from the app's own directory:
+
+```bash
+cd apps/studio
+npm run get-env -- --profile=yoserverless
+cd ../marketplace
+npm run get-env -- --profile=yoserverless
+```
+
+This runs `scripts/get-env.mjs`, which reads the `play-backend-dev` stack outputs
+and writes the app's `.env.local`:
 
 ```bash
 NEXT_PUBLIC_API_URL=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev
@@ -450,14 +503,64 @@ NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=true
 
 (You can also create `.env.local` manually from `.env.local.example`.)
 
-Then start the app:
+Then start either app — or both, in two terminals:
 
 ```bash
-npm run dev
+npm run dev:studio        # Play Studio      → http://localhost:3000
+npm run dev:marketplace   # Play Marketplace → http://localhost:3001
 ```
+
+The two apps share one user pool, so the same account works in both: sign in to
+the studio, create an organization, upload a video, build a course, publish it —
+then open the marketplace on port 3001 and it is there to register for. Cognito
+only redirects to URLs it was told about, and the backend's
+`custom.authDefaults` registers `localhost:3000` **and** `localhost:3001`; a
+deployment that overrides `/play/auth/callback-urls` in SSM must list both.
+
+The studio also reads `NEXT_PUBLIC_MARKETPLACE_URL` (unset by default): set it to
+the marketplace's address (`http://localhost:3001`) and a published course's
+overview links straight to it in the catalog.
 
 Open http://localhost:3000, create an account (email verification code is sent
 to the sign-up email), create an organization, then upload a video into it.
+
+## The marketplace
+
+The learner's side, and the only part of this repository that is readable without
+an account:
+
+| Route | What it is |
+| --- | --- |
+| `/` | The catalog: every course its author has listed, with covers, lesson counts and how many people are taking it |
+| `/courses/{spaceId}` | One course — its syllabus, section by section — and the button that registers you for it |
+| `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom |
+| `/my-courses` | The courses you are registered for, wherever they came from |
+| `/sign-in` | Amplify's sign-in, then straight back to whatever you were doing (`?next=`) |
+
+**Browsing is public; registering is the only thing that asks who you are.** Two
+of its routes carry no authorizer at all — `GET /catalog/courses` and
+`GET /catalog/courses/{spaceId}` — because a catalog behind a login is a catalog
+nobody reads, and what they serve is what a course says about itself in public:
+its title, its description, its cover (as a signed URL), its counts, and the
+titles of its lessons. Nothing about the people in it, and no lesson content.
+
+Registering is `POST /spaces/{spaceId}/enrollment`: signed in, idempotent, and it
+claims an invitation already addressed to you rather than writing a second
+membership — so somebody invited as an assistant who registers through the
+catalog is an assistant, not a student. `DELETE` on the same path leaves the
+course; the course itself is untouched, and your progress is kept if you register
+again.
+
+A course appears in the catalog when its author lists it. That is a toggle on the
+course's overview in the studio (see [Spaces](#spaces-courses)), and it writes
+the sparse `CatalogCreatedIndex` key alongside the flag: the index holds
+published courses, so the front page is a query rather than a scan of every
+course in the service.
+
+A reader in the course sees the same course page whether it is listed or not: the
+marketplace reads the catalog first and, if that says 404 *and* they are enrolled,
+reads the member endpoints instead. A course somebody was invited to and whose
+author never published is still theirs to take.
 
 ## Google sign-in (optional)
 
@@ -495,7 +598,7 @@ Services** → **Credentials**:
 ### 2. Store the credentials
 
 ```bash
-cd play-backend
+cd services/api
 ./scripts/set-google-oauth.sh --profile=yoserverless
 ```
 
@@ -522,10 +625,10 @@ the frontend's `NEXT_PUBLIC_COGNITO_REDIRECT_SIGN_IN` / `_SIGN_OUT`.
 ### 3. Deploy and refresh the frontend env
 
 ```bash
-cd play-backend
+cd services/api
 npm run deploy -- --aws-profile yoserverless
 
-cd ../play-frontend
+cd ../apps/studio
 npm run get-env -- --profile=yoserverless   # adds COGNITO_DOMAIN + GOOGLE_AUTH_ENABLED
 npm run dev
 ```
@@ -554,10 +657,10 @@ the new `.env.local` values are picked up.
    creates/loads the user profile, and redirects to the app's callback URL
    (`/auth/callback` by default) with `?code=…&state=…`.
 4. `aws-amplify/auth/enable-oauth-listener` — imported by
-   `play-frontend/src/lib/amplify.ts` so it is present on **every** route, as
+   `apps/studio/src/lib/amplify.ts` so it is present on **every** route, as
    required for multi-page apps — picks the code up on page load, exchanges it
    for tokens, and dispatches the `signInWithRedirect` / `signedIn` Hub events.
-5. `/auth/callback` (`play-frontend/src/app/auth/callback/page.tsx`) waits for
+5. `/auth/callback` (`apps/studio/src/app/auth/callback/page.tsx`) waits for
    the session, surfaces failures, and forwards the user to `/`.
 
 Sign-out is OAuth-aware automatically: for a federated user Amplify ends the
@@ -648,12 +751,12 @@ remain in DynamoDB and S3 under the old `sub`, unreadable by the linked account.
   update the Cognito app client) and the matching frontend env vars.
 - Linking trusts Google's `email_verified` claim. If you ever add a provider that
   returns unverified addresses, tighten the guard in
-  `play-backend/src/functions/auth/link-federated-user.ts` before enabling it.
+  `services/api/src/functions/auth/link-federated-user.ts` before enabling it.
 
 To turn Google sign-in off again:
 
 ```bash
-cd play-backend
+cd services/api
 ./scripts/set-google-oauth.sh --delete --profile=yoserverless
 npm run deploy -- --aws-profile yoserverless
 ```
@@ -670,7 +773,7 @@ selector — `Auto` plus every rendition in the HLS master playlist:
 
 - Reads renditions dynamically, so it shows everything the video was transcoded
   with (144p–1080p, or more if you extend the ladder in
-  `play-backend/src/lib/mediaconvert.ts`).
+  `services/api/src/lib/mediaconvert.ts`).
 - The CloudFront signature is applied to every manifest/segment request via
   hls.js `xhrSetup` (passed through `config.hlsJs` on `HlsJsVideo`).
 
@@ -943,7 +1046,7 @@ Two things have to be true before that mail arrives, and neither is detectable
 from inside the app:
 
 ```bash
-cd play-backend
+cd services/api
 ./scripts/set-mail-sender.sh --show                    # what is configured now
 ./scripts/set-mail-sender.sh --from=you@example.com    # verify + store a sender
 ./scripts/set-mail-sender.sh --app-url=https://app.example.com --from=you@example.com
@@ -991,6 +1094,7 @@ every member of the organization.
 | `color` | optional `#rrggbb` accent |
 | `startAt`, `dripIntervalDays` | scheduled spaces only: when it starts, and how many days apart sections unlock (default 7, 1–365) |
 | `thumbnailKey` | optional cover image key |
+| `listed` | whether the course appears in the marketplace catalog; absent means private |
 | `createdBy`, `createdAt`, `updatedAt` | provenance |
 
 The two types are the whole of the scheduling model, and they differ in what the
@@ -1018,11 +1122,18 @@ rather than the title, because titles get edited.
 
 | Table | Keys | Purpose |
 | --- | --- | --- |
-| `SpacesTable` | `spaceId` (hash) | title, description, type, colour, schedule, cover key; GSI `OrganizationCreatedIndex` (organizationId + createdAt) |
+| `SpacesTable` | `spaceId` (hash) | title, description, type, colour, schedule, cover key, `listed`; GSIs `OrganizationCreatedIndex` (organizationId + createdAt) and `CatalogCreatedIndex` (catalogKey + createdAt) |
 
-One index is enough: listing an organization's spaces newest-first is the only
-listing there is. Filtering by type is a filter over a page the caller already
-has, so it does not get a key space of its own.
+One index per listing: an organization's spaces newest-first, and the
+marketplace's catalog newest-first. Filtering by type is a filter over a page the
+caller already has, so it does not get a key space of its own.
+
+The catalog index is **sparse**: a listed course carries `catalogKey = LISTED`
+beside the flag, and unlisting removes both, so the index holds the published
+courses and nothing else and the marketplace's front page is a query rather than
+a scan of every course in the service with a `listed = true` filter on top. A
+boolean cannot be a partition key; a constant that only published courses have
+can be.
 
 Covers live in the same bucket as video thumbnails, under
 `spaces/{spaceId}/cover-{timestamp}.{ext}`. The distribution already serves that
@@ -1031,10 +1142,35 @@ because the key is timestamped, replacing a cover never needs a cache
 invalidation. The previous cover is deleted first, so replaced images do not
 accumulate invisibly in the bucket.
 
-What is **not** built yet: editing or deleting a space, enrollment, and anything
-that actually enforces a drip schedule. A scheduled space today records when it
-starts and how far apart its sections should unlock — the rules are stored, not
-yet applied.
+What is **not** built yet: deleting a space, and anything that actually enforces a
+drip schedule. A scheduled space today records when it starts and how far apart
+its sections should unlock — the rules are stored, not yet applied.
+
+### The catalog
+
+| Method | Path | Auth | What it does |
+| --- | --- | --- | --- |
+| `GET` | `/catalog/courses` | **none** | A page of listed courses: the course, the organization's name, section/lesson/student counts, and a signed cover URL |
+| `GET` | `/catalog/courses/{spaceId}` | **none** | One listed course and its syllabus: sections, and the titles of the lessons in them |
+| `POST` | `/spaces/{spaceId}/enrollment` | JWT | Register the caller for a listed course |
+| `DELETE` | `/spaces/{spaceId}/enrollment` | JWT | Drop the caller out of a course |
+
+The two catalog routes deliberately carry **no authorizer**. A catalog that
+required an account would be a catalog nobody reads — deciding to register is
+what happens before you have one — and nothing they serve is anybody's: it is
+what each course says about itself in public. Unlisted is answered `404` rather
+than `403`, for the same reason a missing organization is: a stranger must not be
+able to learn that a private course id exists.
+
+The counts (sections, lessons, students) are read rather than stored — one
+`COUNT` query each, over indexes the course already has — because a counter
+maintained by hand across section and lesson writes is a number that eventually
+lies about the course on the page whose whole job is to describe it.
+
+Registering writes the same `SpaceMembersTable` row an invitation does, as a
+`STUDENT`: it is the one membership nobody was invited to. It is idempotent, and
+an invitation already waiting for the caller's address *is* the registration —
+the row is re-keyed from the email to their `sub`, keeping the role it offered.
 
 ### Sections and content
 
@@ -1287,7 +1423,7 @@ uploader. `scripts/backfill-video-organizations.js` assigns them to an
 organization:
 
 ```bash
-cd play-backend
+cd services/api
 node scripts/backfill-video-organizations.js --organization-id=<orgId> --dry-run
 node scripts/backfill-video-organizations.js --organization-id=<orgId>
 ```
@@ -1342,7 +1478,13 @@ and an account out of the SES sandbox, or the mail is delivered nowhere (see
 
 ## Local typechecking
 
+Every workspace, from the repository root:
+
 ```bash
-cd play-backend && npm run typecheck
-cd play-frontend && npm run typecheck
+npm run typecheck          # all of them: both apps, the packages, the backend
+npm run typecheck --workspace play-marketplace   # just one
 ```
+
+The packages are source rather than builds, so an app's typecheck covers the
+shared code it draws on: a change to a shared component is checked by the apps
+that use it, not only by the package it lives in.
