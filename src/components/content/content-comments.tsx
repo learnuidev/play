@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { TIMECODE_PATTERN, parseTimecode, timecodeLabel } from '@/lib/timecode';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -139,15 +140,78 @@ function trimLink(raw: string): string {
   return url;
 }
 
-/** What a comment says, with its line breaks kept and its links live. */
-function CommentBody({ body }: { body: string }) {
+/**
+ * A moment somebody named, drawn as the control it is.
+ *
+ * The `@` is the syntax, not the content, so it is not what is shown: the time
+ * reads back in the app's own clock — `1:12` — which is what makes `@00:01:12`
+ * and `@1:12` the same place in a discussion. It is set in the paragraph's own
+ * type, because a time in a sentence is part of the sentence; the colour is
+ * what says it can be tapped, the way it says so on a link.
+ */
+function MomentChip({
+  timeMs,
+  onSeek,
+}: {
+  timeMs: number;
+  onSeek: (timeMs: number) => void;
+}) {
+  const label = timecodeLabel(timeMs);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSeek(timeMs)}
+      title={`Play from ${label}`}
+      aria-label={`Play from ${label}`}
+      className="cursor-pointer rounded-sm text-blue-600 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:text-blue-400"
+    >
+      {label}
+    </button>
+  );
+}
+
+/** What a comment says, with its line breaks kept, its links live, and its moments playable. */
+function CommentBody({
+  body,
+  onSeek,
+}: {
+  body: string;
+  /**
+   * Puts the playhead at a moment somebody named. Absent when there is nothing
+   * to seek in, and a time in a comment stays the words it was written as.
+   */
+  onSeek?: (timeMs: number) => void;
+}) {
   return (
     <p className="mt-0.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
       {body.split(LINK_PATTERN).map((part, index) => {
-        // React escapes text, so the only thing built here is an anchor — and
-        // only for the two schemes the pattern allows, so `javascript:` in a
-        // comment stays the plain text it deserves to be.
-        if (!/^https?:\/\//.test(part)) return part;
+        // Links are cut out first, so a moment written inside an address stays
+        // part of the address: `https://x.test/@2:00` is a link, not a seek.
+        //
+        // React escapes text, so the only things built here are an anchor and a
+        // chip — and only for the two schemes the link pattern allows, so
+        // `javascript:` in a comment stays the plain text it deserves to be.
+        if (!/^https?:\/\//.test(part)) {
+          // The prose, which is where the moments are. Splitting on a pattern
+          // with one group puts the matches at the odd indices and the words
+          // around them in between, so the sentence reads on unbroken — and the
+          // same shape as the link pass above, one level in.
+          return (
+            <Fragment key={index}>
+              {part.split(TIMECODE_PATTERN).map((piece, at) => {
+                if (at % 2 === 0 || !onSeek) return piece;
+
+                // A time no clock has — `@70:00` — was prose all along, and
+                // stays the words it was written as.
+                const timeMs = parseTimecode(piece);
+                if (timeMs === null) return piece;
+
+                return <MomentChip key={at} timeMs={timeMs} onSeek={onSeek} />;
+              })}
+            </Fragment>
+          );
+        }
 
         const url = trimLink(part);
 
@@ -184,6 +248,7 @@ function Composer({
   initialBody = '',
   autoFocus = false,
   compact = false,
+  hint,
   pending,
   onSubmit,
   onCancel,
@@ -194,6 +259,12 @@ function Composer({
   autoFocus?: boolean;
   /** A reply's box: one line tall, tighter, and it opens downwards. */
   compact?: boolean;
+  /**
+   * What this box can do that the words alone do not say — the one thing about
+   * a comment nobody can guess from the box, so it is written down rather than
+   * left to be discovered.
+   */
+  hint?: string;
   pending: boolean;
   /** Rejects when the write failed, which keeps the words where they are. */
   onSubmit: (body: string) => Promise<unknown>;
@@ -292,6 +363,10 @@ function Composer({
       <div className="flex items-center gap-1 px-1.5 pb-1.5">
         <EmojiPicker onPick={addEmoji} />
 
+        {hint && !compact && (
+          <span className="text-[11px] text-muted-foreground/60 max-sm:hidden">{hint}</span>
+        )}
+
         {!compact && (
           <span className="text-[11px] text-muted-foreground/60 max-sm:hidden">
             ⌘↵ to post
@@ -377,6 +452,7 @@ function CommentRow({
   onCancelEdit,
   onLike,
   onDelete,
+  onSeek,
   onSubmitReply,
   onSubmitEdit,
   replyPending,
@@ -397,6 +473,8 @@ function CommentRow({
   onCancelEdit: () => void;
   onLike: (comment: ApiComment) => void;
   onDelete: (comment: ApiComment) => void;
+  /** Plays from a moment somebody named in the comment. */
+  onSeek?: (timeMs: number) => void;
   /** Writes a reply under `rootId`, answering `comment`. */
   onSubmitReply: (comment: ApiComment, rootId: string, body: string) => Promise<unknown>;
   onSubmitEdit: (comment: ApiComment, body: string) => Promise<unknown>;
@@ -525,7 +603,7 @@ function CommentRow({
                 Replying to {answeredName}
               </p>
             )}
-            <CommentBody body={comment.body} />
+            <CommentBody body={comment.body} onSeek={onSeek} />
           </>
         )}
 
@@ -560,6 +638,7 @@ function Thread({
   onCancelEdit,
   onLike,
   onDelete,
+  onSeek,
   onSubmitReply,
   onSubmitEdit,
   replyPending,
@@ -579,6 +658,7 @@ function Thread({
   onCancelEdit: () => void;
   onLike: (comment: ApiComment) => void;
   onDelete: (comment: ApiComment) => void;
+  onSeek?: (timeMs: number) => void;
   onSubmitReply: (comment: ApiComment, rootId: string, body: string) => Promise<unknown>;
   onSubmitEdit: (comment: ApiComment, body: string) => Promise<unknown>;
   replyPending: boolean;
@@ -602,6 +682,7 @@ function Thread({
     onCancelEdit,
     onLike,
     onDelete,
+    onSeek,
     onSubmitReply,
     onSubmitEdit,
     replyPending,
@@ -647,12 +728,23 @@ export function ContentComments({
   contentId,
   viewerId,
   canModerate,
+  onSeek,
 }: {
   contentId: string;
   /** The caller's own Cognito `sub`, to tell their comments from everyone's. */
   viewerId?: string;
   /** An admin or editor may take a comment down; only the author may edit one. */
   canModerate: boolean;
+  /**
+   * Plays from a moment a comment names with an `@`, the way a tap on a loop
+   * plays the passage.
+   *
+   * Handed in rather than reached for, because the playhead belongs to the
+   * lesson around this tab — and left out where there is no video to seek in,
+   * which is what keeps a time in a comment from being a control that does
+   * nothing.
+   */
+  onSeek?: (timeMs: number) => void;
 }) {
   const { data, isLoading } = useComments(contentId);
   const create = useCreateComment(contentId);
@@ -777,6 +869,7 @@ export function ContentComments({
       <Composer
         placeholder="Add a comment…"
         submitLabel="Comment"
+        hint={onSeek ? '@1:12 to point at a moment' : undefined}
         pending={create.isPending}
         onSubmit={postComment}
       />
@@ -825,6 +918,7 @@ export function ContentComments({
                 onCancelEdit={() => setEditing(null)}
                 onLike={toggleLike}
                 onDelete={(comment) => void destroy(comment)}
+                onSeek={onSeek}
                 onSubmitReply={postReply}
                 onSubmitEdit={saveEdit}
                 replyPending={create.isPending}

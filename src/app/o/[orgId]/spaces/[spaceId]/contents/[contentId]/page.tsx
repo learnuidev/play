@@ -458,6 +458,23 @@ export default function ContentPage() {
     playerRef.current?.seekTo(timeMs);
   }, []);
 
+  /**
+   * Plays from a moment somebody named: a loop's own boundaries, or a time an
+   * `@` was put in front of in a comment.
+   *
+   * Seeking is not playing: a player that has been paused and put somewhere
+   * else is still paused. Naming a passage is a request to *hear* it — a tap on
+   * a loop and a time in a comment are both that — so this asks for both, in
+   * that order, and leaves nothing for the caller to remember.
+   */
+  const playFrom = useCallback(
+    (timeMs: number) => {
+      handleSeek(timeMs);
+      playVideo();
+    },
+    [handleSeek, playVideo],
+  );
+
   // The transcript is read by the transcript itself, by the loop picker while it
   // is choosing a passage, and by the loop list to show what each loop covers.
   const { lines, video } = useTranscriptLines(content?.videoId);
@@ -1026,13 +1043,7 @@ export default function ContentPage() {
               onMoveRange={(loop) => openPicker(loop)}
               onShare={(loop) => void shareLoop(loop)}
               viewerId={viewerId}
-              onSeek={(timeMs) => {
-                // Straight to the words, and playing: a tap on a passage is a
-                // request to hear it, not to put the playhead somewhere and
-                // leave it there.
-                handleSeek(timeMs);
-                playVideo();
-              }}
+              onSeek={playFrom}
               canEdit={canEdit}
             />
           </TabsContent>
@@ -1041,10 +1052,15 @@ export default function ContentPage() {
             value="comments"
             className="mt-4 min-h-0 flex-1 overflow-y-auto"
           >
+            {/* A time in a comment is a place in *this* lesson's own video, so a
+                lesson without one leaves those times the words they were: there
+                is no playhead to move, and a control that seeks nowhere is worse
+                than plain text. */}
             <ContentComments
               contentId={content.contentId}
               viewerId={viewerId}
               canModerate={canEdit}
+              onSeek={content.videoId ? playFrom : undefined}
             />
           </TabsContent>
         </Tabs>
