@@ -237,6 +237,23 @@ entry in `serverless.yml` with its path, method and `authorizer`. Leaving the
 authorizer off is how the two public catalog routes are public, and it is the
 only place in the service that happens on purpose.
 
+### The provider environment is a budget
+
+Lambda caps a function's environment at **4 KB**, and this service shares one
+`provider.environment` across a hundred functions — so that block is a single
+budget, spent collectively, and it was at 3.9 KB.
+
+The CloudFront signing key was 2.3 KB of it. It is now read from SSM Parameter
+Store on first use and cached for the container's life (`lib/cloudfront-key`),
+which took the environment back to about 1.9 KB and stopped a private key being
+readable in the console from every function that would never sign anything.
+
+So: **a new environment variable is a change to every function's budget**, and a
+large or secret value belongs in Parameter Store with its *name* in the
+environment instead. Anything that reads one should cache the promise rather
+than the value, so a cold-start burst makes one call rather than one per
+invocation.
+
 ## The public API and API keys
 
 Everything in this service used to be called by one of our own two apps, with a

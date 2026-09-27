@@ -1,6 +1,7 @@
 import { createSign } from "node:crypto";
 import type { AudioInfo, StreamInfo, SubtitleInfo, ThumbnailInfo } from "../types";
 import { env } from "./config";
+import { cloudFrontPrivateKey } from "./cloudfront-key";
 
 // wip
 
@@ -39,8 +40,16 @@ export function cloudfrontOrigin(): string {
  * (rather than signed against a single URL), the SAME query string is valid
  * for every file under that prefix — so the frontend can append it to each
  * segment/subtitle request.
+ *
+ * Async because the signing key is fetched from SSM Parameter Store rather than
+ * carried in every function's environment — see `cloudfront-key.ts`. The read
+ * happens once per container, so this await is free after the first signature a
+ * container produces.
  */
-export function buildSignedObjectUrl(objectKey: string, wildcardPrefix: string): SignedUrl {
+export async function buildSignedObjectUrl(
+  objectKey: string,
+  wildcardPrefix: string,
+): Promise<SignedUrl> {
   const baseUrl = `https://${env.cloudfrontDomain}/${objectKey}`;
   const expiresAt = Math.floor(Date.now() / 1000) + env.streamTtlSeconds;
   const resource = `https://${env.cloudfrontDomain}/${wildcardPrefix}*`;
@@ -57,9 +66,7 @@ export function buildSignedObjectUrl(objectKey: string, wildcardPrefix: string):
   });
 
   const policy = toUrlSafeBase64(policyJson);
-  const signature = toUrlSafeBase64(
-    signPolicy(policyJson, env.cloudfrontPrivateKey),
-  );
+  const signature = toUrlSafeBase64(signPolicy(policyJson, await cloudFrontPrivateKey()));
   const signedQuery = `Policy=${policy}&Signature=${signature}&Key-Pair-Id=${env.cloudfrontKeyPairId}`;
 
   return {
@@ -74,9 +81,9 @@ export function buildSignedObjectUrl(objectKey: string, wildcardPrefix: string):
  * Builds a CloudFront signed URL for the HLS master playlist, scoped to
  * `processed/{videoId}/hls/*`.
  */
-export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
+export async function buildSignedStreamUrl(manifestKey: string): Promise<StreamInfo> {
   const pathPrefix = manifestKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/hls
-  const { url, ...rest } = buildSignedObjectUrl(manifestKey, `${pathPrefix}/`);
+  const { url, ...rest } = await buildSignedObjectUrl(manifestKey, `${pathPrefix}/`);
   return { manifestUrl: url, ...rest };
 }
 
@@ -84,9 +91,9 @@ export function buildSignedStreamUrl(manifestKey: string): StreamInfo {
  * Builds a CloudFront signed URL for the extracted audio track, scoped to
  * `processed/{videoId}/audio/*`.
  */
-export function buildSignedAudioUrl(audioKey: string): AudioInfo {
+export async function buildSignedAudioUrl(audioKey: string): Promise<AudioInfo> {
   const pathPrefix = audioKey.split("/").slice(0, 3).join("/"); // processed/{videoId}/audio
-  const { url, ...rest } = buildSignedObjectUrl(audioKey, `${pathPrefix}/`);
+  const { url, ...rest } = await buildSignedObjectUrl(audioKey, `${pathPrefix}/`);
   return { videoId: audioKey.split("/")[1] ?? "", audioUrl: url, ...rest };
 }
 
@@ -94,9 +101,9 @@ export function buildSignedAudioUrl(audioKey: string): AudioInfo {
  * Builds a CloudFront signed URL for a WebVTT subtitle file, scoped to
  * `subtitles/{videoId}/*`.
  */
-export function buildSignedSubtitleUrl(subtitleKey: string): SubtitleInfo {
+export async function buildSignedSubtitleUrl(subtitleKey: string): Promise<SubtitleInfo> {
   const pathPrefix = subtitleKey.split("/").slice(0, 2).join("/"); // subtitles/{videoId}
-  const { url, ...rest } = buildSignedObjectUrl(subtitleKey, `${pathPrefix}/`);
+  const { url, ...rest } = await buildSignedObjectUrl(subtitleKey, `${pathPrefix}/`);
   return { videoId: subtitleKey.split("/")[1] ?? "", subtitleUrl: url, ...rest };
 }
 
@@ -104,8 +111,8 @@ export function buildSignedSubtitleUrl(subtitleKey: string): SubtitleInfo {
  * Builds a CloudFront signed URL for a thumbnail image, scoped to
  * `thumbnails/{videoId}/*`.
  */
-export function buildSignedThumbnailUrl(thumbnailKey: string): ThumbnailInfo {
+export async function buildSignedThumbnailUrl(thumbnailKey: string): Promise<ThumbnailInfo> {
   const pathPrefix = thumbnailKey.split("/").slice(0, 2).join("/"); // thumbnails/{videoId}
-  const { url, ...rest } = buildSignedObjectUrl(thumbnailKey, `${pathPrefix}/`);
+  const { url, ...rest } = await buildSignedObjectUrl(thumbnailKey, `${pathPrefix}/`);
   return { videoId: thumbnailKey.split("/")[1] ?? "", thumbnailUrl: url, ...rest };
 }

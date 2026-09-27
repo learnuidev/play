@@ -18,7 +18,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   await requireContentAccess(contentId, userId, 'read');
 
   const files = await listContentFiles(contentId);
-  const { urls, expiresAt } = buildContentFileUrls(files);
+  const { urls, expiresAt } = await buildContentFileUrls(files);
 
   return ok({
     files: files.map((file) => ({ ...file, url: urls.get(file.fileId) })),

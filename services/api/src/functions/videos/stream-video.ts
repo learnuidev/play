@@ -16,7 +16,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     throw new HttpError(409, `Video is not ready to stream (status: ${video.status})`);
   }
 
-  const stream = buildSignedStreamUrl(video.manifestKey);
+  const stream = await buildSignedStreamUrl(video.manifestKey);
   return ok({ ...stream, videoId });
 }
 

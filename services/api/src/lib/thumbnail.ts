@@ -14,7 +14,7 @@ export function thumbnailPrefix(videoId: string): string {
 }
 
 /** Builds a signed CloudFront URL for the given thumbnail key. */
-export function buildThumbnailSignedUrl(thumbnailKey: string): ThumbnailInfo {
+export async function buildThumbnailSignedUrl(thumbnailKey: string): Promise<ThumbnailInfo> {
   return buildSignedThumbnailUrl(thumbnailKey);
 }
 

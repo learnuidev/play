@@ -18,7 +18,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   }
 
   return ok(
-    buildSpaceThumbnailUrl({ spaceId: space.spaceId, thumbnailKey: space.thumbnailKey }),
+    await buildSpaceThumbnailUrl({ spaceId: space.spaceId, thumbnailKey: space.thumbnailKey }),
   );
 }
 

@@ -34,7 +34,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   const tracks: SubtitleTrackInfo[] = [
     {
-      ...buildSignedSubtitleUrl(video.subtitleKey),
+      ...(await buildSignedSubtitleUrl(video.subtitleKey)),
       language: sourceLanguage,
       label: sourceLabel,
       isSource: true,
@@ -48,7 +48,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   for (const [language, translation] of Object.entries(video.translations ?? {})) {
     if (translation.status !== 'READY' || !translation.key) continue;
     tracks.push({
-      ...buildSignedSubtitleUrl(translation.key),
+      ...(await buildSignedSubtitleUrl(translation.key)),
       language,
       label: translation.label,
       isSource: false,

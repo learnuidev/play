@@ -164,8 +164,8 @@ export async function createContentFileUpload(params: {
 }
 
 /** A signed CloudFront URL for one attachment. */
-export function buildContentFileUrl(file: ContentFile): string {
-  return buildSignedObjectUrl(file.key, contentFilePrefix(file.contentId)).url;
+export async function buildContentFileUrl(file: ContentFile): Promise<string> {
+  return (await buildSignedObjectUrl(file.key, contentFilePrefix(file.contentId))).url;
 }
 
 /**
@@ -175,13 +175,13 @@ export function buildContentFileUrl(file: ContentFile): string {
  * for all of its files — one signature is produced and reused rather than one
  * per file, which keeps a fifty-file content from being fifty RSA signatures.
  */
-export function buildContentFileUrls(files: ContentFile[]): {
+export async function buildContentFileUrls(files: ContentFile[]): Promise<{
   urls: Map<string, string>;
   expiresAt: number;
-} {
+}> {
   if (files.length === 0) return { urls: new Map(), expiresAt: 0 };
 
-  const { signedQuery, expiresAt } = buildSignedObjectUrl(
+  const { signedQuery, expiresAt } = await buildSignedObjectUrl(
     files[0].key,
     contentFilePrefix(files[0].contentId),
   );

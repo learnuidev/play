@@ -25,7 +25,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   return ok({
     file,
-    url: buildContentFileUrl(file),
+    url: await buildContentFileUrl(file),
     expiresAt: Math.floor(Date.now() / 1000) + env.streamTtlSeconds,
   });
 }

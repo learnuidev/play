@@ -99,6 +99,13 @@ custom:
     appBaseUrl: ${ssm:/play/mail/app-base-url, self:custom.mailDefaults.appBaseUrl}
     marketplaceBaseUrl: ${ssm:/play/mail/marketplace-base-url, self:custom.mailDefaults.marketplaceBaseUrl}
 
+  # The CloudFront signing key, read from SSM at runtime rather than injected
+  # into the environment of every function. Written by
+  # scripts/generate-cloudfront-keypair.sh, as a SecureString holding the base64
+  # of the PKCS#8 key.
+  cloudfront:
+    privateKeyParam: /play/cloudfront/private-key
+
   # How the service stays inside CloudFormation's 500-resource ceiling.
   #
   # `perFunction` gives every function a nested stack holding that function, its
@@ -177,7 +184,16 @@ provider:
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
-    CLOUDFRONT_PRIVATE_KEY: ${ssm:/play/cloudfront/private-key}
+    # Where the signing key lives, not the key.
+    #
+    # The key used to be interpolated here (`${ssm:/play/cloudfront/private-key}`)
+    # and so handed to every function in the service. At 2.3 KB it was most of
+    # Lambda's 4 KB environment budget — the deploy failed the moment one more
+    # variable was added — and it meant the authorizer and the key list carried a
+    # readable copy of the distribution's private key. `lib/cloudfront-key` reads
+    # it from the parameter on first use and caches it per container, so the
+    # environment only carries its name.
+    CLOUDFRONT_PRIVATE_KEY_PARAM: ${self:custom.cloudfront.privateKeyParam}
     MEDIACONVERT_ROLE_ARN: !GetAtt MediaConvertRole.Arn
     TRANSCRIBE_ROLE_ARN: !GetAtt TranscribeRole.Arn
     SUBTITLE_LANGUAGE: en-US
@@ -354,6 +370,18 @@ provider:
           Resource:
             - !GetAtt MediaConvertRole.Arn
             - !GetAtt TranscribeRole.Arn
+        # The CloudFront signing key, read at runtime. One parameter, named
+        # exactly, rather than a wildcard: a role that can read every parameter
+        # in the account can read every secret in the account.
+        #
+        # No `kms:Decrypt` beside it, because the parameter is a SecureString
+        # encrypted with the AWS-managed `aws/ssm` key. A parameter moved to a
+        # customer-managed key needs that grant added here.
+        - Effect: Allow
+          Action:
+            - ssm:GetParameter
+          Resource:
+            - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${self:custom.cloudfront.privateKeyParam}"
 
 functions:
   create-video:

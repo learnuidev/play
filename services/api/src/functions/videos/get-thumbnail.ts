@@ -20,7 +20,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     throw new HttpError(404, 'No thumbnail for this video');
   }
 
-  return ok(buildThumbnailSignedUrl(video.thumbnailKey));
+  return ok(await buildThumbnailSignedUrl(video.thumbnailKey));
 }
 
 export const handler = handle(main);

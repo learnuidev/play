@@ -27,7 +27,17 @@ export const env = {
   bucket: required('VIDEOS_BUCKET', process.env.VIDEOS_BUCKET),
   cloudfrontDomain: required('CLOUDFRONT_DOMAIN', process.env.CLOUDFRONT_DOMAIN),
   cloudfrontKeyPairId: required('CLOUDFRONT_KEY_PAIR_ID', process.env.CLOUDFRONT_KEY_PAIR_ID),
-  cloudfrontPrivateKey: Buffer.from(process.env.CLOUDFRONT_PRIVATE_KEY ?? '', 'base64').toString('utf8'),
+  /**
+   * Where the signing key lives, rather than the key itself.
+   *
+   * The key is a 2.3 KB SecretString, and every function in this service was
+   * being handed a copy of it through the environment — which is both most of
+   * the 4 KB environment limit and a private key readable in the console from a
+   * hundred functions that never sign anything. `lib/cloudfront-key` fetches it
+   * from here on first use and holds it for the container's life.
+   */
+  cloudfrontPrivateKeyParam:
+    process.env.CLOUDFRONT_PRIVATE_KEY_PARAM ?? '/play/cloudfront/private-key',
   mediaconvertRoleArn: required('MEDIACONVERT_ROLE_ARN', process.env.MEDIACONVERT_ROLE_ARN),
   transcribeRoleArn: required('TRANSCRIBE_ROLE_ARN', process.env.TRANSCRIBE_ROLE_ARN),
   subtitleLanguage: process.env.SUBTITLE_LANGUAGE ?? 'en-US',

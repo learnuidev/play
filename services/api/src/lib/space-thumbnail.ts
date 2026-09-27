@@ -52,11 +52,11 @@ export async function deleteSpaceThumbnails(spaceId: string): Promise<void> {
 }
 
 /** Builds a signed CloudFront URL for a space's cover, scoped to its prefix. */
-export function buildSpaceThumbnailUrl(space: {
+export async function buildSpaceThumbnailUrl(space: {
   spaceId: string;
   thumbnailKey: string;
-}): SpaceThumbnailInfo {
-  const { url, ...rest } = buildSignedObjectUrl(
+}): Promise<SpaceThumbnailInfo> {
+  const { url, ...rest } = await buildSignedObjectUrl(
     space.thumbnailKey,
     spaceThumbnailPrefix(space.spaceId),
   );

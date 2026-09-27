@@ -20,7 +20,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     throw new HttpError(409, `Audio is not ready (status: ${video.status})`);
   }
 
-  return ok({ ...buildSignedAudioUrl(video.audioKey), videoId });
+  return ok({ ...(await buildSignedAudioUrl(video.audioKey)), videoId });
 }
 
 export const handler = handle(main);

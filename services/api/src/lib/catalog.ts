@@ -68,7 +68,14 @@ async function buildCatalogCourse(
     // it. Signing per response is what keeps a listed course's cover public
     // without making the object public.
     ...(space.thumbnailKey
-      ? { thumbnailUrl: buildSpaceThumbnailUrl({ spaceId: space.spaceId, thumbnailKey: space.thumbnailKey }).thumbnailUrl }
+      ? {
+          thumbnailUrl: (
+            await buildSpaceThumbnailUrl({
+              spaceId: space.spaceId,
+              thumbnailKey: space.thumbnailKey,
+            })
+          ).thumbnailUrl,
+        }
       : {}),
     sectionCount,
     lessonCount,
