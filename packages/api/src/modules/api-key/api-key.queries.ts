@@ -44,9 +44,10 @@ export function useCreateApiKey() {
 /**
  * Cuts off one of the caller's own keys.
  *
- * The revoked key that comes back is written into the list rather than thrown
- * away, because revoking is the one action on this screen whose *effect* has to
- * be visible: the row stays, and says when it stopped working.
+ * The revoked key leaves the list rather than staying in it wearing a badge.
+ * The effect of revoking is that the key is gone, so the row it was in goes with
+ * it — taken out of the cache at once so the list answers before the refetch
+ * does, and the refetch is what makes the rest of the list current.
  */
 export function useRevokeApiKey() {
   const qc = useQueryClient();
@@ -54,9 +55,7 @@ export function useRevokeApiKey() {
     mutationFn: (keyId: string) => api.revokeApiKey(keyId),
     onSuccess: ({ key }) => {
       qc.setQueryData<{ keys: ApiKey[] }>(apiKeyKeys.mine(), (current) =>
-        current
-          ? { ...current, keys: current.keys.map((k) => (k.keyId === key.keyId ? key : k)) }
-          : current,
+        current ? { ...current, keys: current.keys.filter((k) => k.keyId !== key.keyId) } : current,
       );
       qc.invalidateQueries({ queryKey: apiKeyKeys.all });
     },

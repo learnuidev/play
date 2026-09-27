@@ -95,7 +95,7 @@ const KEY_FIELDS: ApiField[] = [
   { name: 'prefix', type: 'string', description: 'The opening characters of the secret, `play_sk_…`. Enough to tell two keys apart, not enough to use one.' },
   { name: 'createdAt', type: 'number', description: 'Epoch milliseconds.' },
   { name: 'lastUsedAt', type: 'number?', description: 'When it was last presented, accurate to about five minutes. Absent until it is used.' },
-  { name: 'revokedAt', type: 'number?', description: 'Set once the key is revoked. A revoked key stays in the list and stops authenticating.' },
+  { name: 'revokedAt', type: 'number?', description: 'Set once the key is revoked, and carried only by the response that revoked it. A revoked key stops authenticating and is not returned by any list.' },
   { name: 'organizationId', type: 'string?', description: 'The organization it was made for, when its creator named one.' },
   { name: 'organizationName', type: 'string?', description: 'That organization’s name, so a list needs no second call.' },
 ];
@@ -313,9 +313,9 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         id: 'list-keys',
         method: 'GET',
         path: '/me/api-keys',
-        summary: 'Your own keys.',
+        summary: 'Your own keys that still work.',
         description:
-          'Every key you have made, newest first, revoked ones included — a revoked key is kept because “did I already cut that one off?” is a question, and a list that dropped the row would answer it with nothing.',
+          'The keys you hold that still work, newest first. A revoked key is not among them: revoking is what stops the key working *and* what takes it out of the listing, so every key here is one that can be used right now. The record is kept — the row stays in the table — it is simply not an answer to “what credentials exist”.',
         auth: 'session',
         parameters: [LIMIT, NEXT_TOKEN],
         responseExample: `{
@@ -377,7 +377,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
           { name: 'secret', type: 'string', description: 'The credential itself, shown once and never again. Send it as the `x-api-key` header.' },
         ],
         notes: [
-          'One account may hold 25 unrevoked keys at a time. Past that, creating one answers **409** and asks you to revoke one first — an unbounded list of keys is an unbounded list of things that can be lost.',
+          'One account may hold 25 live keys at a time. Past that, creating one answers **409** and asks you to revoke one first — an unbounded list of keys is an unbounded list of things that can be lost.',
         ],
       },
       {
@@ -386,7 +386,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         path: '/me/api-keys/{keyId}',
         summary: 'Revoke one of your own keys.',
         description:
-          'The key stops authenticating on the next request — nothing is cached in front of the authorizer, so there is no window in which a revoked key still works. The row is kept and comes back marked revoked: the secret is unrecoverable, so the record of *when* it was cut off is the only thing that survives.',
+          'The key stops authenticating on the next request — nothing is cached in front of the authorizer, so there is no window in which a revoked key still works — and it leaves every listing at the same moment. This response is the last place it appears: the row is kept and returned here marked revoked, because the secret is unrecoverable and the record of *when* it was cut off is the only thing that survives.',
         auth: 'session',
         parameters: [
           {
@@ -419,9 +419,9 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         id: 'list-organization-keys',
         method: 'GET',
         path: '/organizations/{orgId}/api-keys',
-        summary: 'Every key made for an organization, whoever made it.',
+        summary: 'The organization’s live keys, whoever made them.',
         description:
-          'An admin’s list. Keys outlive the integrations they were made for and often the people who made them, so the question “who still has access to this?” has to be answerable by somebody other than the person holding the key.',
+          'An admin’s list. Keys outlive the integrations they were made for and often the people who made them, so the question “who still has access to this?” has to be answerable by somebody other than the person holding the key. Revoked keys are not returned, which is what makes the list comparable against the people who should still have access.',
         auth: 'session',
         parameters: [
           {
@@ -528,7 +528,7 @@ export const API_ERRORS: { status: string; meaning: string }[] = [
   {
     status: '403',
     meaning:
-      'The key was rejected — it is unknown or has been revoked — or it is valid but was not made for the organization being asked about, or the caller is not one of that organization’s admins.',
+      'Either the key was rejected — it is unknown or has been revoked — or it is valid but was not made for the organization being asked about, or the caller is not one of that organization’s admins. The first of those is answered by API Gateway before the endpoint runs, so its body is the gateway’s own `{"message":"User is not authorized to access this resource…"}` rather than the shape below; the others are ours.',
   },
   {
     status: '404',

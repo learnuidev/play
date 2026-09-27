@@ -283,6 +283,12 @@ Four rules worth keeping:
 - **The authorizer caches nothing** (`resultTtlInSeconds: 0`). Revocation takes
   effect on the next request, and the price — one read per call — is what
   identifying a caller costs everywhere else here.
+- **A revoked key is kept, and never listed.** The row stays so that the revoke
+  response can say when it happened and so revoking twice is not an error, but
+  every listing filters it out — the app and the API both, because a key you can
+  see is a key you can still use. The filter is why the listings loop: DynamoDB
+  applies a filter *after* the page size, so a page of revoked rows answers with
+  nothing and the page has to be filled from the next one.
 - **A bad key is a Deny policy, not a thrown error.** API Gateway has three
   documented answers here: a Deny policy is a 403, a thrown error is a 500, and
   a missing `x-api-key` is a 401 from the gateway itself, because the route

@@ -50,7 +50,14 @@ export default function ApiDocsPage() {
     <div className="min-h-svh bg-muted/40">
       <DocsHeader />
 
-      <div className="mx-auto flex w-full max-w-6xl items-start gap-10 px-6">
+      {/* No `items-start` here, and that is the whole of why the rail sticks.
+          A sticky element cannot leave its containing block, so the aside has to
+          be as tall as the column for the nav inside it to have anywhere to
+          travel: `flex-start` would shrink the aside to the height of its own
+          list, and the rail would scroll away with the page as if it were not
+          sticky at all. Stretching it — the default — is what gives the rail its
+          length to move through. */}
+      <div className="mx-auto flex w-full max-w-6xl gap-10 px-6">
         <DocsRail />
 
         {/* The credential the whole page's playboxes run on lives in one

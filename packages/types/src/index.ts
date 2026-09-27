@@ -1218,7 +1218,11 @@ export interface ApiKey {
    * that authenticating is not a write on every request.
    */
   lastUsedAt?: number;
-  /** Set once the key is revoked. A revoked key stays visible, and stops working. */
+  /**
+   * Set once the key is revoked. It appears in the response that revoked it and
+   * in no list: revocation is what stops the key working *and* what takes it out
+   * of the listing, so a key you can see is a key that can still be used.
+   */
   revokedAt?: number;
   /**
    * The organization the key was made for, when its creator named one. It is

@@ -1,19 +1,23 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { listApiKeysForUser, toApiKey } from '../../lib/api-keys';
+import { listActiveApiKeysForUser, toApiKey } from '../../lib/api-keys';
 import { requireUser } from '../../lib/auth';
 import { encodeNextToken, handle, ok, parsePaging } from '../../lib/http';
 
 /**
- * The caller's own keys, newest first.
+ * The caller's own keys that still work, newest first.
  *
- * Revoked keys are kept in the list rather than filtered out: a person who cut
- * a key off and comes back a month later wants to know that they did, and a
- * list that silently loses rows is a list people re-create keys against.
+ * Revoked keys are not among them. A key list is read to decide which
+ * credentials exist, and a revoked key is not one of them — it cannot
+ * authenticate, and the only thing left to do to it is what was already done.
+ * The row is still kept; it is simply not an answer to this question.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const user = requireUser(event);
 
-  const { keys, lastEvaluatedKey } = await listApiKeysForUser(user.userId, parsePaging(event));
+  const { keys, lastEvaluatedKey } = await listActiveApiKeysForUser(
+    user.userId,
+    parsePaging(event),
+  );
 
   return ok({
     keys: keys.map(toApiKey),

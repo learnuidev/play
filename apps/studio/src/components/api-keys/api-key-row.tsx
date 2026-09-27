@@ -15,7 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@ui/components/ui/dialog';
-import { cn } from '@ui/lib/utils';
 
 /** `Mar 4, 2026`, the same date the rest of the app prints. */
 function formatDate(timestamp: number): string {
@@ -129,9 +128,11 @@ function RevokeKeyDialog({
  * One key: what it is called, enough of it to recognize, and how to cut it off.
  *
  * A key made for an organization says so, in the same row as its name, because
- * that is what decides what it can reach. A revoked key stays in the list, dimmed
- * and badged: it is the record that somebody ended it, and a list that dropped
- * the row would leave "did I already revoke that one?" unanswerable.
+ * that is what decides what it can reach.
+ *
+ * There is no revoked state to draw. Revoking takes a key out of the list —
+ * the API stops returning it and the cache drops it — so every row here is a
+ * key that still works, and every one of them can be revoked.
  */
 export function ApiKeyRow({
   apiKey,
@@ -145,16 +146,8 @@ export function ApiKeyRow({
   /** Admin lists print who made the key; your own list has only one answer. */
   showOwner?: boolean;
 }) {
-  const revokedAt = apiKey.revokedAt;
-  const revoked = revokedAt !== undefined;
-
   return (
-    <div
-      className={cn(
-        'flex items-start gap-4 rounded-xl border px-4 py-3.5',
-        revoked && 'opacity-60',
-      )}
-    >
+    <div className="flex items-start gap-4 rounded-xl border px-4 py-3.5">
       <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted/60 text-muted-foreground">
         <KeyRoundIcon className="size-4" />
       </div>
@@ -162,7 +155,6 @@ export function ApiKeyRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <p className="truncate text-sm font-medium">{apiKey.name}</p>
-          {revoked && <Badge variant="outline">Revoked</Badge>}
           {apiKey.organizationName && <Badge variant="secondary">{apiKey.organizationName}</Badge>}
         </div>
 
@@ -170,11 +162,7 @@ export function ApiKeyRow({
           {/* The prefix and ellipsis together, so nobody reads it as the key. */}
           <span className="font-mono">{apiKey.prefix}…</span>
           <span aria-hidden>·</span>
-          <span>
-            {revokedAt !== undefined
-              ? `Revoked ${formatDate(revokedAt)}`
-              : lastUsedLabel(apiKey.lastUsedAt)}
-          </span>
+          <span>{lastUsedLabel(apiKey.lastUsedAt)}</span>
           <span aria-hidden>·</span>
           <span>Made {formatDate(apiKey.createdAt)}</span>
         </p>
@@ -186,23 +174,21 @@ export function ApiKeyRow({
         )}
       </div>
 
-      {!revoked && (
-        <div className="shrink-0">
-          <RevokeKeyDialog
-            keyName={apiKey.name}
-            pending={revoking}
-            onConfirm={async () => {
-              // Throws on failure, which the dialog reports and stays open on.
-              // The success toast is here rather than there because the key's
-              // name is.
-              await onRevoke();
-              toast.success(`“${apiKey.name}” revoked`, {
-                description: 'Anything using it has stopped working.',
-              });
-            }}
-          />
-        </div>
-      )}
+      <div className="shrink-0">
+        <RevokeKeyDialog
+          keyName={apiKey.name}
+          pending={revoking}
+          onConfirm={async () => {
+            // Throws on failure, which the dialog reports and stays open on.
+            // The success toast is here rather than there because the key's
+            // name is.
+            await onRevoke();
+            toast.success(`“${apiKey.name}” revoked`, {
+              description: 'Anything using it has stopped working.',
+            });
+          }}
+        />
+      </div>
     </div>
   );
 }

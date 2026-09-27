@@ -13,7 +13,10 @@ import { HttpError } from './http';
 
 export const API_KEYS_TABLE = env.apiKeysTableName;
 
-/** GSI on the keys table: every key one person has made. */
+/**
+ * GSI on the keys table: every key one person has made, revoked ones included —
+ * the *listing* is what excludes those, not the index.
+ */
 const USER_CREATED_INDEX = 'UserCreatedIndex';
 
 /**
@@ -24,6 +27,9 @@ const USER_CREATED_INDEX = 'UserCreatedIndex';
  * an admin's list reads. An admin sees the keys of the organization rather than
  * those of its members one member at a time: a key made by somebody who has
  * since left the organization still belongs to it.
+ *
+ * Revoked keys stay in it, because the row stays; the listing filters them out
+ * rather than the index holding only what is live.
  */
 const ORGANIZATION_CREATED_INDEX = 'OrganizationCreatedIndex';
 
@@ -173,13 +179,14 @@ export async function createApiKey(
  * Refuses to make a key when the caller already holds the maximum.
  *
  * Counted over the caller's own index rather than a counter on a row, because a
- * counter is a number that drifts and this one is read once per creation.
+ * counter is a number that drifts and this one is read once per creation. The
+ * count is of keys that still work: what the limit is on is keys somebody can
+ * use, and a revoked one is not in the query at all.
  */
 export async function assertKeyAllowance(userId: string): Promise<void> {
-  const { keys } = await listApiKeysForUser(userId, { limit: MAX_ACTIVE_KEYS_PER_USER });
-  const active = keys.filter((key) => key.revokedAt === undefined).length;
+  const { keys } = await listActiveApiKeysForUser(userId, { limit: MAX_ACTIVE_KEYS_PER_USER });
 
-  if (active >= MAX_ACTIVE_KEYS_PER_USER) {
+  if (keys.length >= MAX_ACTIVE_KEYS_PER_USER) {
     throw new HttpError(
       409,
       `You already hold ${MAX_ACTIVE_KEYS_PER_USER} active keys. Revoke one before making another.`,
@@ -204,52 +211,83 @@ export interface ListApiKeysOptions {
   exclusiveStartKey?: Record<string, unknown>;
 }
 
-/** The keys one person has made, newest first. Revoked ones included. */
-export async function listApiKeysForUser(
+/**
+ * How many pages of an index one listing reads while looking for keys that still
+ * work.
+ *
+ * A DynamoDB filter runs *after* the page size, so a page of the index can
+ * contribute nothing at all — a hundred revoked keys in front of a live one
+ * answers the first page with none of them. Filling the caller's page therefore
+ * means reading on, but not without end: a caller with a long history of revoked
+ * keys would otherwise hold a Lambda open until it timed out. Five pages is five
+ * hundred scanned rows for a page of a hundred, and a short page still carries
+ * the token that continues it.
+ */
+const MAX_FILTERED_PAGES = 5;
+
+/**
+ * Keys that still work, newest first, through one of the table's indexes.
+ *
+ * Revoked keys are kept as rows — the revoke response reads one back, and "when
+ * did this stop working" is a question people ask — but they are not handed out.
+ * A key list is the keys that still work, and a revoked key in it is a row whose
+ * only possible action is one that has already happened.
+ */
+async function listActiveKeysByIndex(
+  indexName: string,
+  keyName: 'userId' | 'organizationId',
+  keyValue: string,
+  opts: ListApiKeysOptions,
+): Promise<ListApiKeysResult> {
+  const keys: ApiKeyRecord[] = [];
+  let exclusiveStartKey = opts.exclusiveStartKey;
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+  for (let page = 0; page < MAX_FILTERED_PAGES; page += 1) {
+    // Asking for what is still missing rather than for a whole page again is
+    // what keeps the answer to `limit`: the filter can only ever return fewer
+    // rows than were scanned, and a later round must not top the page up past
+    // what the caller asked for.
+    const remaining = opts.limit - keys.length;
+    if (remaining <= 0) break;
+
+    const res = await client.send(
+      new QueryCommand({
+        TableName: API_KEYS_TABLE,
+        IndexName: indexName,
+        KeyConditionExpression: '#key = :key',
+        FilterExpression: 'attribute_not_exists(revokedAt)',
+        ExpressionAttributeNames: { '#key': keyName },
+        ExpressionAttributeValues: { ':key': keyValue },
+        ScanIndexForward: false,
+        Limit: remaining,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    keys.push(...((res.Items ?? []) as ApiKeyRecord[]));
+    lastEvaluatedKey = res.LastEvaluatedKey;
+    if (!lastEvaluatedKey) break;
+    exclusiveStartKey = lastEvaluatedKey;
+  }
+
+  return { keys, lastEvaluatedKey };
+}
+
+/** The keys one person holds that still work, newest first. */
+export function listActiveApiKeysForUser(
   userId: string,
   opts: ListApiKeysOptions,
 ): Promise<ListApiKeysResult> {
-  const res = await client.send(
-    new QueryCommand({
-      TableName: API_KEYS_TABLE,
-      IndexName: USER_CREATED_INDEX,
-      KeyConditionExpression: '#userId = :userId',
-      ExpressionAttributeNames: { '#userId': 'userId' },
-      ExpressionAttributeValues: { ':userId': userId },
-      ScanIndexForward: false,
-      Limit: opts.limit,
-      ExclusiveStartKey: opts.exclusiveStartKey,
-    }),
-  );
-
-  return {
-    keys: (res.Items ?? []) as ApiKeyRecord[],
-    lastEvaluatedKey: res.LastEvaluatedKey,
-  };
+  return listActiveKeysByIndex(USER_CREATED_INDEX, 'userId', userId, opts);
 }
 
-/** The keys made for one organization, newest first, whoever made them. */
-export async function listApiKeysForOrganization(
+/** The keys one organization holds that still work, whoever made them. */
+export function listActiveApiKeysForOrganization(
   organizationId: string,
   opts: ListApiKeysOptions,
 ): Promise<ListApiKeysResult> {
-  const res = await client.send(
-    new QueryCommand({
-      TableName: API_KEYS_TABLE,
-      IndexName: ORGANIZATION_CREATED_INDEX,
-      KeyConditionExpression: '#organizationId = :organizationId',
-      ExpressionAttributeNames: { '#organizationId': 'organizationId' },
-      ExpressionAttributeValues: { ':organizationId': organizationId },
-      ScanIndexForward: false,
-      Limit: opts.limit,
-      ExclusiveStartKey: opts.exclusiveStartKey,
-    }),
-  );
-
-  return {
-    keys: (res.Items ?? []) as ApiKeyRecord[],
-    lastEvaluatedKey: res.LastEvaluatedKey,
-  };
+  return listActiveKeysByIndex(ORGANIZATION_CREATED_INDEX, 'organizationId', organizationId, opts);
 }
 
 /**
