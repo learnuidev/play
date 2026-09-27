@@ -11,6 +11,17 @@
  * (`lib/api-base`), so what the page prints is a command that runs.
  */
 
+/**
+ * The lists a field's value can be picked from.
+ *
+ * A ULID is the one thing about this API that cannot be read off the page: the
+ * reference says `spaceId` is a course, and nothing on the card says which
+ * course. Each of these names a list the studio can already read for the person
+ * looking at the page, which the playground offers beside the input — what that
+ * costs and where it is read from is `lib/api-choices`.
+ */
+export type ApiChoiceSource = 'courses' | 'lessons' | 'organizations' | 'keys';
+
 export interface ApiField {
   name: string;
   type: string;
@@ -18,6 +29,14 @@ export interface ApiField {
   description: string;
   /** The value used in the generated examples. */
   example?: string;
+  /**
+   * Set when this field's value names something the reader has one or more of,
+   * so the card offers a list of them next to the box. Absent means the value is
+   * not an id — a title, a limit, a search term — and there is nothing to list.
+   * The field is still typed either way: a picker fills the input, it does not
+   * replace it.
+   */
+  choices?: ApiChoiceSource;
 }
 
 export interface ApiParameter extends ApiField {
@@ -219,6 +238,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'spaceId',
             type: 'string',
             required: true,
+            choices: 'courses',
             description: 'The course to read, as returned by the list endpoint.',
             example: '01JQ8Y4C2D5F7H9K1M3P5R7T9V',
           },
@@ -281,6 +301,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'orgId',
             type: 'string',
             required: true,
+            choices: 'organizations',
             description: 'The organization. The key must have been made for it.',
             example: '01JQ8Y2A1B3C4D5E6F7G8H9J0K',
           },
@@ -334,6 +355,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'spaceId',
             type: 'string',
             required: true,
+            choices: 'courses',
             description: 'The course to outline.',
             example: '01JQ8Y4C2D5F7H9K1M3P5R7T9V',
           },
@@ -375,6 +397,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'contentId',
             type: 'string',
             required: true,
+            choices: 'lessons',
             description: 'The lesson, from the outline above.',
             example: '01JQ8Y8G6H9K1M3P5R7T9V1X3Z',
           },
@@ -423,6 +446,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'contentId',
             type: 'string',
             required: true,
+            choices: 'lessons',
             description: 'The lesson whose video to play.',
             example: '01JQ8Y8G6H9K1M3P5R7T9V1X3Z',
           },
@@ -460,6 +484,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'contentId',
             type: 'string',
             required: true,
+            choices: 'lessons',
             description: 'The lesson whose subtitles to read.',
             example: '01JQ8Y8G6H9K1M3P5R7T9V1X3Z',
           },
@@ -516,6 +541,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'contentId',
             type: 'string',
             required: true,
+            choices: 'lessons',
             description: 'The lesson whose attachments to list.',
             example: '01JQ8Y8G6H9K1M3P5R7T9V1X3Z',
           },
@@ -601,6 +627,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
           {
             name: 'organizationId',
             type: 'string',
+            choices: 'organizations',
             description:
               'The organization to make the key for. Any active member of it may name it. A key made for an organization appears in that organization’s own list, where its admins can revoke it without asking you — and reaches that organization’s unpublished courses as well as the public catalog.',
             example: '01JQ8Y2A1B3C4D5E6F7G8H9J0K',
@@ -640,6 +667,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'keyId',
             type: 'string',
             required: true,
+            choices: 'keys',
             description: 'The key to revoke.',
             example: '01JQ8Z6K4M7N9P2R5T8V1W3X6Y',
           },
@@ -664,6 +692,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'orgId',
             type: 'string',
             required: true,
+            choices: 'organizations',
             description: 'The organization. The caller must be one of its admins.',
             example: '01JQ8Y2A1B3C4D5E6F7G8H9J0K',
           },
@@ -706,6 +735,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'orgId',
             type: 'string',
             required: true,
+            choices: 'organizations',
             description: 'The organization the key was made for.',
             example: '01JQ8Y2A1B3C4D5E6F7G8H9J0K',
           },
@@ -714,6 +744,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             name: 'keyId',
             type: 'string',
             required: true,
+            choices: 'keys',
             description: 'The key to revoke.',
             example: '01JQ8Z6K4M7N9P2R5T8V1W3X6Y',
           },

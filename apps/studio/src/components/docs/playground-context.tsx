@@ -1,7 +1,7 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import type { PlaygroundCredential } from '@/lib/api-playground';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { describeKey, type PlaygroundCredential } from '@/lib/api-playground';
 
 /**
  * The credential every "Try it" on the page calls with.
@@ -19,11 +19,21 @@ import type { PlaygroundCredential } from '@/lib/api-playground';
 
 const STORAGE_KEY = 'play.docs.apiKey';
 
-/** What is remembered about a key between reloads: never anything but the key. */
+/**
+ * What is remembered about a key between reloads.
+ *
+ * The secret, and just enough about it to draw the card again: its name, the id
+ * that revokes it, and the organization it was made for — which is not only a
+ * label here, it is what the page fills the organization fields in with and
+ * what narrows the pickers to that organization's courses. Nothing else about
+ * the key is kept, and nothing about it is kept anywhere but this tab's session.
+ */
 interface StoredCredential {
   secret: string;
   label: string;
   keyId?: string;
+  organizationId?: string;
+  organizationName?: string;
 }
 
 interface PlaygroundContextValue {
@@ -40,36 +50,22 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
   const [credential, setCredential] = useState<PlaygroundCredential | null>(null);
   const [ready, setReady] = useState(false);
 
-  // Read after mount rather than during render: `sessionStorage` does not exist
-  // on the server, and reading it while rendering would make the first paint
-  // disagree with the markup the server sent.
-  useEffect(() => {
-    try {
-      const stored = window.sessionStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as StoredCredential;
-        if (parsed?.secret) {
-          setCredential({
-            kind: 'key',
-            secret: parsed.secret,
-            label: parsed.label,
-            ...(parsed.keyId ? { keyId: parsed.keyId } : {}),
-          });
-        }
-      }
-    } catch {
-      // A store that cannot be read is a store with nothing in it.
-    }
-    setReady(true);
-  }, []);
+  /**
+   * The secret in play, so that an answer about a key which has since been
+   * replaced cannot be written over the key that replaced it.
+   */
+  const liveSecret = useRef<string | null>(null);
 
   const useKey = useCallback((next: Extract<PlaygroundCredential, { kind: 'key' }>) => {
+    liveSecret.current = next.secret;
     setCredential(next);
     try {
       const stored: StoredCredential = {
         secret: next.secret,
         label: next.label,
         ...(next.keyId ? { keyId: next.keyId } : {}),
+        ...(next.organizationId ? { organizationId: next.organizationId } : {}),
+        ...(next.organizationName ? { organizationName: next.organizationName } : {}),
       };
       window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     } catch {
@@ -78,6 +74,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const forget = useCallback(() => {
+    liveSecret.current = null;
     setCredential(null);
     try {
       window.sessionStorage.removeItem(STORAGE_KEY);
@@ -85,6 +82,49 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       // Nothing to do: it was never written.
     }
   }, []);
+
+  // Read after mount rather than during render: `sessionStorage` does not exist
+  // on the server, and reading it while rendering would make the first paint
+  // disagree with the markup the server sent.
+  useEffect(() => {
+    let stored: StoredCredential | null = null;
+    try {
+      const raw = window.sessionStorage.getItem(STORAGE_KEY);
+      if (raw) stored = JSON.parse(raw) as StoredCredential;
+    } catch {
+      // A store that cannot be read is a store with nothing in it.
+    }
+
+    setReady(true);
+    if (!stored?.secret) return;
+
+    const { secret, label, keyId, organizationId, organizationName } = stored;
+    useKey({
+      kind: 'key',
+      secret,
+      label,
+      ...(keyId ? { keyId } : {}),
+      ...(organizationId ? { organizationId } : {}),
+      ...(organizationName ? { organizationName } : {}),
+    });
+
+    /**
+     * A stored key that does not say which organization it reaches is asked.
+     *
+     * A key made on this page carries the organization in its own record, but
+     * one made somewhere else — on the keys page, or by an older visit to this
+     * one, before the page thought to keep it — arrives with nothing to fill the
+     * organization fields in from, and the page cannot be specific about a fact
+     * it does not have. `GET /v1/me` is that fact, asked of the key itself,
+     * which is what makes a pasted key behave like one made here.
+     */
+    if (organizationId) return;
+
+    void describeKey(secret).then((description) => {
+      if (!description || liveSecret.current !== secret) return;
+      useKey({ kind: 'key', secret, label, ...(keyId ? { keyId } : {}), ...description });
+    });
+  }, [useKey]);
 
   const value = useMemo<PlaygroundContextValue>(
     () => ({ credential, ready, useKey, forget }),

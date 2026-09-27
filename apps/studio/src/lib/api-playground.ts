@@ -28,6 +28,18 @@ export type PlaygroundCredential =
       label: string;
       /** Set when this tab created the key, so the interface can offer to revoke it. */
       keyId?: string;
+      /**
+       * The organization the key was made for, when it was made for one.
+       *
+       * Nothing here is authenticated with it — the secret is the whole
+       * credential. It is what lets the page be specific: which endpoints below
+       * will answer this key, which organization to fill in when a card asks for
+       * one, and whose courses and lessons to offer in the pickers, since a key
+       * reaches one organization and everything else is a 403 waiting to happen.
+       */
+      organizationId?: string;
+      /** What to call that organization on screen. */
+      organizationName?: string;
     }
   | { kind: 'session' };
 
@@ -169,4 +181,48 @@ export function isGatewayResponse(result: PlaygroundResult): boolean {
     typeof (body as { message?: unknown }).message === 'string' &&
     !('error' in body)
   );
+}
+
+/**
+ * What a key says about itself, asked of the key.
+ *
+ * A key made for an organization reaches that organization and nothing else,
+ * and the page wants to know which one before it fills anything in: a key this
+ * tab made says so on the response that made it, but a pasted one arrives
+ * anonymous, and `GET /v1/me` is the endpoint that answers the question.
+ *
+ * A refusal is not an error here. A key that is wrong is still stored — the
+ * first Send is where that gets said properly, with a status and a body to read
+ * — and this only decides whether the page can be more specific in the meantime.
+ */
+export async function describeKey(
+  secret: string,
+): Promise<{ organizationId: string; organizationName?: string } | null> {
+  let response: Response;
+  try {
+    response = await fetch(apiUrl('/v1/me'), {
+      headers: { 'x-api-key': secret },
+      cache: 'no-store',
+    });
+  } catch {
+    return null;
+  }
+
+  if (!response.ok) return null;
+
+  try {
+    const body = (await response.json()) as {
+      key?: { organizationId?: unknown; organizationName?: unknown };
+    };
+    const organizationId = body.key?.organizationId;
+    if (typeof organizationId !== 'string') return null;
+
+    const organizationName = body.key?.organizationName;
+    return {
+      organizationId,
+      ...(typeof organizationName === 'string' ? { organizationName } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
