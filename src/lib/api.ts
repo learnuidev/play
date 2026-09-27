@@ -17,18 +17,23 @@ import type {
   CreateVideoPayload,
   CreateVideoResponse,
   FavouriteResponse,
+  InviteMemberPayload,
   ListCommentsResponse,
   ListContentFilesResponse,
   ListLoopsResponse,
   LoopLikeResponse,
   ListContentsResponse,
   ListFavouritesResponse,
+  ListMyInvitationsResponse,
+  ListOrgMembersResponse,
   ListOrganizationsResponse,
   ListPlaylistResponse,
   ListSectionsResponse,
   ListSpacesResponse,
   ListVideosResponse,
   LoopResponse,
+  OrgMemberResponse,
+  OrgRole,
   PlaylistResponse,
   SectionResponse,
   SpaceThumbnailResponse,
@@ -57,6 +62,23 @@ async function idToken(): Promise<string> {
   return token;
 }
 
+/**
+ * A failed API call, carrying the status it failed with.
+ *
+ * The message is what a page shows; the status is what a page acts on — an
+ * invitation to an organization the caller is not yet a member of answers 403,
+ * and that is a page state rather than an error.
+ */
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -75,7 +97,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       // ignore JSON parse errors
     }
-    throw new Error(message);
+    throw new ApiError(res.status, message);
   }
 
   if (res.status === 204) {
@@ -152,6 +174,41 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  /**
+   * The organization's roster: who has joined, and which invitations are still
+   * outstanding. Email addresses come back only for admins.
+   */
+  listMembers: (orgId: string) => request<ListOrgMembersResponse>(`/organizations/${orgId}/members`),
+
+  inviteMember: (orgId: string, payload: InviteMemberPayload) =>
+    request<OrgMemberResponse>(`/organizations/${orgId}/members`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * The member's id goes in the path, and while their invitation is pending
+   * that id is their email address — hence the encoding.
+   */
+  updateMemberRole: (orgId: string, memberId: string, role: OrgRole) =>
+    request<OrgMemberResponse>(`/organizations/${orgId}/members/${encodeURIComponent(memberId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+
+  /** Removes a member, or withdraws an invitation nobody accepted yet. */
+  removeMember: (orgId: string, memberId: string) =>
+    request<void>(`/organizations/${orgId}/members/${encodeURIComponent(memberId)}`, {
+      method: 'DELETE',
+    }),
+
+  /** Claims the invitation addressed to the caller's own verified email. */
+  acceptInvitation: (orgId: string) =>
+    request<OrgMemberResponse>(`/organizations/${orgId}/invitation`, { method: 'POST' }),
+
+  /** Invitations addressed to the caller, in every organization. */
+  listMyInvitations: () => request<ListMyInvitationsResponse>('/me/invitations'),
 
   /** Spaces (courses) an organization owns, newest first. */
   listSpaces: (orgId: string) => request<ListSpacesResponse>(`/organizations/${orgId}/spaces`),

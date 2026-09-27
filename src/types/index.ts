@@ -231,6 +231,61 @@ export interface ListOrganizationsResponse {
 }
 
 /**
+ * One row of an organization's roster, as the API returns it.
+ *
+ * `userId` is the member's id once they have accepted, and the invited email
+ * address while the invitation is still outstanding — which is why `pending`
+ * exists rather than the client inferring it from the id's shape.
+ */
+export interface OrgMemberApi {
+  userId: string;
+  role: OrgRole;
+  /** The invitation has not been accepted, so the role is not in force yet. */
+  pending: boolean;
+  /** Only sent to admins: the roster is not an address book. */
+  email?: string;
+  isYou: boolean;
+  /** This pending invitation is addressed to the signed-in user. */
+  isInvitationForYou: boolean;
+  invitedBy?: string;
+  joinedAt: number;
+}
+
+export interface ListOrgMembersResponse {
+  members: OrgMemberApi[];
+  /** The caller's own role, so the page can tell what it may offer. */
+  role: OrgRole;
+  /** The organization's owner: the one member who cannot be demoted or removed. */
+  ownerId?: string;
+  nextToken?: string;
+}
+
+export interface InviteMemberPayload {
+  email: string;
+  role: OrgRole;
+}
+
+export interface OrgMemberResponse {
+  member: OrgMemberApi;
+}
+
+/**
+ * An invitation addressed to the signed-in user's own email address, wherever
+ * it came from: the offer, and enough of the organization to decide about it.
+ */
+export interface MyInvitation {
+  orgId: string;
+  organizationName: string;
+  role: OrgRole;
+  invitedBy?: string;
+  invitedAt: number;
+}
+
+export interface ListMyInvitationsResponse {
+  invitations: MyInvitation[];
+}
+
+/**
  * How a space (course) unfolds for the people taking it.
  *
  * - `SELF_PACED` — the clock starts when a member enrolls: everything is

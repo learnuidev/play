@@ -117,14 +117,14 @@ function LoopRow({
               setRenaming(false);
             }}
             onCancel={() => setRenaming(false)}
-            className="min-w-0 flex-1 rounded-sm border border-ring/60 bg-transparent px-1 py-0 text-sm font-medium outline-none"
+            className="min-w-0 flex-1 rounded-sm border border-ring/60 bg-transparent px-1 py-0 text-base font-medium outline-none"
           />
         ) : (
           <button
             type="button"
             onClick={() => setRenaming(true)}
             title="Rename this loop"
-            className="min-w-0 flex-1 truncate text-left text-sm font-medium"
+            className="min-w-0 flex-1 truncate text-left text-base font-medium"
           >
             {loop.name}
           </button>
@@ -204,7 +204,7 @@ function LoopRow({
           loop was kept, and reading it is how you find the bit you wanted, so
           the text is not merely a label for the timestamps — it is the control. */}
       {covered.length > 0 && (
-        <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+        <p className="mt-1.5 text-base leading-relaxed text-muted-foreground">
           {covered.map((line, lineIndex) => (
             <Fragment key={line.key}>
               {lineIndex > 0 && ' '}
@@ -296,7 +296,7 @@ export function ContentLoops({
   }
 
   if (isLoading) {
-    return <p className="min-h-32 px-6 py-8 text-center text-[13px] text-muted-foreground">Loading…</p>;
+    return <p className="min-h-32 px-6 py-8 text-center text-sm text-muted-foreground">Loading…</p>;
   }
 
   return (
@@ -305,7 +305,7 @@ export function ContentLoops({
         <Button
           variant="ghost"
           size="sm"
-          className="-ml-2 h-7 gap-1.5 px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+          className="-ml-2 h-7 gap-1.5 px-2 text-sm font-medium text-muted-foreground hover:text-foreground"
           onClick={onStartSelection}
           disabled={!canEdit}
         >
@@ -321,7 +321,7 @@ export function ContentLoops({
       </div>
 
       {loops.length === 0 ? (
-        <p className="px-2 py-10 text-center text-[13px] leading-relaxed text-muted-foreground">
+        <p className="px-2 py-10 text-center text-sm leading-relaxed text-muted-foreground">
           No loops yet. Start one where a piece begins, let it play to where it ends, and keep
           it under a name — it will play round and round until you stop it, and everyone in the
           course can see it.
@@ -338,6 +338,9 @@ export function ContentLoops({
                 />
                 <LoopNameField
                   initial={loop.name}
+                  // The same weight as the name it becomes, so a loop does not
+                  // change as it is kept: an input carries none of its own.
+                  className="font-medium"
                   onCommit={(name) => {
                     rename(loop, name);
                     setNamingId(null);

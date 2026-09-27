@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 
 export const organizationKeys = {
   all: ['organizations'] as const,
@@ -19,6 +19,12 @@ export function useOrganization(orgId: string) {
     queryKey: organizationKeys.detail(orgId),
     queryFn: () => api.getOrganization(orgId),
     enabled: Boolean(orgId),
+    // A 403 here is an answer, not a blip: the caller is not a member of this
+    // organization. Retrying it only delays saying so.
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 403) return false;
+      return failureCount < 3;
+    },
   });
 }
 
