@@ -1,4 +1,4 @@
-import { getContent } from './contents';
+import { getContent, listSpaceIdsUsingVideo } from './contents';
 import { getComment } from './comments';
 import { getCohort } from './cohorts';
 import { getVideo } from './dynamodb';
@@ -82,6 +82,10 @@ export async function requireOrganizationAdmin(
  * organizations existed (one with no `organizationId`) reachable by its owner,
  * and what stops the organization backfill from locking anyone out of their own
  * uploads.
+ *
+ * Reading is wider than writing, and deliberately: a video is also *watched* in
+ * the lessons that teach with it, and the people taking those lessons belong to
+ * a course rather than to the organization behind it (see `assertVideoRead`).
  */
 export async function requireVideoAccess(
   videoId: string,
@@ -93,9 +97,40 @@ export async function requireVideoAccess(
 
   if (video.ownerId === userId) return video;
 
+  if (action === 'read') {
+    await assertVideoRead(video, userId);
+    return video;
+  }
+
   if (video.organizationId) {
     await requireOrganizationAccess(userId, video.organizationId, action);
     return video;
+  }
+
+  throw new HttpError(403, 'Forbidden');
+}
+
+/**
+ * Whether the caller may watch this video.
+ *
+ * Two ways in, and the second is what the marketplace added: a member of the
+ * organization that owns the video, or a member of a *course* whose lessons play
+ * it. A learner registers for a course, not for the organization that wrote it —
+ * they may never have heard of that organization — so authorizing their playback
+ * against the organization refuses the one thing the course is for.
+ *
+ * Membership of the course is checked rather than of the organization, and only
+ * for courses that actually use this video: a learner in one course has no claim
+ * on the video library of the organization behind it.
+ */
+async function assertVideoRead(video: Video, userId: string): Promise<void> {
+  if (video.organizationId) {
+    const membership = await getMembership(video.organizationId, userId);
+    if (membership?.status === 'ACTIVE') return;
+  }
+
+  for (const spaceId of await listSpaceIdsUsingVideo(video.videoId)) {
+    if (await isSpaceMember(spaceId, userId)) return;
   }
 
   throw new HttpError(403, 'Forbidden');

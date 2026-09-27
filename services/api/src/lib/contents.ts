@@ -321,3 +321,42 @@ export async function countContentsInSpace(spaceId: string): Promise<number> {
 
   return count;
 }
+
+/** The index keyed by video: what teaches with a given video. */
+const VIDEO_SPACE_INDEX = 'VideoSpaceIndex';
+
+/**
+ * How many lessons are inspected when deciding whether a video may be watched.
+ *
+ * A video reused in more than this many lessons is pathological, and the
+ * question — "is the caller in any course that uses this video?" — is answered
+ * by the first course they are in. The cap is here so a video that somehow
+ * appears in a thousand lessons cannot turn one playback request into a thousand
+ * membership reads.
+ */
+const VIDEO_REUSE_LIMIT = 25;
+
+/**
+ * The distinct courses whose lessons play this video.
+ *
+ * Keys only, because the spaces are the whole answer: authorizing a learner's
+ * playback asks which courses teach with the video, and then whether they are in
+ * one of them.
+ */
+export async function listSpaceIdsUsingVideo(videoId: string): Promise<string[]> {
+  const res = await client.send(
+    new QueryCommand({
+      TableName: CONTENTS_TABLE,
+      IndexName: VIDEO_SPACE_INDEX,
+      KeyConditionExpression: '#videoId = :videoId',
+      ExpressionAttributeNames: { '#videoId': 'videoId' },
+      ExpressionAttributeValues: { ':videoId': videoId },
+      ProjectionExpression: 'spaceId',
+      Limit: VIDEO_REUSE_LIMIT,
+    }),
+  );
+
+  // One video in several lessons of the same course is one course, and asking
+  // about it twice would be a second membership read for the same answer.
+  return [...new Set((res.Items ?? []).map((item) => item.spaceId as string))];
+}

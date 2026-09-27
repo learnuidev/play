@@ -1465,6 +1465,10 @@ resources:
             AttributeType: S
           - AttributeName: position
             AttributeType: N
+          # Sparse: only a lesson that plays a video carries one, which is what
+          # makes the index below hold lessons rather than everything.
+          - AttributeName: videoId
+            AttributeType: S
         KeySchema:
           - AttributeName: contentId
             KeyType: HASH
@@ -1485,6 +1489,21 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+          # What teaches with a video, which is the question authorizing a
+          # learner's playback asks: a video belongs to an organization, but it
+          # is *watched* in the lessons of a course, and a marketplace learner
+          # belongs to the course rather than to the organization behind it.
+          #
+          # Keys only: the answer needed is the set of spaces involved, and both
+          # of those are keys already.
+          - IndexName: VideoSpaceIndex
+            KeySchema:
+              - AttributeName: videoId
+                KeyType: HASH
+              - AttributeName: spaceId
+                KeyType: RANGE
+            Projection:
+              ProjectionType: KEYS_ONLY
 
     # Files attached to a piece of content. Their own table rather than an array
     # on the content, so adding or removing one is a single item write that

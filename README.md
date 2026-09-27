@@ -1347,6 +1347,32 @@ wrote it.
 Every video is created inside an organization: `organizationId` is **required**
 on `POST /videos`, and the caller must hold the admin or editor role there.
 
+**Reading one is wider than listing them**, and the difference is the whole of
+the marketplace's playback:
+
+| Question | Who may ask it |
+| --- | --- |
+| `GET /videos/{videoId}` (and its stream, subtitles, thumbnail, audio) | a member of the owning organization, **or** a member of a course whose lessons play that video |
+| `GET /videos?organizationId=…` (the library) | a member of that organization only |
+| `POST`/`PATCH`/`DELETE /videos/{videoId}`, regenerate, retry | admin or editor of the owning organization |
+
+A learner registers for a course, not for the organization that wrote it — they
+may never have heard of that organization — so authorizing their playback
+against the organization alone refuses the one thing the course is for. The
+second way in is deliberately narrow: it is a *course* membership, and only for a
+video that course actually teaches with, so a learner in one course has no claim
+on the rest of the organization's video library (and still cannot list it).
+
+That question — which courses teach with this video — is one query, over the
+`VideoSpaceIndex` on `ContentsTable` (`videoId` + `spaceId`, keys only, sparse
+because only a lesson that plays a video carries one):
+
+| Index | Keys | Answers |
+| --- | --- | --- |
+| `SectionPositionIndex` | `sectionId` + `position` | a section's lessons, in order |
+| `SpacePositionIndex` | `spaceId` + `position` | a whole course's outline in one query |
+| `VideoSpaceIndex` | `videoId` + `spaceId` | which courses play this video |
+
 A video carries **both** its owner and its organization. `ownerId` records who
 uploaded it; `organizationId` decides who can see it. That is why the videos
 table has two parallel index families:
