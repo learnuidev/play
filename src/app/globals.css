@@ -167,6 +167,10 @@
    */
   .tt-fade {
     --tt-panel: color-mix(in oklab, var(--muted) 30%, var(--background));
+    /* The last tenth of the sheet — the strip the mask used to fade. Held here
+       rather than as an arbitrary height on the element, so the cover is one
+       thing in one place. */
+    height: 10%;
     background-image: linear-gradient(to bottom, transparent, var(--tt-panel));
   }
 
