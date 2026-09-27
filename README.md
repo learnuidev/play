@@ -436,7 +436,9 @@ below, or change the defaults in:
 | CloudFront signing key pair | AWS SSM Parameter Store (see below) — **not** `.env` |
 | Google OAuth client id/secret | AWS SSM Parameter Store (see [Google sign-in](#google-sign-in-optional)) |
 | Backend stage/region | CLI flags on `serverless deploy` |
-| Frontend API/Cognito values | `apps/studio/.env.local` |
+| Frontend API/Cognito values | `apps/studio/.env.local`, `apps/marketplace/.env.local` |
+| Where an *author's* email points (course invitations) | `custom.mail.appBaseUrl`, overridable with `/play/mail/app-base-url` |
+| Where a *learner's* email points (rewards) | `custom.mail.marketplaceBaseUrl`, overridable with `/play/mail/marketplace-base-url` |
 
 The backend has **no `.env` requirements** — the CloudFront keys are read from
 SSM via `${ssm:...}` in `serverless.yml`.
@@ -548,6 +550,7 @@ an account:
 | `/` | The catalog: every course its author has listed, with covers, lesson counts and how many people are taking it |
 | `/courses/{spaceId}` | One course — its syllabus, section by section — and the button that registers you for it |
 | `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom, with no top bar and the whole window |
+| `/courses/{spaceId}/rewards` | What this course has given you: the codes, what they are for, and how to use them |
 | `/my-courses` | The courses you are registered for, wherever they came from |
 | `/sign-in` | Amplify's sign-in, then straight back to whatever you were doing (`?next=`) |
 
@@ -564,6 +567,31 @@ membership — so somebody invited as an assistant who registers through the
 catalog is an assistant, not a student. `DELETE` on the same path leaves the
 course; the course itself is untouched, and your progress is kept if you register
 again.
+
+### Being given something
+
+A reward handed to somebody by hand — the discount an instructor promised, the
+gift card for the person who answered a question well — sends them an email. The
+grant is written first and the letter follows, so a mail failure costs a
+notification and never the reward; the author's dialog says whether it went out,
+and why not when it did not, because a reward that arrives silently is one nobody
+redeems.
+
+The link lands on `/courses/{spaceId}/rewards` in the **marketplace**, not the
+studio: the person being given something is taking the course, and the studio is
+where courses are written. It points at that course's rewards rather than at a
+list of everything, so what the email promised — *this* reward, in *this* course
+— is what is on screen when it opens, with the code on one line and a tap to
+copy it.
+
+That is why there are two addresses in the mail configuration: invitations are
+claimed in the studio (`appBaseUrl`) and rewards are read in the marketplace
+(`marketplaceBaseUrl`). Both default to localhost, and both must be set to the
+deployed app before either letter is sent to anybody real.
+
+A grant issued by a *milestone* — finishing a course, reaching a percentage —
+does not email: it already arrives in the classroom, with a toast and the
+rewards tab, and the reader is looking at the thing they just finished.
 
 A course appears in the catalog when its author lists it. That is a toggle on the
 course's overview in the studio (see [Spaces](#spaces-courses)), and it writes

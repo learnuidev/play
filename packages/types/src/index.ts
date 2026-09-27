@@ -765,6 +765,10 @@ export interface RewardGrantResponse {
   grant: RewardGrant;
   /** Whether this call is what created the grant. */
   created: boolean;
+  /** What happened to the email telling them about it, and why not when not. */
+  delivery: MailDelivery;
+  /** Where the reward is seen: the course's rewards in the marketplace. */
+  rewardsUrl: string;
 }
 
 export interface RevokeRewardGrantResponse {

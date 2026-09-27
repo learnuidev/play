@@ -47,4 +47,17 @@ export const env = {
    * invited address is what accepting means.
    */
   appBaseUrl: (process.env.APP_BASE_URL ?? 'http://localhost:3000').replace(/\/+$/, ''),
+
+  /**
+   * Where the marketplace is served.
+   *
+   * A learner's emails point here rather than at the studio: a reward is
+   * something they were given in a course they are taking, and the studio is
+   * where courses are *written*. The page that lists what they earned belongs to
+   * the app they take courses in.
+   */
+  marketplaceBaseUrl: (process.env.MARKETPLACE_BASE_URL ?? 'http://localhost:3001').replace(
+    /\/+$/,
+    '',
+  ),
 };

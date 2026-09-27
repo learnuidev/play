@@ -99,7 +99,7 @@ export function GrantRewardDialog({
     if (!selected || !canSubmit) return;
 
     try {
-      const { grant, created } = await grantReward.mutateAsync({
+      const { grant, created, delivery } = await grantReward.mutateAsync({
         rewardId: reward.rewardId,
         userId: selected.userId,
         ...(note.trim() ? { note: note.trim() } : {}),
@@ -111,9 +111,16 @@ export function GrantRewardDialog({
       // granting to somebody who already holds it hands back the one they have
       // rather than issuing a second. Saying "granted" there would be a claim the
       // reward cannot back up.
+      // Whether they were told is part of granting it: a reward that arrives
+      // silently is one nobody redeems, and an author who cannot see that the
+      // email bounced has no way to know to pass the code on by hand.
+      const told = delivery.sent
+        ? 'They have been emailed the details.'
+        : `No email was sent: ${delivery.error}`;
+
       if (created) {
         toast.success(`Reward granted to ${who}`, {
-          description: grant.code ? `Their code is ${grant.code}` : reward.instructions,
+          description: `${grant.code ? `Their code is ${grant.code}. ` : ''}${told}`,
         });
       } else {
         toast.info(`${who} already held this reward`, {

@@ -9,11 +9,12 @@ import {
   CalendarClockIcon,
   CheckCircle2Icon,
   CirclePlayIcon,
+  GiftIcon,
   Loader2Icon,
   LockIcon,
   UsersIcon,
 } from 'lucide-react';
-import { useEnrollInCourse, useLeaveCourse } from '@play/api';
+import { useEnrollInCourse, useLeaveCourse, useMyRewards } from '@play/api';
 import { useAuthStatus } from '@play/auth';
 import { SpaceAvatar, spaceAccentColor } from '@learning/components/space/space-avatar';
 import { SpaceTypeBadge } from '@learning/components/space/space-type-badge';
@@ -319,6 +320,8 @@ function RegisterPanel({
 
       {children}
 
+      {enrolled && <CourseRewardsLink spaceId={spaceId} />}
+
       {enrolled && (
         <div className="border-t pt-3">
           {confirmingLeave ? (
@@ -360,6 +363,29 @@ function RegisterPanel({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A way back to what this course has given them.
+ *
+ * Its own component so the request behind it is made only for somebody who is in
+ * the course — the rewards endpoint is the caller's own, and asking it as a
+ * visitor is a 401.
+ */
+function CourseRewardsLink({ spaceId }: { spaceId: string }) {
+  const { data } = useMyRewards();
+  const mine = (data?.rewards ?? []).filter((reward) => reward.spaceId === spaceId);
+  if (mine.length === 0) return null;
+
+  return (
+    <Link
+      href={`/courses/${spaceId}/rewards`}
+      className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <GiftIcon className="size-3.5" />
+      Your rewards ({mine.length})
+    </Link>
   );
 }
 

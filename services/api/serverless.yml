@@ -68,15 +68,23 @@ custom:
   # parameter to send as your own domain as soon as anybody real is being
   # invited.
   #
-  # `appBaseUrl` is where an invitation email points. Set it to the deployed
-  # frontend (`--app-url=https://…`) before inviting people off this machine, or
-  # every invitation will point at localhost.
+  # `appBaseUrl` is where an *author's* email points — an invitation to a
+  # course, which is claimed in the studio. Set it to the deployed studio before
+  # inviting people off this machine, or every invitation will point at
+  # localhost.
+  #
+  # `marketplaceBaseUrl` is where a *learner's* email points: a reward
+  # notification, whose destination is the marketplace page listing what they
+  # earned in that course. The two apps are separate deployments, so this is a
+  # second address rather than a path on the first.
   mailDefaults:
     fromAddress: "learnuidev@gmail.com"
     appBaseUrl: "http://localhost:3000"
+    marketplaceBaseUrl: "http://localhost:3001"
   mail:
     fromAddress: ${ssm:/play/mail/from-address, self:custom.mailDefaults.fromAddress}
     appBaseUrl: ${ssm:/play/mail/app-base-url, self:custom.mailDefaults.appBaseUrl}
+    marketplaceBaseUrl: ${ssm:/play/mail/marketplace-base-url, self:custom.mailDefaults.marketplaceBaseUrl}
 
   # How the service stays inside CloudFormation's 500-resource ceiling.
   #
@@ -162,6 +170,7 @@ provider:
     STREAM_URL_TTL_SECONDS: 900
     MAIL_FROM_ADDRESS: ${self:custom.mail.fromAddress}
     APP_BASE_URL: ${self:custom.mail.appBaseUrl}
+    MARKETPLACE_BASE_URL: ${self:custom.mail.marketplaceBaseUrl}
     AWS_SDK_JS_NODE_VERSION_SUPPORT_WARNING_DISABLED: "true"
 
   iam:

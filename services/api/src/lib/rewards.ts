@@ -437,3 +437,15 @@ export async function grantEarnedRewards(input: {
     return [];
   }
 }
+
+/**
+ * Where a learner's rewards for one course live.
+ *
+ * In the marketplace, not the studio: the person being given something is taking
+ * the course, and the studio is the app courses are written in. The link lands
+ * on the course's own rewards page so that what the email promised — *this*
+ * reward, in *this* course — is what is on screen when it opens.
+ */
+export function courseRewardsUrl(spaceId: string): string {
+  return `${env.marketplaceBaseUrl}/courses/${encodeURIComponent(spaceId)}/rewards`;
+}

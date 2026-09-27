@@ -238,3 +238,119 @@ export async function sendSpaceInvitationEmail(
     return { sent: false, from: env.mailFromAddress, error: `${name}: ${message}` };
   }
 }
+
+export interface SendRewardEmailInput {
+  /** Address the grant belongs to. */
+  to: string;
+  /** What they were given. */
+  rewardName: string;
+  /** The reward's own words, when it has any. */
+  rewardDescription?: string;
+  /** Course the reward was earned in. */
+  spaceTitle: string;
+  /** Organization the course belongs to, named so the gift has a context. */
+  organizationName: string;
+  /** The code they redeem, on the kinds that carry one. */
+  code?: string;
+  /** What to do to claim it, when the reward is handed over by hand. */
+  instructions?: string;
+  /** Free text the instructor attached, e.g. where a gift card was sent. */
+  note?: string;
+  /** Who gave it: an instructor's name, or the course for a milestone. */
+  grantedBy: string;
+  /** Where they see it: the course's rewards in the marketplace. */
+  rewardsUrl: string;
+}
+
+/**
+ * Tells somebody they have been given something.
+ *
+ * The one email this service sends to a *learner* rather than to an invitee, and
+ * it is the same principle: it carries a link to a page rather than a secret.
+ * The reward is already theirs — the grant is written before this is sent — and
+ * what the letter does is tell them it exists and where to look, which is the
+ * only part they cannot work out for themselves.
+ *
+ * A reward without a code and without instructions is still worth the email: a
+ * gift card that arrives silently is one nobody redeems.
+ */
+export async function sendRewardEmail(input: SendRewardEmailInput): Promise<MailDelivery> {
+  if (!mailConfigured()) {
+    return {
+      sent: false,
+      error: 'No sending address is configured for this deployment, so nothing was emailed.',
+    };
+  }
+
+  const subject = `${input.grantedBy} gave you ${input.rewardName} in ${input.spaceTitle}`;
+
+  const lines = [
+    `${input.grantedBy} gave you ${input.rewardName} in ${input.spaceTitle}.`,
+    ...(input.rewardDescription ? ['', input.rewardDescription] : []),
+    ...(input.code ? ['', `Your code: ${input.code}`] : []),
+    ...(input.note ? ['', input.note] : []),
+    ...(input.instructions ? ['', input.instructions] : []),
+    '',
+    'See it in your rewards:',
+    input.rewardsUrl,
+    '',
+    `${input.spaceTitle} is a course from ${input.organizationName}.`,
+  ];
+
+  /** One row of the letter: a label and what it says. */
+  const row = (label: string, value: string) => `<tr>
+      <td style="padding:0 0 12px;font-size:13px;line-height:1.5;color:#71717a;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="padding:0 0 12px 16px;font-size:15px;line-height:1.5;color:#18181b"><strong>${escapeHtml(value)}</strong></td>
+    </tr>`;
+
+  const html = `<div style="margin:0;padding:24px;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#18181b">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e4e4e7;border-radius:16px;padding:32px">
+    <p style="margin:0 0 8px;font-size:15px;line-height:1.6">${escapeHtml(input.grantedBy)} gave you</p>
+    <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3">${escapeHtml(input.rewardName)}</h1>
+    ${
+      input.rewardDescription
+        ? `<p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#52525b">${escapeHtml(input.rewardDescription)}</p>`
+        : `<p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#52525b">In ${escapeHtml(input.spaceTitle)}, a course from ${escapeHtml(input.organizationName)}.</p>`
+    }
+    ${
+      input.code || input.note
+        ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 24px;border-top:1px solid #e4e4e7;padding-top:16px">
+      ${input.code ? row('Code', input.code) : ''}
+      ${input.note ? row('From', input.note) : ''}
+    </table>`
+        : ''
+    }
+    <a href="${escapeHtml(input.rewardsUrl)}" style="display:inline-block;background:#18181b;color:#fafafa;text-decoration:none;padding:12px 20px;border-radius:8px;font-size:15px;font-weight:600">See your rewards</a>
+    <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#71717a">
+      Sign in with <strong>${escapeHtml(input.to)}</strong> and you will land on ${escapeHtml(input.spaceTitle)}'s rewards.
+    </p>
+    ${input.instructions ? `<p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#71717a">${escapeHtml(input.instructions)}</p>` : ''}
+  </div>
+</div>`;
+
+  try {
+    await client.send(
+      new SendEmailCommand({
+        FromEmailAddress: env.mailFromAddress,
+        Destination: { ToAddresses: [input.to] },
+        Content: {
+          Simple: {
+            Subject: { Data: subject, Charset: 'UTF-8' },
+            Body: {
+              Text: { Data: lines.join('\n'), Charset: 'UTF-8' },
+              Html: { Data: html, Charset: 'UTF-8' },
+            },
+          },
+        },
+      }),
+    );
+
+    return { sent: true, from: env.mailFromAddress };
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'UnknownError';
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Reward email failed', { to: input.to, name, message });
+
+    return { sent: false, from: env.mailFromAddress, error: `${name}: ${message}` };
+  }
+}
