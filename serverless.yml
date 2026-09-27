@@ -44,15 +44,20 @@ custom:
     callbackUrls: ${ssm:/play/auth/callback-urls, self:custom.authDefaults.callbackUrls}
     logoutUrls: ${ssm:/play/auth/logout-urls, self:custom.authDefaults.logoutUrls}
   # Invitation email. The sender must be an identity SES has verified in this
-  # region — write it with scripts/set-mail-sender.sh, which verifies the
-  # address and stores it here. Empty (the default) means the service does not
-  # send mail: invitations are still created, and the admin is handed the link.
+  # region — write your own with scripts/set-mail-sender.sh, which verifies the
+  # address and stores it in /play/mail/from-address.
+  #
+  # `fromAddress` falls back to an address this account already had verified, so
+  # inviting works out of the box instead of failing with "no sending address is
+  # configured". Treat it as a default rather than a decision: set the SSM
+  # parameter to send as your own domain as soon as anybody real is being
+  # invited.
   #
   # `appBaseUrl` is where an invitation email points. Set it to the deployed
-  # frontend (`--app-url=https://…`) before inviting real people, or every
-  # invitation will point at localhost.
+  # frontend (`--app-url=https://…`) before inviting people off this machine, or
+  # every invitation will point at localhost.
   mailDefaults:
-    fromAddress: ""
+    fromAddress: "learnuidev@gmail.com"
     appBaseUrl: "http://localhost:3000"
   mail:
     fromAddress: ${ssm:/play/mail/from-address, self:custom.mailDefaults.fromAddress}
