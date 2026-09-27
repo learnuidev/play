@@ -30,17 +30,17 @@ const MAX_SEARCH_RESULTS = 24;
  * is what happens *before* you have one — and nothing here is anybody's: it is
  * what each course says about itself in public.
  *
- * `?q=` searches it. Results come back without a `nextToken`, because a search
+ * `?query=` searches it. Results come back without a `nextToken`, because a search
  * is answered from a bounded read of the catalog rather than by paging through
  * it: what a caller gets is the matches among the first few hundred published
  * courses, which is the honest thing for this to be until the catalog is big
  * enough to want a search index of its own.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const query = (event.queryStringParameters?.q ?? '').trim();
+  const query = (event.queryStringParameters?.query ?? '').trim();
 
   if (query.length > MAX_QUERY_LENGTH) {
-    throw new HttpError(400, `q must be <= ${MAX_QUERY_LENGTH} characters`);
+    throw new HttpError(400, `query must be <= ${MAX_QUERY_LENGTH} characters`);
   }
 
   if (query) {

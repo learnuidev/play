@@ -28,7 +28,7 @@ export const catalogKeys = {
 export function useCatalogCourses(query = '') {
   return useQuery({
     queryKey: catalogKeys.courses(query),
-    queryFn: () => api.listCatalogCourses({ q: query || undefined }),
+    queryFn: () => api.listCatalogCourses({ query: query || undefined }),
     placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
   });

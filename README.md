@@ -1168,9 +1168,18 @@ its sections should unlock — the rules are stored, not yet applied.
 | Method | Path | Auth | What it does |
 | --- | --- | --- | --- |
 | `GET` | `/catalog/courses` | **none** | A page of listed courses: the course, the organization's name, section/lesson/student counts, and a signed cover URL |
+| `GET` | `/catalog/courses?query=…` | **none** | Searches those courses instead: title, description or community name, case-insensitive, no `nextToken` |
 | `GET` | `/catalog/courses/{spaceId}` | **none** | One listed course and its syllabus: sections, and the titles of the lessons in them |
 | `POST` | `/spaces/{spaceId}/enrollment` | JWT | Register the caller for a listed course |
 | `DELETE` | `/spaces/{spaceId}/enrollment` | JWT | Drop the caller out of a course |
+
+`query` filters what a card shows — the course's title, its description, and the
+name of the community it is from — by case-insensitive substring, so `film`
+matches "Film Studies" and "Filmmaking" and `flm` matches neither. It is not
+fuzzy and there is no index behind it: a search reads up to 200 published
+courses and answers without a `nextToken`, because "no results" has to mean the
+catalog has none rather than that they are on page two. A catalog big enough
+that this stops being true wants a search index, not a larger number.
 
 The two catalog routes deliberately carry **no authorizer**. A catalog that
 required an account would be a catalog nobody reads — deciding to register is
