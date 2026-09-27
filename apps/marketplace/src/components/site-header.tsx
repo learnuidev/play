@@ -30,8 +30,8 @@ export function SiteHeader() {
         </Link>
 
         <nav className="ml-auto flex items-center gap-5 text-sm text-muted-foreground">
-          <Link href="/" className="transition-colors hover:text-foreground">
-            Courses
+          <Link href="/discover" className="transition-colors hover:text-foreground">
+            Discover
           </Link>
           {status === 'authenticated' && (
             <Link href="/my-courses" className="transition-colors hover:text-foreground">

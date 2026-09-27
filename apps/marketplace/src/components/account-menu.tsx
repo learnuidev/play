@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthenticator } from '@aws-amplify/ui-react';
-import { BookOpenIcon, LogOutIcon } from 'lucide-react';
+import { BookOpenIcon, LogOutIcon, UserIcon } from 'lucide-react';
 import { Button } from '@ui/components/ui/button';
 import {
   DropdownMenu,
@@ -15,7 +15,7 @@ import {
 } from '@ui/components/ui/dropdown-menu';
 
 /**
- * The signed-in reader's avatar menu.
+ * The signed-in reader's account menu.
  *
  * Two things, and both are about them rather than about a community: the courses
  * they are taking, and signing out. The marketplace has no organizations to
@@ -25,18 +25,12 @@ export function AccountMenu() {
   const router = useRouter();
   const { user, signOut } = useAuthenticator((context) => [context.user, context.signOut]);
   const email = user?.signInDetails?.loginId ?? user?.username ?? '';
-  const initial = email.trim()[0]?.toUpperCase() ?? '?';
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 rounded-full bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-600/90 hover:text-white"
-          aria-label="Account"
-        >
-          {initial}
+        <Button variant="ghost" size="icon" className="size-8" aria-label="Account">
+          <UserIcon />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

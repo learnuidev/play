@@ -1,21 +1,23 @@
-import { Catalog } from "@/components/catalog";
+import type { Metadata } from 'next';
+import { Landing } from '@/components/landing';
+
+export const metadata: Metadata = {
+  title: 'Play Marketplace — courses worth your evening',
+  description:
+    'Courses written by communities on Play: watch a lesson, stop in the middle, and pick it up tomorrow where you left it.',
+};
 
 /**
- * The marketplace's front page.
+ * The front door.
  *
- * `?query=` is the search, and it is read here, on the server: the URL is the
- * only place a search lives, so a shared link — `/?query=film` — renders its
- * results in the first response instead of correcting itself once the browser is
- * awake. Everything under the hero is client-rendered, because the catalog
- * itself is fetched from the API in the browser.
+ * Not the catalog. Somebody arriving here has usually never heard of Play, and
+ * a list of forty courses is not an answer to "what is this?" — so the front page
+ * says what the marketplace is, what a lesson looks like, and what people say
+ * about it, and the catalog lives one link away at `/discover`.
+ *
+ * The page itself is `Landing`'s business; this file exists for the metadata and
+ * for the route.
  */
-export default function CatalogPage({
-  searchParams,
-}: {
-  /** A repeated parameter arrives as an array, which a search never is. */
-  searchParams: { query?: string | string[] };
-}) {
-  const query = typeof searchParams.query === "string" ? searchParams.query.trim() : "";
-
-  return <Catalog query={query} />;
+export default function HomePage() {
+  return <Landing />;
 }

@@ -16,19 +16,23 @@ import type { CatalogCourse } from "@play/types";
 const ALL = "All";
 
 /**
- * The front page: everything published, and one box to look through it with.
+ * Discover: everything published, and one box to look through it with.
  *
  * It reads as a storefront rather than a list — a statement, a search, the
  * communities the courses come from, and then the courses themselves as tiles.
  * Browsing is public; nothing here asks who anybody is.
  *
- * What is being shown is the URL's, not this component's. `/?query=film` *is*
- * the search: pressing Enter changes the URL rather than a piece of state beside
- * it, which is what makes a search something you can send somebody and what
- * leaves exactly one answer to "what is on screen?". The query arrives as a prop
- * because the page above reads it on the server — so a shared link renders its
- * results in the first response rather than correcting itself once the browser
- * is awake.
+ * What is being shown is the URL's, not this component's. `/discover?query=film`
+ * *is* the search: pressing Enter changes the URL rather than a piece of state
+ * beside it, which is what makes a search something you can send somebody and
+ * what leaves exactly one answer to "what is on screen?". The query arrives as a
+ * prop because the page above reads it on the server — so a shared link renders
+ * its results in the first response rather than correcting itself once the
+ * browser is awake.
+ *
+ * This is where `/` used to be, and the move is worth remembering when editing
+ * a link: the front page is now a page that *sells* the marketplace, and this is
+ * the page you go to in order to look through it.
  */
 export function Catalog({ query }: { query: string }) {
   const router = useRouter();
@@ -70,7 +74,9 @@ export function Catalog({ query }: { query: string }) {
    */
   function search(next: string = draft.trim()) {
     if (next === query) return;
-    router.replace(next ? `/?query=${encodeURIComponent(next)}` : "/", { scroll: false });
+    router.replace(next ? `/discover?query=${encodeURIComponent(next)}` : "/discover", {
+      scroll: false,
+    });
   }
 
   const visible =

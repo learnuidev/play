@@ -547,12 +547,21 @@ an account:
 
 | Route | What it is |
 | --- | --- |
-| `/` | The catalog: every course its author has listed, with covers, lesson counts and how many people are taking it |
+| `/` | The front page: what the marketplace is, what a lesson looks like, what learners say about it, and the newest courses — and nothing to press but **Discover courses** |
+| `/discover` | The catalog: every course its author has listed, with covers, lesson counts and how many people are taking it, and one box to search them with |
 | `/courses/{spaceId}` | One course — its syllabus, section by section — and the button that registers you for it |
 | `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom, with no top bar and the whole window |
 | `/courses/{spaceId}/rewards` | What this course has given you: the codes, what they are for, and how to use them |
 | `/my-courses` | The courses you are registered for, wherever they came from |
 | `/sign-in` | Amplify's sign-in, then straight back to whatever you were doing (`?next=`) |
+
+The catalog used to *be* `/`. It is its own page now — a name in the top bar
+(**Discover**) rather than the front door — because somebody who has never heard
+of Play needs a sentence about the thing before they need a table of contents.
+The front page is written for that visitor: a claim, three steps, what the
+classroom does, reviews written for the page, and a link to Discover. It reads
+the catalog for the one block that is not a claim — the newest courses — and
+shows nothing at all when there is nothing to show.
 
 **Browsing is public; registering is the only thing that asks who you are.** Two
 of its routes carry no authorizer at all — `GET /catalog/courses` and
@@ -596,8 +605,8 @@ rewards tab, and the reader is looking at the thing they just finished.
 A course appears in the catalog when its author lists it. That is a toggle on the
 course's overview in the studio (see [Spaces](#spaces-courses)), and it writes
 the sparse `CatalogCreatedIndex` key alongside the flag: the index holds
-published courses, so the front page is a query rather than a scan of every
-course in the service.
+published courses, so Discover is a query rather than a scan of every course in
+the service.
 
 A reader in the course sees the same course page whether it is listed or not: the
 marketplace reads the catalog first and, if that says 404 *and* they are enrolled,
@@ -1208,7 +1217,7 @@ caller already has, so it does not get a key space of its own.
 
 The catalog index is **sparse**: a listed course carries `catalogKey = LISTED`
 beside the flag, and unlisting removes both, so the index holds the published
-courses and nothing else and the marketplace's front page is a query rather than
+courses and nothing else and the marketplace's catalog is a query rather than
 a scan of every course in the service with a `listed = true` filter on top. A
 boolean cannot be a partition key; a constant that only published courses have
 can be.

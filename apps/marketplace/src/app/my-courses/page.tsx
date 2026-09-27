@@ -57,8 +57,8 @@ function EnrolledCourses() {
         <p className="max-w-md text-sm text-muted-foreground">
           Register for a course and it will appear here.
         </p>
-        <Button asChild className="mt-2 rounded-full">
-          <Link href="/">Browse courses</Link>
+        <Button asChild className="mt-2">
+          <Link href="/discover">Discover courses</Link>
         </Button>
       </div>
     );

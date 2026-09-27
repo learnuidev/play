@@ -548,7 +548,7 @@ function CommentRow({
                         variant="ghost"
                         size="icon"
                         aria-label="Comment actions"
-                        className="size-7 rounded-md text-muted-foreground/50 opacity-0 transition-colors hover:text-foreground group-hover/comment:opacity-100 max-sm:opacity-100"
+                        className="size-7 text-muted-foreground/50 opacity-0 transition-colors hover:text-foreground group-hover/comment:opacity-100 max-sm:opacity-100"
                       >
                         <MoreHorizontalIcon className="size-3.5" />
                       </Button>

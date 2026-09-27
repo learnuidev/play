@@ -54,7 +54,7 @@ export default function CoursePage() {
           It may have been unpublished by whoever wrote it, or the link may be wrong.
         </p>
         <Button asChild variant="outline" className="mt-2">
-          <Link href="/">Browse the catalog</Link>
+          <Link href="/discover">Discover courses</Link>
         </Button>
       </div>
     );

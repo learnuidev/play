@@ -2,7 +2,13 @@
 
 import { useAuthenticator } from '@aws-amplify/ui-react';
 import Link from 'next/link';
-import { BuildingIcon, GraduationCapIcon, LogOutIcon, MailPlusIcon } from 'lucide-react';
+import {
+  BuildingIcon,
+  GraduationCapIcon,
+  LogOutIcon,
+  MailPlusIcon,
+  UserIcon,
+} from 'lucide-react';
 import { Button } from '@ui/components/ui/button';
 import {
   DropdownMenu,
@@ -13,22 +19,16 @@ import {
   DropdownMenuTrigger,
 } from '@ui/components/ui/dropdown-menu';
 
-/** The signed-in user's avatar menu in the top bar. */
+/** The signed-in user's account menu in the top bar. */
 export function AccountMenu() {
   const { user, signOut } = useAuthenticator((context) => [context.user, context.signOut]);
   const email = user?.signInDetails?.loginId ?? user?.username ?? '';
-  const initial = email.trim()[0]?.toUpperCase() ?? '?';
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8 rounded-full bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-600/90 hover:text-white"
-          aria-label="Account"
-        >
-          {initial}
+        <Button variant="ghost" size="icon" className="size-8" aria-label="Account">
+          <UserIcon />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

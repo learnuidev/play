@@ -172,6 +172,12 @@ keeping to when adding a screen:
   and ordinary rounded buttons for everything else.
 - **Empty states are composed, not coloured**: a muted icon circle, a line in the
   heading's voice, a sentence of explanation, and the action (`EmptyState`).
+- **The marketplace's front page speaks in a marketing register, and it is the
+  only screen that does.** Large type, wide margins, one accent, and `Reveal`
+  for blocks that arrive as they are scrolled to — where the app screens state
+  what is on them, `/` makes a claim and then shows the evidence. The reviews on
+  it are written for the page rather than collected, so replacing them with real
+  ones is a copy change and never a wiring one.
 
 The primitives in `@play/ui` are shared and stay deliberately plain: the
 vocabulary above is applied at the composition layer (the shell, the page card,
@@ -184,8 +190,8 @@ One Cognito user pool for both apps, so an author in the studio and a learner in
 the marketplace are the same account. `@play/auth` is where that lives:
 
 - `AppProviders` — theme, query cache, tooltips, Amplify session, toasts.
-  **No gate**: the marketplace's front page renders for people who have not
-  signed in.
+  **No gate**: the marketplace's front page and its catalog both render for
+  people who have not signed in.
 - `AuthGate` — the sign-in wall, for everything that is only for signed-in
   people. The studio wraps its whole tree in it; the marketplace wraps the pages
   that need an account, and sends anonymous readers to `/sign-in?next=…`.
