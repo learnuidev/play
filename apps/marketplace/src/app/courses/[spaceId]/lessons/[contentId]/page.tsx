@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { LockIcon, SignpostIcon } from 'lucide-react';
 import { Classroom } from '@play/learning';
-import { useIsSignedIn } from '@play/auth';
+import { useAuthStatus } from '@play/auth';
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { useEnrollment } from '@/components/use-enrolled';
@@ -24,12 +24,27 @@ import { marketplaceLearningRoutes } from '@/lib/routes';
  */
 export default function LessonPage() {
   const { spaceId, contentId } = useParams<{ spaceId: string; contentId: string }>();
-  const signedIn = useIsSignedIn();
+  const status = useAuthStatus();
   const { enrolled, isLoading } = useEnrollment(spaceId);
 
   const coursePath = `/courses/${spaceId}`;
 
-  if (!signedIn) {
+  /**
+   * Every reload starts here: the session is restored from storage after the
+   * page is alive, so for a moment the answer to "is anybody signed in?" is not
+   * yet — and a signed-in reader who is shown "Sign in to take this course" is
+   * being told the wrong thing about themselves. Wait instead.
+   */
+  if (status === 'configuring' || (status === 'authenticated' && isLoading)) {
+    return (
+      <div className="grid gap-5">
+        <Skeleton className="aspect-video w-full rounded-2xl" />
+        <Skeleton className="h-8 w-64" />
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated') {
     return (
       <Gate
         icon={<SignpostIcon className="size-5 text-muted-foreground/60" />}
@@ -42,15 +57,6 @@ export default function LessonPage() {
           </Link>
         </Button>
       </Gate>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="grid gap-5">
-        <Skeleton className="aspect-video w-full rounded-2xl" />
-        <Skeleton className="h-8 w-64" />
-      </div>
     );
   }
 

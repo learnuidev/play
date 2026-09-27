@@ -7,11 +7,13 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import "@videojs/react/video/skin.css";
 import { createPlayer, videoFeatures } from "@videojs/react";
 import { VideoSkin } from "@videojs/react/video";
 import { HlsJsVideo } from "@videojs/react/media/hlsjs-video";
+import { VolumeXIcon } from "lucide-react";
 import {
   captionCharsPerLine,
   cueLineCount,
@@ -20,6 +22,37 @@ import {
 } from "@learning/lib/vtt";
 
 const Player = createPlayer({ features: videoFeatures });
+
+/**
+ * Whether the reader wants sound, remembered across lessons and reloads.
+ *
+ * The browser's autoplay policy already decides a great deal about this — a page
+ * that starts itself may not start talking — but it is not the only reason to be
+ * quiet. A reader who muted one lesson means it for the next one, and a player
+ * that forgets would shout at them at the top of every lesson.
+ *
+ * Only a choice the reader made is written here: a mute this component applied
+ * because the browser refused is not an opinion to remember.
+ */
+const SOUND_KEY = "play:sound";
+
+function remembersSound(): boolean {
+  try {
+    return window.localStorage.getItem(SOUND_KEY) !== "off";
+  } catch {
+    // Storage can be refused (private mode, blocked storage). Losing the
+    // preference is a smaller thing than failing to play.
+    return true;
+  }
+}
+
+function rememberSound(on: boolean): void {
+  try {
+    window.localStorage.setItem(SOUND_KEY, on ? "on" : "off");
+  } catch {
+    // As above: nothing to do about it, and nothing worth interrupting for.
+  }
+}
 
 export interface SubtitleTrack {
   src: string;
@@ -107,6 +140,23 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     const videoRef = useRef<HTMLVideoElement | null>(null);
 
     /**
+     * Whether the sound was refused rather than turned down.
+     *
+     * The browser will not let a page that started itself talk, so a lesson
+     * opened in a fresh tab plays quietly. That is a fine compromise and a
+     * terrible secret: this is what turns it into something the reader is told.
+     */
+    const [blocked, setBlocked] = useState(false);
+
+    /**
+     * The last mute state this component applied itself.
+     *
+     * Used to tell our own muting apart from the reader's, so that only the
+     * second is remembered in `play:sound`.
+     */
+    const lastAppliedMutedRef = useRef<boolean | null>(null);
+
+    /**
      * A position asked for before the stream could take it.
      *
      * Assigning `currentTime` to an element that has no metadata yet is not a
@@ -116,6 +166,22 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
      * something to seek in.
      */
     const pendingSeekRef = useRef<number | null>(null);
+
+    /**
+     * Plays, having just muted.
+     *
+     * `refused` is what separates "you asked for quiet" from "the browser would
+     * not let this page speak": only the second is worth telling the reader
+     * about, because only the second is something they can act on.
+     */
+    const startMuted = useCallback((video: HTMLVideoElement, refused: boolean) => {
+      video.muted = true;
+      lastAppliedMutedRef.current = true;
+      if (refused) setBlocked(true);
+
+      const quiet = video.play();
+      if (quiet && typeof quiet.catch === 'function') quiet.catch(() => {});
+    }, []);
 
     /**
      * Starts playback, and keeps the sound if the browser will not hand it over.
@@ -128,26 +194,72 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
      * back at the first thing the reader touches, which is a gesture the browser
      * does accept — and both listeners are removed by whichever of them fires
      * first, so neither is left behind for the next click to trip over.
+     *
+     * Being refused quietly is the part that used to be invisible: the lesson
+     * simply played with no sound and no reason given. `blocked` says so out
+     * loud, and the button drawn from it is the same restore, pressed on purpose.
      */
-    const startPlayback = useCallback((video: HTMLVideoElement) => {
-      const started = video.play();
-      if (!started || typeof started.catch !== 'function') return;
+    const startPlayback = useCallback(
+      (video: HTMLVideoElement) => {
+        // A reader who muted the last lesson means it, and no button is offered
+        // to undo a decision they made.
+        if (!remembersSound()) {
+          startMuted(video, false);
+          return;
+        }
 
-      started.catch(() => {
-        video.muted = true;
+        const started = video.play();
+        if (!started || typeof started.catch !== 'function') return;
 
-        const quiet = video.play();
-        if (quiet && typeof quiet.catch === 'function') quiet.catch(() => {});
+        started.catch(() => {
+          startMuted(video, true);
 
-        const restore = () => {
-          video.muted = false;
-          document.removeEventListener('pointerdown', restore);
-          document.removeEventListener('keydown', restore);
-        };
+          const restore = () => {
+            video.muted = false;
+            lastAppliedMutedRef.current = false;
+            rememberSound(true);
+            setBlocked(false);
+            document.removeEventListener('pointerdown', restore);
+            document.removeEventListener('keydown', restore);
+          };
 
-        document.addEventListener('pointerdown', restore);
-        document.addEventListener('keydown', restore);
-      });
+          document.addEventListener('pointerdown', restore);
+          document.addEventListener('keydown', restore);
+        });
+      },
+      [startMuted],
+    );
+
+    /** The button under the video: the reader asking for the sound back. */
+    const unmute = useCallback(() => {
+      const video = videoRef.current;
+      if (video) {
+        video.muted = false;
+        lastAppliedMutedRef.current = false;
+      }
+      rememberSound(true);
+      setBlocked(false);
+    }, []);
+
+    /**
+     * Writes down only what the reader chose.
+     *
+     * A mute this component applied is already recorded in
+     * `lastAppliedMutedRef`, so an event that agrees with it is our own doing
+     * and not written; anything else came from the player's own control.
+     */
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const handleVolumeChange = () => {
+        if (video.muted === lastAppliedMutedRef.current) return;
+        lastAppliedMutedRef.current = video.muted;
+        rememberSound(!video.muted);
+      };
+
+      video.addEventListener('volumechange', handleVolumeChange);
+      return () => video.removeEventListener('volumechange', handleVolumeChange);
     }, []);
 
     useImperativeHandle(
@@ -421,28 +533,49 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             explicit aspect ratio it collapses to the video element's default
             150px until the stream's metadata arrives — the box then jumps to
             16:9 and shoves the page below it. Pinning 16:9 keeps the player the
-            same size as the placeholder it replaces, before and after loading. */}
-        <VideoSkin className="player-video aspect-video">
-          <HlsJsVideo
-            ref={videoRef}
-            src={src}
-            config={config}
-            poster={poster}
-            playsInline
-            crossOrigin="anonymous"
-          >
-            {tracks.map((track) => (
-              <track
-                key={track.src}
-                kind="subtitles"
-                src={track.src}
-                srcLang={track.srcLang}
-                label={track.label}
-                default={track.label === "English"}
-              />
-            ))}
-          </HlsJsVideo>
-        </VideoSkin>
+            same size as the placeholder it replaces, before and after loading.
+
+            Wrapped in order to have somewhere to put the sound button: it is
+            the player's own overlay, so it belongs over the picture rather than
+            in the page around it. */}
+        <div className="relative">
+          <VideoSkin className="player-video aspect-video">
+            <HlsJsVideo
+              ref={videoRef}
+              src={src}
+              config={config}
+              poster={poster}
+              playsInline
+              crossOrigin="anonymous"
+            >
+              {tracks.map((track) => (
+                <track
+                  key={track.src}
+                  kind="subtitles"
+                  src={track.src}
+                  srcLang={track.srcLang}
+                  label={track.label}
+                  default={track.label === "English"}
+                />
+              ))}
+            </HlsJsVideo>
+          </VideoSkin>
+
+          {/* Top right, away from the play control under the picture. It is a
+              statement as much as a button: the lesson is playing quietly
+              because the browser would not let it speak, which is not something
+              a reader should have to work out from the silence. */}
+          {blocked && (
+            <button
+              type="button"
+              onClick={unmute}
+              className="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full bg-background/90 px-3 py-1.5 text-xs font-medium shadow-sm backdrop-blur transition-colors hover:bg-background"
+            >
+              <VolumeXIcon className="size-3.5" />
+              Tap for sound
+            </button>
+          )}
+        </div>
       </Player.Provider>
     );
   },

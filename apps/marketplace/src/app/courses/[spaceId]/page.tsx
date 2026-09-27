@@ -14,7 +14,7 @@ import {
   UsersIcon,
 } from 'lucide-react';
 import { useEnrollInCourse, useLeaveCourse } from '@play/api';
-import { useIsSignedIn } from '@play/auth';
+import { useAuthStatus } from '@play/auth';
 import { SpaceAvatar, spaceAccentColor } from '@learning/components/space/space-avatar';
 import { SpaceTypeBadge } from '@learning/components/space/space-type-badge';
 import { Button } from '@ui/components/ui/button';
@@ -235,13 +235,24 @@ function RegisterPanel({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const signedIn = useIsSignedIn();
+  const status = useAuthStatus();
   const enroll = useEnrollInCourse(spaceId);
   const leave = useLeaveCourse(spaceId);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
 
-  const { enrolled } = useEnrollment(spaceId);
+  const { enrolled, isLoading } = useEnrollment(spaceId);
   const coursePath = `/courses/${spaceId}`;
+
+  const signedIn = status === 'authenticated';
+
+  /**
+   * Whether the panel knows what this reader's relationship to the course is.
+   *
+   * Not on first paint — the session is restored from storage after the page is
+   * alive — so until it does the panel says nothing rather than offering a
+   * register button to somebody who is already registered.
+   */
+  const settled = status !== 'configuring' && !(signedIn && isLoading);
 
   async function register() {
     if (!signedIn) {
@@ -271,7 +282,9 @@ function RegisterPanel({
 
   return (
     <div className="grid gap-4 rounded-2xl border bg-card p-5">
-      {enrolled ? (
+      {!settled ? (
+        <Skeleton className="h-9 w-full rounded-full" />
+      ) : enrolled ? (
         <>
           <p className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
             <CheckCircle2Icon className="size-4" />

@@ -808,6 +808,25 @@ selector — `Auto` plus every rendition in the HLS master playlist:
 - The CloudFront signature is applied to every manifest/segment request via
   hls.js `xhrSetup` (passed through `config.hlsJs` on `HlsJsVideo`).
 
+### Sound, and why a lesson can open quietly
+
+A lesson opens playing — a thing you came to watch should not need pressing —
+but no browser lets a page that started itself *speak*, so the player asks for
+sound and takes silence if it is refused, because a lesson playing quietly is
+one whose volume can be turned up while one that never started is one that has
+to be pressed. That is the browser's rule, not a setting here, and a reload is
+exactly when it applies: a fresh page load has no gesture behind it.
+
+What the player does about it:
+
+- A **"Tap for sound"** button sits over the picture whenever the sound was
+  refused, and any click or keypress anywhere on the page restores it too — both
+  are the same gesture the browser accepts, and the button just says so.
+- The reader's own choice is remembered in `localStorage` as `play:sound`, so
+  muting one lesson does not mean being talked at by the next one, and unmuting
+  one is tried again on the next. Only a choice the *reader* made is stored: a
+  mute the player applied because the browser refused is not an opinion.
+
 ## REST API
 
 All endpoints require `Authorization: Bearer <Cognito ID token>`.

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { GraduationCapIcon } from 'lucide-react';
-import { useIsSignedIn } from '@play/auth';
+import { useAuthStatus } from '@play/auth';
 import { Button } from '@ui/components/ui/button';
 import { AccountMenu } from '@/components/account-menu';
 
@@ -15,7 +15,7 @@ import { AccountMenu } from '@/components/account-menu';
  * somebody is signed in or not, with the one control that differs at the end.
  */
 export function SiteHeader() {
-  const signedIn = useIsSignedIn();
+  const status = useAuthStatus();
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/40 bg-background/70 backdrop-blur-xl">
@@ -33,7 +33,7 @@ export function SiteHeader() {
           <Link href="/" className="transition-colors hover:text-foreground">
             Courses
           </Link>
-          {signedIn && (
+          {status === 'authenticated' && (
             <Link href="/my-courses" className="transition-colors hover:text-foreground">
               My learning
             </Link>
@@ -41,7 +41,10 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          {signedIn ? (
+          {/* Nothing while the session is still being restored: a button that
+              says "Sign in" to somebody who is signed in is a worse answer than
+              no button for a moment. */}
+          {status === 'configuring' ? null : status === 'authenticated' ? (
             <AccountMenu />
           ) : (
             <Button asChild size="sm" className="h-7 rounded-full px-3 text-xs">
