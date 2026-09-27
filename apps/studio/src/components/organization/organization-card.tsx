@@ -18,7 +18,7 @@ function formatDate(ts: number): string {
 
 export function OrganizationCard({ organization }: { organization: OrganizationSummary }) {
   return (
-    <article className="flex flex-col gap-3 rounded-2xl border bg-card p-5 text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-ring/40 hover:shadow-xl">
+    <article className="flex flex-col gap-3 rounded-3xl border border-border/60 bg-card p-5 text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-ring/40 hover:shadow-xl">
       <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-muted/40">
           <BuildingIcon className="size-5 text-muted-foreground" />
@@ -30,7 +30,7 @@ export function OrganizationCard({ organization }: { organization: OrganizationS
           >
             {organization.name}
           </Link>
-          <p className="truncate font-mono text-[11px] text-muted-foreground">{organization.slug}</p>
+          <p className="truncate font-mono text-xs text-muted-foreground">{organization.slug}</p>
         </div>
         <Badge variant={ROLE_VARIANT[organization.role]}>{ORG_ROLE_LABELS[organization.role]}</Badge>
       </div>
@@ -40,7 +40,7 @@ export function OrganizationCard({ organization }: { organization: OrganizationS
       </p>
 
       <div className="mt-auto flex items-center justify-between gap-2">
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           Created {formatDate(organization.createdAt)}
         </span>
         <Button variant="secondary" size="sm" asChild>

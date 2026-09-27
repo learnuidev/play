@@ -14,7 +14,16 @@ const TABS = [
   { segment: 'members', label: 'Members' },
 ] as const;
 
-/** Top bar of the community shell: section tabs on the left, account on the right. */
+/**
+ * Top bar of the community shell: a segmented control of sections, and who you
+ * are, in one quiet band over the page.
+ *
+ * The tabs are a segmented control — a filled track with the section you are in
+ * lifted out of it — rather than a row of underlined links, because where you
+ * are is a property of the page you are on and reads better as one control than
+ * as four destinations. The bar itself is translucent and bare: everything under
+ * it is the point.
+ */
 export function OrgTabs({ orgId }: { orgId: string }) {
   const pathname = usePathname();
   const base = `/o/${orgId}`;
@@ -26,8 +35,11 @@ export function OrgTabs({ orgId }: { orgId: string }) {
   if (lessonRoute(pathname)) return null;
 
   return (
-    <div className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
-      <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+    <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-4 border-b border-border/40 bg-background/70 px-4 backdrop-blur-xl">
+      <nav
+        aria-label="Sections"
+        className="flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-full bg-muted/70 p-0.5"
+      >
         {TABS.map((tab) => {
           const href = tab.segment ? `${base}/${tab.segment}` : base;
           // Home is only active on the bare org route, so the deeper tabs win.
@@ -40,9 +52,9 @@ export function OrgTabs({ orgId }: { orgId: string }) {
               href={href}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'shrink-0 rounded-full px-3.5 py-1.5 text-sm transition-colors',
+                'shrink-0 rounded-full px-3.5 py-1 text-sm transition-colors',
                 active
-                  ? 'border bg-background font-medium text-foreground shadow-sm'
+                  ? 'bg-background font-medium text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -52,7 +64,7 @@ export function OrgTabs({ orgId }: { orgId: string }) {
         })}
       </nav>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="ml-auto flex shrink-0 items-center gap-1">
         <ThemeToggle />
         <AccountMenu />
       </div>

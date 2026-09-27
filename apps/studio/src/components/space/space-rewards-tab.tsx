@@ -147,7 +147,7 @@ function GrantRow({
       <span className="text-sm font-medium">{holder}</span>
 
       {grant.code && (
-        <code className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[11px]">
+        <code className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-xs">
           {grant.code}
         </code>
       )}
@@ -246,7 +246,7 @@ function RewardCard({
   }
 
   return (
-    <article className="grid gap-4 rounded-2xl border bg-card p-5 text-card-foreground shadow-sm">
+    <article className="grid gap-4 rounded-3xl border border-border/60 bg-card p-5 text-card-foreground shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -280,7 +280,7 @@ function RewardCard({
               <span className="inline-flex items-center gap-1.5">
                 <TicketIcon className="size-3.5" />
                 Codes start with{' '}
-                <code className="font-mono text-[11px]">{reward.codePrefix}</code>
+                <code className="font-mono text-xs">{reward.codePrefix}</code>
               </span>
             )}
 
@@ -379,7 +379,7 @@ function RewardCard({
       )}
 
       <div className="grid gap-2 border-t pt-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <p className="text-sm font-medium text-muted-foreground">
           Who holds it
         </p>
 
@@ -454,7 +454,7 @@ export function SpaceRewardsTab({
         </BlockLabel>
 
         {rewardsQuery.isError ? (
-          <div className="rounded-2xl border border-dashed px-6 py-10 text-center">
+          <div className="rounded-3xl border border-dashed border-border/70 px-6 py-10 text-center">
             <p className="text-sm text-muted-foreground">
               {rewardsQuery.error instanceof Error
                 ? rewardsQuery.error.message

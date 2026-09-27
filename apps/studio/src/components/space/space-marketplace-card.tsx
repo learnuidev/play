@@ -62,7 +62,7 @@ export function SpaceMarketplaceCard({ space, canEdit }: { space: Space; canEdit
               href={`${MARKETPLACE_CATALOG_URL}/${space.spaceId}`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <ExternalLinkIcon className="size-3.5" />
               View in marketplace
@@ -73,7 +73,7 @@ export function SpaceMarketplaceCard({ space, canEdit }: { space: Space; canEdit
         Marketplace
       </BlockLabel>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-card p-5">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-border/60 bg-card p-5">
         <div className="flex min-w-0 items-start gap-3">
           <span
             className={cn(

@@ -36,7 +36,7 @@ export default function InvitationsPage() {
     <div className="grid gap-6">
       <header className="grid gap-1">
         <h1 className="text-2xl font-semibold leading-tight tracking-tight">Invitations</h1>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Addressed to your email address. Nothing is visible until you accept.
         </p>
       </header>

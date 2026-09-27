@@ -82,7 +82,7 @@ export default function MySpacesPage() {
     <div className="grid gap-8">
       <header className="grid gap-1">
         <h1 className="text-2xl font-semibold leading-tight tracking-tight">Your spaces</h1>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Every course you can open, whichever organization it belongs to.
         </p>
       </header>
@@ -106,7 +106,7 @@ export default function MySpacesPage() {
       )}
 
       {coursesQuery.isError ? (
-        <div className="rounded-2xl border border-dashed px-6 py-12 text-center">
+        <div className="rounded-3xl border border-dashed border-border/70 px-6 py-12 text-center">
           <p className="text-sm text-destructive">
             {coursesQuery.error instanceof Error
               ? coursesQuery.error.message

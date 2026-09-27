@@ -352,7 +352,7 @@ export function SubtitleEditor({ videoId, subtitle }: SubtitleEditorProps) {
                   transform: `translateY(${item.start}px)`,
                 }}
               >
-                <div className="rounded-xl border bg-card p-3 transition-colors hover:border-ring/40">
+                <div className="rounded-2xl border border-border/60 bg-card p-3 transition-colors hover:border-ring/40">
                   <div className="flex items-center gap-2">
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
                       {item.index + 1}

@@ -46,7 +46,7 @@ export function SpaceContentTab({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="-mr-2 h-7 gap-1 px-2 text-[13px] font-medium text-muted-foreground hover:text-foreground"
+                    className="-mr-2 h-7 gap-1 px-2 text-sm font-medium text-muted-foreground hover:text-foreground"
                   >
                     <PlusIcon />
                     New section

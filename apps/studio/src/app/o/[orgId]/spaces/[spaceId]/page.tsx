@@ -39,17 +39,18 @@ import { SpaceRewardsTab } from '@/components/space/space-rewards-tab';
  * each can be as dense as its own job needs.
  */
 const TAB_STRIP =
-  'h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b border-border/60 bg-transparent p-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
+  'h-auto w-fit max-w-full justify-start gap-0.5 overflow-x-auto rounded-full bg-muted/70 p-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden';
 
 /**
- * One tab: an icon and its name, quiet until it is the one you are in.
+ * One tab: an icon and its name, lifted out of the track when it is the one you
+ * are in.
  *
- * The underline is the only weight they carry, which is what lets five of them
- * sit on one line above a course without the strip reading as navigation the
- * page is competing with — the course's own name is the heading here.
+ * The active tab is the only raised thing in the strip, which is what lets five
+ * of them sit on one line above a course without the strip reading as navigation
+ * the page is competing with — the course's own name is the heading here.
  */
 const SPACE_TAB =
-  'shrink-0 gap-1.5 whitespace-nowrap rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none [&_svg]:size-4';
+  'shrink-0 gap-1.5 whitespace-nowrap rounded-full border-0 bg-transparent px-3.5 py-1.5 text-sm text-muted-foreground shadow-none transition-colors hover:text-foreground data-[state=active]:bg-background data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-sm [&_svg]:size-4';
 
 function SpaceTab({
   value,
@@ -102,7 +103,7 @@ export default function SpacePage() {
       return (
         <div className="grid gap-4 pb-4">
           <SpaceInvitationCard spaceId={spaceId} invitation={invitation} />
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Accept the invitation and the course opens here. Nothing in it is visible before that.
           </p>
         </div>
@@ -173,7 +174,7 @@ export default function SpacePage() {
     <div className="grid gap-6 pb-4">
       <Link
         href={`/o/${orgId}/spaces`}
-        className="-mb-2 inline-flex w-fit items-center gap-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        className="-mb-2 inline-flex w-fit items-center gap-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <ChevronLeftIcon className="size-4" />
         Spaces
@@ -187,17 +188,15 @@ export default function SpacePage() {
 
         <div className="min-w-0 flex-1">
           {eyebrow && (
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              {eyebrow}
-            </p>
+            <p className="text-sm font-medium text-muted-foreground">{eyebrow}</p>
           )}
           <h1 className="mt-1 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
             {space.title}
           </h1>
-          <p className="mt-1.5 text-[13px] text-muted-foreground">{spaceScheduleLabel(space)}</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">{spaceScheduleLabel(space)}</p>
 
           {space.description && (
-            <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {space.description}
             </p>
           )}

@@ -137,7 +137,7 @@ export function SpaceMembersTab({
         </div>
 
         {membersQuery.isError ? (
-          <div className="rounded-2xl border border-dashed px-6 py-10 text-center">
+          <div className="rounded-3xl border border-dashed border-border/70 px-6 py-10 text-center">
             <p className="text-sm text-muted-foreground">
               {membersQuery.error instanceof Error
                 ? membersQuery.error.message

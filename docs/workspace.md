@@ -145,6 +145,39 @@ Both apps import the same `globals.css` copy (the theme tokens and variants are
 identical); if the design changes, it changes in both, and the primitives it
 feeds live in one place.
 
+### The vocabulary
+
+Both apps are built to read like one product, and the shared vocabulary is worth
+keeping to when adding a screen:
+
+- **Sentence case, never small capitals.** A section heading is a short sentence
+  in the same voice as the page title (`text-base font-semibold tracking-tight`),
+  not an uppercase tracked label. A wall of `UPPERCASE MICRO-LABELS` reads as a
+  form to fill in.
+- **The type scale, never arbitrary sizes.** `text-sm`, `text-xs`, `text-2xl` —
+  no `text-[13px]`. Sizes outside the scale drift apart the moment two people
+  touch the same screen.
+- **Large radii and hairline edges.** Panels are `rounded-3xl` with
+  `border-border/60`; the canvas behind them is `bg-muted/40`. A card is a frame
+  around the page rather than a box drawn around every concern.
+- **Tabs are a segmented control**, not underlined links: a `rounded-full` track
+  (`bg-muted/70`) with the active item lifted out (`bg-background shadow-sm`).
+  The studio's section bar and a course's own tabs are the same control.
+- **Translucent bars.** A sticky header is `bg-background/70 backdrop-blur-xl`
+  with a `border-border/40` hairline, and is 12 units tall — the page under it is
+  the point.
+- **Space over lines.** Prefer `py-8`/`py-10` and `gap-6`/`gap-8` between blocks
+  to another divider.
+- **A pill for the one decision on a screen** — "Complete lesson", "Sign in" —
+  and ordinary rounded buttons for everything else.
+- **Empty states are composed, not coloured**: a muted icon circle, a line in the
+  heading's voice, a sentence of explanation, and the action (`EmptyState`).
+
+The primitives in `@play/ui` are shared and stay deliberately plain: the
+vocabulary above is applied at the composition layer (the shell, the page card,
+the page itself) so the marketplace and the studio can move together without one
+of them restyling the other's buttons.
+
 ## Authentication
 
 One Cognito user pool for both apps, so an author in the studio and a learner in

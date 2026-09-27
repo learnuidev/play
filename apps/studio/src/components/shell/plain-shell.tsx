@@ -38,14 +38,12 @@ export function PlainShell({
 
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/40 bg-background/70 px-4 backdrop-blur-xl">
         <Link
           href="/"
-          className="flex items-center gap-2 rounded-lg text-sm font-semibold transition-opacity hover:opacity-90"
+          className="flex items-center gap-1.5 text-sm font-medium tracking-tight transition-opacity hover:opacity-70"
         >
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <ClapperboardIcon className="size-4" />
-          </span>
+          <ClapperboardIcon className="size-4" />
           Play
         </Link>
         <span className="text-sm text-muted-foreground">/ {crumb}</span>
@@ -70,10 +68,10 @@ export function PlainShell({
         </div>
       </header>
 
-      <main className="flex-1 bg-muted/30">
+      <main className="flex-1 bg-muted/40">
         <div
           className={cn(
-            'mx-auto w-full px-6 py-8',
+            'mx-auto w-full px-6 py-10',
             width === 'wide' ? 'max-w-5xl' : 'max-w-3xl',
           )}
         >

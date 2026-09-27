@@ -167,7 +167,7 @@ export function VideoTranscriptions({ video }: { video: Video }) {
                       {translation && (
                         <span
                           className={cn(
-                            'text-[11px] font-medium',
+                            'text-xs font-medium',
                             translation.status === 'READY' && 'text-emerald-400',
                             translation.status === 'GENERATING' && 'text-amber-400',
                             translation.status === 'FAILED' && 'text-destructive',

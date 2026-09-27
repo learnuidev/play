@@ -166,7 +166,7 @@ export function GrantRewardDialog({
           </div>
 
           {membersQuery.isError ? (
-            <div className="rounded-2xl border border-dashed px-6 py-10 text-center">
+            <div className="rounded-3xl border border-dashed border-border/70 px-6 py-10 text-center">
               <p className="text-sm text-muted-foreground">
                 {membersQuery.error instanceof Error
                   ? membersQuery.error.message
@@ -180,7 +180,7 @@ export function GrantRewardDialog({
               ))}
             </div>
           ) : members.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-10 text-center">
+            <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-border/70 px-6 py-10 text-center">
               <div className="flex size-12 items-center justify-center rounded-full border bg-muted/40">
                 <UsersIcon className="size-5 text-muted-foreground" />
               </div>

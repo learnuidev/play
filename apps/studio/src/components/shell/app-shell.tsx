@@ -32,7 +32,7 @@ export function AppShell({ orgId, children }: { orgId: string; children: React.R
       <div className="flex h-svh w-full overflow-hidden">
         {!lesson && <OrgRail activeOrgId={orgId} />}
         {!lesson && <CommunitySidebar orgId={orgId} />}
-        <SidebarInset className="min-w-0 bg-muted/30">
+        <SidebarInset className="min-w-0 bg-muted/40">
           <OrgTabs orgId={orgId} />
           <div className="min-h-0 flex-1 overflow-y-auto">
             {/* A lesson is split down the middle — the video on one side, the
@@ -41,8 +41,8 @@ export function AppShell({ orgId, children }: { orgId: string; children: React.R
                 past this the two halves stop being a pair. */}
             <div
               className={cn(
-                'mx-auto w-full px-6 py-6',
-                lesson ? 'h-full max-w-[1600px]' : 'max-w-5xl',
+                'mx-auto w-full',
+                lesson ? 'h-full max-w-[1600px] px-6 py-6' : 'max-w-5xl px-6 py-8',
               )}
             >
               {children}

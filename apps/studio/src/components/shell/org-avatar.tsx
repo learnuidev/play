@@ -6,7 +6,7 @@ function orgInitial(name: string): string {
 }
 
 const SIZES = {
-  sm: 'size-6 rounded-md text-[10px]',
+  sm: 'size-6 rounded-md text-xs',
   md: 'size-8 rounded-lg text-xs',
 } as const;
 

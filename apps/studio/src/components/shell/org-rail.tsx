@@ -25,14 +25,14 @@ export function OrgRail({ activeOrgId }: { activeOrgId?: string }) {
   return (
     <nav
       aria-label="Organizations"
-      className="flex w-16 shrink-0 flex-col items-center gap-2 border-r bg-sidebar py-4 text-sidebar-foreground"
+      className="flex w-16 shrink-0 flex-col items-center gap-2 border-r border-border/40 bg-sidebar py-4 text-sidebar-foreground"
     >
       <Tooltip>
         <TooltipTrigger asChild>
           <Link
             href="/"
             aria-label="Play home"
-            className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90"
+            className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity hover:opacity-90"
           >
             <ClapperboardIcon className="size-4" />
           </Link>

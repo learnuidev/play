@@ -125,7 +125,7 @@ export function SpaceCohortsTab({
       </BlockLabel>
 
       {cohortsQuery.isError ? (
-        <div className="rounded-2xl border border-dashed px-6 py-10 text-center">
+        <div className="rounded-3xl border border-dashed border-border/70 px-6 py-10 text-center">
           <p className="text-sm text-muted-foreground">
             {cohortsQuery.error instanceof Error
               ? cohortsQuery.error.message
@@ -160,7 +160,7 @@ export function SpaceCohortsTab({
       ) : (
         <div className="grid gap-3">
           {cohorts.map((cohort) => (
-            <article key={cohort.cohortId} className="rounded-2xl border bg-card p-5 shadow-sm">
+            <article key={cohort.cohortId} className="rounded-3xl border border-border/60 bg-card p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">

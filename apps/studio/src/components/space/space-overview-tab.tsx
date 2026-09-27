@@ -67,15 +67,15 @@ function StatTile({
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl border bg-card px-4 py-3.5">
-      <div className="flex items-center gap-2 text-muted-foreground">
+    <div className="rounded-3xl border border-border/60 bg-card px-5 py-4">
+      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
         {icon}
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">{label}</span>
+        <span>{label}</span>
       </div>
-      <p className="mt-2 text-2xl font-semibold tabular-nums">
-        {loading ? <Skeleton className="h-7 w-10" /> : (value ?? 0)}
+      <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight">
+        {loading ? <Skeleton className="h-8 w-12" /> : (value ?? 0)}
       </p>
-      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -442,7 +442,7 @@ export function SpaceOverviewTab({ space, canEdit }: { space: Space; canEdit: bo
           />
         </div>
         {isScheduled && (
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Sections unlock every {space.dripIntervalDays ?? DEFAULT_DRIP_INTERVAL_DAYS} days from
             the start date.
           </p>
@@ -451,7 +451,7 @@ export function SpaceOverviewTab({ space, canEdit }: { space: Space; canEdit: bo
 
       <section className="grid gap-3">
         <BlockLabel>Details</BlockLabel>
-        <div className="rounded-2xl border bg-card p-5">
+        <div className="rounded-3xl border border-border/60 bg-card p-5">
           <CourseDetailsForm space={space} canEdit={canEdit} />
         </div>
       </section>

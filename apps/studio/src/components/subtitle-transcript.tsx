@@ -81,7 +81,7 @@ export function SubtitleTranscript({
         />
       </div>
 
-      <div className="mt-3 rounded-xl border bg-card p-4 leading-relaxed text-muted-foreground">
+      <div className="mt-3 rounded-2xl border border-border/60 bg-card p-4 leading-relaxed text-muted-foreground">
         {filtered.length === 0 ? (
           <p>
             {normalizedQuery

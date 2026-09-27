@@ -133,7 +133,7 @@ export function CohortMembersDialog({
         </DialogHeader>
 
         {membersQuery.isError ? (
-          <div className="rounded-2xl border border-dashed px-6 py-10 text-center">
+          <div className="rounded-3xl border border-dashed border-border/70 px-6 py-10 text-center">
             <p className="text-sm text-muted-foreground">
               {membersQuery.error instanceof Error
                 ? membersQuery.error.message
@@ -147,7 +147,7 @@ export function CohortMembersDialog({
             ))}
           </div>
         ) : roster.length === 0 ? (
-          <div className="rounded-2xl border border-dashed px-6 py-10 text-center">
+          <div className="rounded-3xl border border-dashed border-border/70 px-6 py-10 text-center">
             <p className="text-sm text-muted-foreground">
               Nobody has joined this course yet, so there is nobody to put in a cohort.
             </p>

@@ -29,7 +29,7 @@ export function VideoCard({ video, orgId }: { video: Video; orgId: string }) {
   const href = `/o/${orgId}/videos/${video.videoId}`;
 
   return (
-    <article className="group relative flex flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-ring/40 hover:shadow-xl">
+    <article className="group relative flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-card text-card-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-ring/40 hover:shadow-xl">
       <Link href={href} className="relative aspect-video overflow-hidden bg-zinc-900">
         {thumbnail ? (
           <img
@@ -59,7 +59,7 @@ export function VideoCard({ video, orgId }: { video: Video; orgId: string }) {
         <p className="line-clamp-2 min-h-8 text-xs text-muted-foreground">
           {video.description || 'No description'}
         </p>
-        <p className="mt-auto text-[11px] text-muted-foreground">
+        <p className="mt-auto text-xs text-muted-foreground">
           {video.resolutionTier ? `${video.resolutionTier} · ` : ''}
           {formatBytes(video.size)} · {formatDate(video.createdAt)}
         </p>

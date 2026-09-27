@@ -201,7 +201,7 @@ export default function PreviewPage() {
 
               {audioOnly ? (
                 audio ? (
-                  <div className="rounded-2xl border bg-card p-6">
+                  <div className="rounded-3xl border border-border/60 bg-card p-6">
                     <AudioPlayer
                       ref={playerRef}
                       src={audio.audioUrl}
