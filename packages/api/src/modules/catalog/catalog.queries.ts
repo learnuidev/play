@@ -1,10 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@api/lib/api';
 import { spaceMemberKeys } from '@api/modules/space-member/space-member.queries';
 
 export const catalogKeys = {
   all: ['catalog'] as const,
-  courses: () => ['catalog', 'courses'] as const,
+  courses: (query = '') => ['catalog', 'courses', query] as const,
   course: (spaceId: string) => ['catalog', 'course', spaceId] as const,
 };
 
@@ -14,11 +14,22 @@ export const catalogKeys = {
  * Public, so it is read without a token — by somebody who has not signed in,
  * which is who a front page is for. It changes when an author publishes or
  * unpublishes a course, not when somebody registers, so it is held for a while.
+ *
+ * A `query` searches rather than browses, and each search is its own cache
+ * entry: typing in a search box and then deleting what you typed should show the
+ * catalog you started from, immediately and without a second read.
+ *
+ * A search keeps the previous results on screen while it runs. Replacing a page
+ * of courses with a skeleton and then with a shorter answer is a page that jumps
+ * twice per search, which reads as the interface being unsteady — and the caller
+ * is told it is looking at the previous answer through `isPlaceholderData`, so
+ * it can say so quietly instead.
  */
-export function useCatalogCourses() {
+export function useCatalogCourses(query = '') {
   return useQuery({
-    queryKey: catalogKeys.courses(),
-    queryFn: () => api.listCatalogCourses(),
+    queryKey: catalogKeys.courses(query),
+    queryFn: () => api.listCatalogCourses({ q: query || undefined }),
+    placeholderData: keepPreviousData,
     staleTime: 5 * 60 * 1000,
   });
 }

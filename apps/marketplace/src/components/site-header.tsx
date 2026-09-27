@@ -1,54 +1,51 @@
 'use client';
 
 import Link from 'next/link';
-import { GraduationCapIcon, SignpostIcon } from 'lucide-react';
+import { GraduationCapIcon } from 'lucide-react';
 import { useIsSignedIn } from '@play/auth';
 import { Button } from '@ui/components/ui/button';
-import { ThemeToggle } from '@ui/components/theme-toggle';
 import { AccountMenu } from '@/components/account-menu';
 
 /**
- * The marketplace's top bar: where you are, and who you are.
+ * The top bar: a slim, translucent band that lets the page through.
  *
- * Shorter than the studio's, because there is less to be: the marketplace has
- * two places — the catalog and the courses you are taking — and a bar full of
- * chrome over a front page is chrome nobody asked for.
+ * Deliberately quiet. Everything under it is the point of the page, so the bar
+ * is one line of small text over a blurred backdrop rather than a piece of
+ * furniture with borders and buttons in it — and it is the same bar whether
+ * somebody is signed in or not, with the one control that differs at the end.
  */
 export function SiteHeader() {
   const signedIn = useIsSignedIn();
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-4 px-4">
-        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-emerald-600 text-white">
-            <GraduationCapIcon className="size-4" />
-          </span>
+    <header className="sticky top-0 z-40 border-b border-border/40 bg-background/70 backdrop-blur-xl">
+      <div className="mx-auto flex h-12 w-full max-w-6xl items-center gap-6 px-4">
+        <Link
+          href="/"
+          className="flex items-center gap-1.5 text-sm font-medium tracking-tight transition-opacity hover:opacity-70"
+        >
+          <GraduationCapIcon className="size-4" />
           Play
-          <span className="text-muted-foreground">Marketplace</span>
+          <span className="font-normal text-muted-foreground">Marketplace</span>
         </Link>
 
-        <nav className="ml-2 hidden items-center gap-1 sm:flex">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/">Courses</Link>
-          </Button>
+        <nav className="ml-auto flex items-center gap-5 text-sm text-muted-foreground">
+          <Link href="/" className="transition-colors hover:text-foreground">
+            Courses
+          </Link>
           {signedIn && (
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/my-courses">My learning</Link>
-            </Button>
+            <Link href="/my-courses" className="transition-colors hover:text-foreground">
+              My learning
+            </Link>
           )}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1">
-          <ThemeToggle />
+        <div className="flex items-center gap-2">
           {signedIn ? (
             <AccountMenu />
           ) : (
-            <Button asChild size="sm">
-              <Link href="/sign-in">
-                <SignpostIcon />
-                Sign in
-              </Link>
+            <Button asChild size="sm" className="h-7 rounded-full px-3 text-xs">
+              <Link href="/sign-in">Sign in</Link>
             </Button>
           )}
         </div>

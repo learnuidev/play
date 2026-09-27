@@ -3,7 +3,7 @@ import { batchGetOrganizationsById } from './organizations';
 import { countSectionsInSpace } from './sections';
 import { countSpaceStudents } from './space-members';
 import { buildSpaceThumbnailUrl } from './space-thumbnail';
-import { getSpace } from './spaces';
+import { getSpace, listListedSpaces } from './spaces';
 import type { CatalogCourse, CatalogLesson, CatalogSection, Space } from '../types';
 
 /**
@@ -116,4 +116,67 @@ export function toCatalogSections(
       }),
     ),
   }));
+}
+
+/**
+ * How many published courses one search looks at.
+ *
+ * A search cannot be answered by a key lookup: DynamoDB has no `contains`, and
+ * nothing here is a search index. So a search reads the catalog — which is only
+ * the courses their authors published, not every course in the service — and
+ * filters in the handler. The cap is what stops "a" from reading the whole
+ * table: past this many courses, a catalog wants a real search index rather
+ * than a longer loop, and the response says so by simply returning fewer.
+ */
+const SEARCH_SCAN_LIMIT = 200;
+
+/** How much of the catalog one read takes while searching. */
+const SEARCH_PAGE_SIZE = 100;
+
+/**
+ * Listed courses matching a search, newest first.
+ *
+ * Matching is a case-insensitive substring over what a card shows — the course's
+ * title, its description, and the name of the community it is from — because
+ * those are the three things somebody can see to search by. It is deliberately
+ * not fuzzy: "film" matches "Film Studies" and "Filmmaking", and "flm" matches
+ * nothing, which is what a search box on a small catalog should do before
+ * somebody reaches for an index.
+ */
+export async function searchListedSpaces(query: string, limit: number): Promise<Space[]> {
+  const needle = query.trim().replace(/\s+/g, ' ').toLowerCase();
+  const matches: Space[] = [];
+
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+  let scanned = 0;
+
+  do {
+    const page = await listListedSpaces({ limit: SEARCH_PAGE_SIZE, exclusiveStartKey });
+    scanned += page.spaces.length;
+
+    // The community's name is what the card shows under the title, so it is part
+    // of what people search by — and it takes one batch read per page rather
+    // than one per course.
+    const organizations = await batchGetOrganizationsById([
+      ...new Set(page.spaces.map((space) => space.organizationId)),
+    ]);
+
+    for (const space of page.spaces) {
+      const organizationName = organizations.get(space.organizationId)?.name ?? '';
+      if (matchesQuery(space, organizationName, needle)) matches.push(space);
+    }
+
+    exclusiveStartKey = page.lastEvaluatedKey;
+  } while (exclusiveStartKey && matches.length < limit && scanned < SEARCH_SCAN_LIMIT);
+
+  return matches.slice(0, limit);
+}
+
+/** Whether a course is one somebody searching for these words would mean. */
+function matchesQuery(space: Space, organizationName: string, needle: string): boolean {
+  return (
+    space.title.toLowerCase().includes(needle) ||
+    space.description.toLowerCase().includes(needle) ||
+    organizationName.toLowerCase().includes(needle)
+  );
 }

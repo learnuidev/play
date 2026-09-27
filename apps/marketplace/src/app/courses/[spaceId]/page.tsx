@@ -39,7 +39,7 @@ export default function CoursePage() {
 
   if (error) {
     return (
-      <p className="text-sm text-destructive">
+      <p className="mx-auto w-full max-w-6xl px-4 py-12 text-sm text-destructive">
         {error instanceof Error ? error.message : 'Could not load this course'}
       </p>
     );
@@ -47,7 +47,7 @@ export default function CoursePage() {
 
   if (notFound) {
     return (
-      <div className="flex flex-col items-center gap-2 py-24 text-center">
+      <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-2 px-4 py-24 text-center">
         <p className="text-sm font-medium">This course is not in the marketplace</p>
         <p className="max-w-md text-sm text-muted-foreground">
           It may have been unpublished by whoever wrote it, or the link may be wrong.
@@ -61,8 +61,8 @@ export default function CoursePage() {
 
   if (isLoading || !course) {
     return (
-      <div className="grid gap-6">
-        <Skeleton className="aspect-[3/1] w-full rounded-2xl" />
+      <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-12">
+        <Skeleton className="aspect-[3/1] w-full rounded-3xl" />
         <Skeleton className="h-8 w-72" />
         <Skeleton className="h-40 rounded-2xl" />
       </div>
@@ -77,7 +77,7 @@ export default function CoursePage() {
     sections.flatMap((section) => section.lessons)[0]?.contentId;
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+    <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-12 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <div className="grid content-start gap-6">
         <CourseCover course={course} />
         <CourseHeader course={course} />

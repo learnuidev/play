@@ -365,13 +365,18 @@ export const api = {
    *
    * Read without a token, because the people who read it have not signed in
    * yet — that is the whole point of a catalog.
+   *
+   * With `q` it searches instead of paging: the API answers a search from a
+   * bounded read of the catalog and returns no `nextToken`, so a caller should
+   * not try to page through search results.
    */
-  listCatalogCourses: (nextToken?: string) =>
-    request<ListCatalogResponse>(
-      `/catalog/courses${nextToken ? `?nextToken=${encodeURIComponent(nextToken)}` : ''}`,
-      {},
-      'none',
-    ),
+  listCatalogCourses: (opts: { q?: string; nextToken?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.q) params.set('q', opts.q);
+    if (opts.nextToken) params.set('nextToken', opts.nextToken);
+    const query = params.toString();
+    return request<ListCatalogResponse>(`/catalog/courses${query ? `?${query}` : ''}`, {}, 'none');
+  },
 
   /** One listed course, with the syllabus anybody may read. */
   getCatalogCourse: (spaceId: string) =>
