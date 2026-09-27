@@ -10,6 +10,18 @@ build:
 
 plugins:
   - serverless-esbuild
+  # CloudFormation caps a stack at 500 resources, and this service met the cap:
+  # one Lambda, one log group, one version, one permission and two API methods
+  # per endpoint is about six resources a route, and the course-membership,
+  # cohort and reward endpoints took the template to 600. The plugin moves a
+  # function's own resources into a nested stack of its own, so the parent stack
+  # holds one resource per function instead of six. See `custom.splitStacks`.
+  #
+  # It only ever migrates resources that are *not* already in the deployed
+  # stack — everything already there stays where it is, which is what keeps the
+  # tables, the bucket, the user pool and the existing functions out of a
+  # migration that would replace them.
+  - serverless-plugin-split-stacks
 
 custom:
   esbuild:
@@ -63,6 +75,34 @@ custom:
     fromAddress: ${ssm:/play/mail/from-address, self:custom.mailDefaults.fromAddress}
     appBaseUrl: ${ssm:/play/mail/app-base-url, self:custom.mailDefaults.appBaseUrl}
 
+  # How the service stays inside CloudFormation's 500-resource ceiling.
+  #
+  # `perFunction` gives every function a nested stack holding that function, its
+  # log group, its permission and the API methods only it serves. It is the
+  # strategy the plugin's own documentation says to choose first, because the
+  # other two are worse here: `perType` would move every DynamoDB table into one
+  # nested stack — which CloudFormation performs as a delete and a create, and a
+  # recreated table is an empty table — and `perGroupFunction` pins the number of
+  # stacks up front, which cannot be changed later without rebuilding the stage.
+  #
+  # `perType` and `perGroupFunction` are turned off explicitly rather than left
+  # to their defaults: `perType` defaults to on, and the two deciding which
+  # resources move is exactly the thing that must not be left to a default.
+  #
+  # Nothing already deployed moves. The plugin reads the deployed stack first and
+  # skips every resource it finds there, so the tables, the bucket, the user pool,
+  # the API and the sixty-odd existing functions stay in the parent stack — the
+  # migration applies to what is new, and to everything added from now on, which
+  # is what keeps the parent small rather than merely under the cap today.
+  splitStacks:
+    perFunction: true
+    perType: false
+    perGroupFunction: false
+    # Nested stacks are created in a chain rather than all at once: ninety of
+    # them in parallel is a burst of CloudFormation, Lambda and API Gateway calls
+    # that the account's rate limits answer with throttling.
+    stackConcurrency: 5
+
 # Every function is packaged on its own.
 #
 # Without this, `serverless-esbuild` produces one artifact for the whole service
@@ -82,6 +122,14 @@ provider:
   stage: ${opt:stage, 'dev'}
   timeout: 29
   memorySize: 512
+
+  # Serverless v4 publishes a Lambda version per function by default, and a
+  # version is a resource: ninety-one of them, which is a sixth of the stack
+  # spent on snapshots nothing points at — an alias is what makes a version
+  # useful, and this service has none. Turning it off stops them being created
+  # at all; the versions already published are untouched, because they carry
+  # `DeletionPolicy: Retain` and simply leave the stack's management.
+  versionFunctions: false
 
   environment:
     VIDEOS_TABLE: !Ref VideosTable
@@ -145,6 +193,12 @@ provider:
             - !GetAtt OrgMembersTable.Arn
             - !Sub "${OrgMembersTable.Arn}/index/*"
         # Spaces (courses) an organization owns.
+        #
+        # `BatchGetItem` is here because a space is read by id in bulk as well as
+        # one at a time: "the courses I am in" and "the courses behind these
+        # invitations" are keyed lists, and a batch read of a table whose grant
+        # covers only `Query` is refused — the whole request, not just the part
+        # that needed it.
         - Effect: Allow
           Action:
             - dynamodb:GetItem
@@ -152,6 +206,7 @@ provider:
             - dynamodb:UpdateItem
             - dynamodb:DeleteItem
             - dynamodb:Query
+            - dynamodb:BatchGetItem
           Resource:
             - !GetAtt SpacesTable.Arn
             - !Sub "${SpacesTable.Arn}/index/*"
@@ -644,6 +699,18 @@ functions:
           # The signed-in user's own offers, across every course. The one read
           # somebody who belongs nowhere yet can make.
           path: me/space-invitations
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-my-spaces:
+    handler: src/functions/spaces/list-my-spaces.handler
+    events:
+      - http:
+          # The courses the signed-in user is in. A course can be taken by
+          # somebody who belongs to no organization, so this is the only list of
+          # anything they have.
+          path: me/spaces
           method: get
           cors: true
           authorizer: ${self:custom.authorizer}

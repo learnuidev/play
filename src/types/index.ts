@@ -271,6 +271,20 @@ export interface MySpaceInvitation {
   invitedAt: number;
 }
 
+/**
+ * A course the caller is in, as their own list reads it.
+ *
+ * The organization's name travels with it because a course member need not be a
+ * member of the organization around it: the course list is then the only thing
+ * they can see, and "Introduction to Film" with no indication of where it came
+ * from is half a name.
+ */
+export interface MyCourse {
+  space: Space;
+  role: SpaceMemberRole;
+  organizationName: string;
+}
+
 export interface OrgMember {
   orgId: string;
   /**
