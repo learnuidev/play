@@ -82,7 +82,18 @@ export function SpaceMemberRow({
   const resend = useResendSpaceInvitation(spaceId);
 
   const busy = updateRole.isPending || remove.isPending || resend.isPending;
-  const canAct = canManage && !member.isYou;
+  /**
+   * What you may do to somebody else's row, as against your own.
+   *
+   * Changing a role is open to every row, your own included: an author crediting
+   * a course to themselves is the ordinary way a name reaches the marketplace,
+   * and the API has always allowed it — it is `requireSpaceAccess(…, 'write')`
+   * either way. What stays off your own row is the destructive half: withdrawing
+   * an invitation and removing somebody from a course are things you do to other
+   * people, and doing them to yourself from a roster screen is a way to lose the
+   * course by accident.
+   */
+  const canManageOthers = canManage && !member.isYou;
 
   async function resendInvitation() {
     try {
@@ -167,7 +178,7 @@ export function SpaceMemberRow({
         {SPACE_MEMBER_ROLE_LABELS[member.role]}
       </Badge>
 
-      {canAct && (
+      {canManage && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" aria-label="Member actions" disabled={busy}>
@@ -175,7 +186,9 @@ export function SpaceMemberRow({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>What they are here as</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              {member.isYou ? 'What you are here as' : 'What they are here as'}
+            </DropdownMenuLabel>
             {SPACE_MEMBER_ROLES.map((role) => (
               <DropdownMenuItem
                 key={role}
@@ -186,59 +199,66 @@ export function SpaceMemberRow({
                 {role === member.role && <CheckIcon className="size-4" />}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuSeparator />
-            {member.pending && (
+            {canManageOthers && (
               <>
-                <DropdownMenuItem onSelect={() => void resendInvitation()}>
-                  <SendIcon className="size-4" />
-                  Send invitation again
-                </DropdownMenuItem>
-                {inviteUrl && (
-                  <DropdownMenuItem onSelect={() => void copyInviteLink()}>
-                    <LinkIcon className="size-4" />
-                    Copy invitation link
+                <DropdownMenuSeparator />
+                {member.pending && (
+                  <>
+                    <DropdownMenuItem onSelect={() => void resendInvitation()}>
+                      <SendIcon className="size-4" />
+                      Send invitation again
+                    </DropdownMenuItem>
+                    {inviteUrl && (
+                      <DropdownMenuItem onSelect={() => void copyInviteLink()}>
+                        <LinkIcon className="size-4" />
+                        Copy invitation link
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {removing ? (
+                  <div className="grid gap-2 p-2">
+                    <p className="text-xs text-muted-foreground">
+                      {member.pending
+                        ? 'Withdraw this invitation?'
+                        : 'Remove them from this course?'}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="flex-1"
+                        onClick={() => void removeMember()}
+                      >
+                        Yes
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="flex-1"
+                        onClick={() => setRemoving(false)}
+                      >
+                        No
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onSelect={(event) => {
+                      // Keep the menu open so the confirmation lands where the
+                      // action was taken rather than beside a row that has moved
+                      // back.
+                      event.preventDefault();
+                      setRemoving(true);
+                    }}
+                  >
+                    <UserMinusIcon className="size-4" />
+                    {member.pending ? 'Withdraw invitation' : 'Remove from this course'}
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
               </>
-            )}
-            {removing ? (
-              <div className="grid gap-2 p-2">
-                <p className="text-xs text-muted-foreground">
-                  {member.pending ? 'Withdraw this invitation?' : 'Remove them from this course?'}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    className="flex-1"
-                    onClick={() => void removeMember()}
-                  >
-                    Yes
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="flex-1"
-                    onClick={() => setRemoving(false)}
-                  >
-                    No
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={(event) => {
-                  // Keep the menu open so the confirmation lands where the action
-                  // was taken rather than beside a row that has moved back.
-                  event.preventDefault();
-                  setRemoving(true);
-                }}
-              >
-                <UserMinusIcon className="size-4" />
-                {member.pending ? 'Withdraw invitation' : 'Remove from this course'}
-              </DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>

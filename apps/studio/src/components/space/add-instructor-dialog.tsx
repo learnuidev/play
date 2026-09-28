@@ -50,9 +50,11 @@ export function AddInstructorDialog({
   // Everyone who could teach it and does not already: an outstanding invitation
   // is not one of them, because the role it carries is not in force until
   // somebody claims it, and an invitation's role is corrected by re-sending it.
-  const candidates = (membersQuery.data?.members ?? []).filter(
-    (member) => !member.pending && member.role !== 'INSTRUCTOR',
-  );
+  // Your own row comes first — crediting a course to yourself is the ordinary
+  // case, and it should not be a row to hunt for.
+  const candidates = (membersQuery.data?.members ?? [])
+    .filter((member) => !member.pending && member.role !== 'INSTRUCTOR')
+    .sort((a, b) => Number(b.isYou) - Number(a.isYou));
 
   const chosen = candidates.find((member) => member.userId === selected);
 

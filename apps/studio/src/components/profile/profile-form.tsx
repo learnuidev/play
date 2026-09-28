@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import { useAuthenticator } from '@aws-amplify/ui-react';
-import { ImageIcon, Loader2Icon } from 'lucide-react';
-import { toast } from 'sonner';
-import { putFileToPresignedUrl } from '@api/lib/upload';
+import { useEffect, useRef, useState } from "react";
+import { useAuthenticator } from "@aws-amplify/ui-react";
+import { ImageIcon, Loader2Icon } from "lucide-react";
+import { toast } from "sonner";
+import { putFileToPresignedUrl } from "@api/lib/upload";
 import {
   useMyProfile,
   useUpdateMyProfile,
   useUploadProfilePhoto,
-} from '@api/modules/profile/profile.queries';
+} from "@api/modules/profile/profile.queries";
 import {
   PROFILE_BIO_MAX_LENGTH,
   PROFILE_LINK_MAX_LENGTH,
@@ -20,14 +20,14 @@ import {
   SOCIAL_PLACEHOLDERS,
   type ProfileSocials,
   type SocialKey,
-} from '@play/types';
-import { PersonAvatar } from '@play/ui';
-import { Button } from '@ui/components/ui/button';
-import { Input } from '@ui/components/ui/input';
-import { Label } from '@ui/components/ui/label';
-import { Skeleton } from '@ui/components/ui/skeleton';
-import { Textarea } from '@ui/components/ui/textarea';
-import { BlockLabel } from '@/components/shell/page-card';
+} from "@play/types";
+import { PersonAvatar } from "@play/ui";
+import { Button } from "@ui/components/ui/button";
+import { Input } from "@ui/components/ui/input";
+import { Label } from "@ui/components/ui/label";
+import { Skeleton } from "@ui/components/ui/skeleton";
+import { Textarea } from "@ui/components/ui/textarea";
+import { BlockLabel } from "@/components/shell/page-card";
 
 /** Mirrors the API's own ceiling, so a large file fails here rather than over the wire. */
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -36,11 +36,11 @@ const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 type LinkFields = Record<SocialKey, string>;
 
 const NO_LINKS: LinkFields = {
-  website: '',
-  x: '',
-  linkedin: '',
-  youtube: '',
-  github: '',
+  website: "",
+  x: "",
+  linkedin: "",
+  youtube: "",
+  github: "",
 };
 
 /** What the form holds, as it holds it. */
@@ -57,7 +57,7 @@ function toFormState(profile: {
 }): FormState {
   const links = { ...NO_LINKS };
   for (const key of SOCIAL_KEYS) {
-    links[key] = profile.socials[key] ?? '';
+    links[key] = profile.socials[key] ?? "";
   }
   return { name: profile.name, bio: profile.bio, links };
 }
@@ -82,7 +82,7 @@ export function ProfileForm() {
   const upload = useUploadProfilePhoto();
 
   const { user } = useAuthenticator((context) => [context.user]);
-  const email = user?.signInDetails?.loginId ?? user?.username ?? '';
+  const email = user?.signInDetails?.loginId ?? user?.username ?? "";
 
   const profile = profileQuery.data?.profile;
 
@@ -106,9 +106,12 @@ export function ProfileForm() {
 
   // Object URLs are a leak until they are revoked, and this one is replaced on
   // every upload.
-  useEffect(() => () => {
-    if (preview) URL.revokeObjectURL(preview);
-  }, [preview]);
+  useEffect(
+    () => () => {
+      if (preview) URL.revokeObjectURL(preview);
+    },
+    [preview],
+  );
 
   if (!form || !saved) {
     // A profile that could not be read is said out loud rather than left as a
@@ -119,7 +122,7 @@ export function ProfileForm() {
         <p className="text-sm text-destructive">
           {profileQuery.error instanceof Error
             ? profileQuery.error.message
-            : 'Could not load your profile'}
+            : "Could not load your profile"}
         </p>
       );
     }
@@ -136,7 +139,7 @@ export function ProfileForm() {
   const trimmedName = form.name.trim();
   const nameTooShort = trimmedName.length < PROFILE_NAME_MIN_LENGTH;
   const badLink = SOCIAL_KEYS.find(
-    (key) => form.links[key].trim() !== '' && !isUrl(form.links[key].trim()),
+    (key) => form.links[key].trim() !== "" && !isUrl(form.links[key].trim()),
   );
 
   const dirty =
@@ -171,9 +174,10 @@ export function ProfileForm() {
       const next = toFormState(updated);
       setForm(next);
       setSaved(next);
-      toast.success('Profile saved');
+      toast.success("Profile saved");
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not save your profile';
+      const message =
+        err instanceof Error ? err.message : "Could not save your profile";
       setError(message);
       toast.error(message);
     }
@@ -186,12 +190,12 @@ export function ProfileForm() {
    */
   async function changePhoto(file: File | null | undefined) {
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('Choose an image file for your photo');
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose an image file for your photo");
       return;
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      toast.error('Photos must be 5 MB or smaller');
+      toast.error("Photos must be 5 MB or smaller");
       return;
     }
 
@@ -200,16 +204,21 @@ export function ProfileForm() {
     setPreview(URL.createObjectURL(file));
     setUploading(true);
     try {
-      const reserved = await upload.mutateAsync({ contentType: file.type, size: file.size });
+      const reserved = await upload.mutateAsync({
+        contentType: file.type,
+        size: file.size,
+      });
       await putFileToPresignedUrl(file, reserved.upload);
-      toast.success('Photo updated');
+      toast.success("Photo updated");
     } catch (err) {
       setPreview(null);
-      toast.error(err instanceof Error ? err.message : 'Could not upload your photo');
+      toast.error(
+        err instanceof Error ? err.message : "Could not upload your photo",
+      );
     } finally {
       setUploading(false);
       // So re-picking the same file fires `change` again.
-      if (fileRef.current) fileRef.current.value = '';
+      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -219,10 +228,10 @@ export function ProfileForm() {
         <BlockLabel>Photo</BlockLabel>
         <div className="flex items-center gap-4">
           <PersonAvatar
-            name={trimmedName || 'Your profile'}
+            name={trimmedName || "Your profile"}
             photoUrl={preview ?? profile?.photoUrl}
             size="xl"
-            className={uploading ? 'opacity-60' : undefined}
+            className={uploading ? "opacity-60" : undefined}
           />
           <div className="grid gap-1">
             <div className="flex items-center gap-2">
@@ -241,8 +250,16 @@ export function ProfileForm() {
                 disabled={uploading}
                 onClick={() => fileRef.current?.click()}
               >
-                {uploading ? <Loader2Icon className="animate-spin" /> : <ImageIcon />}
-                {uploading ? 'Uploading…' : profile?.photoKey ? 'Replace photo' : 'Upload photo'}
+                {uploading ? (
+                  <Loader2Icon className="animate-spin" />
+                ) : (
+                  <ImageIcon />
+                )}
+                {uploading
+                  ? "Uploading…"
+                  : profile?.photoKey
+                    ? "Replace photo"
+                    : "Upload photo"}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -270,7 +287,9 @@ export function ProfileForm() {
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              {email ? `Signed in as ${email}. This is the name courses you teach are credited to.` : 'This is the name courses you teach are credited to.'}
+              {email
+                ? `Signed in as ${email}. This is the name courses you teach are credited to.`
+                : "This is the name courses you teach are credited to."}
             </p>
           )}
         </div>
@@ -286,7 +305,7 @@ export function ProfileForm() {
             placeholder="What you teach, how you got here, and who your courses are for."
           />
           <p className="text-xs text-muted-foreground">
-            {form.bio.length}/{PROFILE_BIO_MAX_LENGTH} characters
+            {form?.bio?.length}/{PROFILE_BIO_MAX_LENGTH} characters
           </p>
         </div>
       </section>
@@ -294,19 +313,24 @@ export function ProfileForm() {
       <section className="grid gap-4">
         <BlockLabel>Links</BlockLabel>
         <p className="-mt-2 text-xs text-muted-foreground">
-          Only the ones you fill in are shown. Each has to be a whole address, starting with
-          https://
+          Only the ones you fill in are shown. Each has to be a whole address,
+          starting with https://
         </p>
 
         <div className="grid gap-4 sm:grid-cols-2">
           {SOCIAL_KEYS.map((key) => (
             <div key={key} className="grid gap-2">
-              <Label htmlFor={`profile-link-${key}`}>{SOCIAL_LABELS[key]}</Label>
+              <Label htmlFor={`profile-link-${key}`}>
+                {SOCIAL_LABELS[key]}
+              </Label>
               <Input
                 id={`profile-link-${key}`}
                 value={form.links[key]}
                 onChange={(event) =>
-                  setForm({ ...form, links: { ...form.links, [key]: event.target.value } })
+                  setForm({
+                    ...form,
+                    links: { ...form.links, [key]: event.target.value },
+                  })
                 }
                 maxLength={PROFILE_LINK_MAX_LENGTH}
                 placeholder={SOCIAL_PLACEHOLDERS[key]}
@@ -335,9 +359,13 @@ export function ProfileForm() {
         >
           Reset
         </Button>
-        <Button type="button" onClick={() => void save()} disabled={!canSave || update.isPending}>
+        <Button
+          type="button"
+          onClick={() => void save()}
+          disabled={!canSave || update.isPending}
+        >
           {update.isPending ? <Loader2Icon className="animate-spin" /> : null}
-          {update.isPending ? 'Saving…' : 'Save profile'}
+          {update.isPending ? "Saving…" : "Save profile"}
         </Button>
       </div>
     </div>
@@ -348,7 +376,7 @@ export function ProfileForm() {
 function isUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
   }
