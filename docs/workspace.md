@@ -344,6 +344,13 @@ phishing link wearing the app's name.
 `play-backend-{stage}` — the directory was renamed when it moved in, the service
 was not, because renaming it would rebuild the stack rather than update it.
 
+**That stack is at CloudFormation's 500-resource ceiling**, so the paragraph below
+about adding a route has a constraint on it that is not visible in the file: a new
+function is a new root-level resource, and there are none to spare. Read
+[migration.md](migration.md) before adding one — it says where the ceiling came
+from, what it has already cost, and the plan for moving the service to CDK so that
+it stops being a wall.
+
 ```bash
 npm run typecheck --workspace play-backend
 npm run deploy --workspace play-backend -- --aws-profile <profile>
