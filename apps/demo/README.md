@@ -37,16 +37,35 @@ prose.
    | --- | --- |
    | Name | `Fieldnotes` |
    | What does it do? | anything one sentence long — it is what the consent screen shows |
-   | Redirect URI | `http://localhost:4000/auth/callback` |
+   | Redirect URI | `http://localhost:4000/auth/play/callback` |
    | Scopes | `profile:read`, `courses:read`, `lessons:read`, `lessons:stream` |
    | Public client? | **yes** |
 
    Two of those are easy to get wrong, so they are worth repeating. The redirect
-   URI is matched **exactly** — port and path, no wildcards — because it is where
-   Play sends a code that acts as somebody. And the app has to be *registered* for
-   `lessons:stream`: a new app starts with three scopes, asking for a fourth it is
-   not registered for fails the whole authorization request, and the demo plays
-   video, so it asks.
+   URI is matched **exactly** — scheme, host, port and path, no wildcards — because
+   it is where Play sends a code that acts as somebody. And the app has to be
+   *registered* for `lessons:stream`: a new app starts with three scopes, asking
+   for a fourth it is not registered for fails the whole authorization request,
+   and the demo plays video, so it asks.
+
+   **Three ways a redirect URI goes wrong, and what each looks like.** Play refuses
+   with `redirect_uri is not registered for this app`, naming the URI it was asked
+   for; compare that string with what the app has registered, character by
+   character.
+
+   - **localhost vs `127.0.0.1`.** They are different origins to a browser, and the
+     app derives its URI from its own origin — so an app browsed at
+     `127.0.0.1:4000` asks for `http://127.0.0.1:4000/...`. Register both if you
+     might open it either way; an app may have up to ten.
+   - **A path that does not match.** Paths are not normalized into each other, and
+     a trailing slash is part of the URI.
+   - **A registration that is not the one in `.env.local`.** The client id selects
+     the app, so the client id and the redirect URI have to come from the same row
+     in the studio.
+
+   If the registered path is different from the one here, no code change is needed:
+   set `NEXT_PUBLIC_PLAY_REDIRECT_PATH`, or `NEXT_PUBLIC_PLAY_REDIRECT_URI` for a
+   whole URI. The default lives in `src/lib/oauth/config.ts`.
 
 2. **Public client, not confidential.** This app runs in a browser, so it has no
    client secret and does not want one: PKCE is what stands in for it, and a

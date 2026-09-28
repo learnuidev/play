@@ -56,6 +56,10 @@ export function SetupCard({ redirectUri }: { redirectUri: string }) {
               value="A read-only study companion: your courses, lessons and transcripts in one place."
             />
             <Field label="Redirect URI" value={redirectUri} />
+            <Field
+              label="And add"
+              value="http://127.0.0.1:4000/auth/play/callback"
+            />
             <Field label="Scopes" value={SCOPES.join(' ')} />
             <Field label="Public client?" value="Yes — it runs in a browser and keeps no secret" />
           </dl>
@@ -63,6 +67,12 @@ export function SetupCard({ redirectUri }: { redirectUri: string }) {
             The last one is the interesting choice: a public client has no secret at all and proves
             itself with PKCE instead. A secret shipped inside a browser bundle is not a secret, so
             asking for one would be worse than useless.
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Both redirect URIs go on the list, because <span className="font-mono">localhost</span>{' '}
+            and <span className="font-mono">127.0.0.1</span> are different origins to a browser and
+            Play matches exactly. An app may have up to ten, and leaving one out is the usual
+            reason a sign-in fails with &ldquo;redirect_uri is not registered&rdquo;.
           </p>
         </Step>
 

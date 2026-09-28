@@ -52,8 +52,17 @@ export const SCOPES = [
   'lessons:stream',
 ] as const;
 
-/** The path Play's callback comes back to. Registered on the app, matched exactly. */
-export const CALLBACK_PATH = '/auth/callback';
+/**
+ * The path Play's callback comes back to.
+ *
+ * Namespaced under `/auth/` so it cannot collide with a route this app grows of
+ * its own — and **configurable**, because a redirect URI is a fact about a
+ * *deployment* rather than about the code. Play matches it exactly: not a
+ * prefix, not a wildcard, and not after any tidying up. Whatever is registered
+ * in the studio is the only thing that will work, so the two have to be able to
+ * agree without editing a source file.
+ */
+export const CALLBACK_PATH = process.env.NEXT_PUBLIC_PLAY_REDIRECT_PATH ?? '/auth/play/callback';
 
 /**
  * This app's redirect URI.
@@ -64,6 +73,14 @@ export const CALLBACK_PATH = '/auth/callback';
  * It has to match one of the app's registered URIs *exactly*, down to the port.
  */
 export function redirectUri(): string {
+  // A whole URI wins when one is configured — for a deployment served at an
+  // address the browser cannot derive, or a registration that has to be pinned.
+  // It has to name the origin the app is *browsed* at: the verifier that spends
+  // the code lives in that origin's session storage, so a callback landing on
+  // another host arrives without the one thing that can redeem it.
+  const configured = process.env.NEXT_PUBLIC_PLAY_REDIRECT_URI;
+  if (configured) return configured;
+
   return `${window.location.origin}${CALLBACK_PATH}`;
 }
 
