@@ -214,12 +214,24 @@ it takes the whole window:
   the chevron — and is itself the way back to the course, so the section the
   lesson sits in is not named twice. What the page does _not_ have is a 24px
   title over the picture: the video is the subject, and a heading that size above
-  it made the lesson the subject instead. Beside the name are the counts of what
-  the lesson carries and, for an author, the `⋯` actions; the "Complete lesson"
-  pill keeps the far corner. Below `md` the row wraps — breadcrumb, counts and
-  actions, then the pill — because a name squeezed between two controls is not a
-  name. The tab strip and the picture then start on the same line, which is what
-  the title being under the picture made impossible.
+  it made the lesson the subject instead. Beside the name is what the lesson
+  carries — its files — and, for an author, the `⋯` actions; the far corner holds
+  the two things a reader can do with it, the heart that keeps it for later and
+  the "Complete lesson" pill. Below `md` the row wraps — breadcrumb, counts and
+  actions, then the heart and the pill together — because a name squeezed between
+  two controls is not a name. The tab strip and the picture then start on the
+  same line, which is what the title being under the picture made impossible.
+- **The heart is the favourite** (`components/content/content-favourite.tsx`),
+  and it carries the count rather than the count sitting beside it: the number
+  and the control that moves it are one thing, and a lesson whose favourites are
+  counted on the left and hearted on the right says the same fact twice. It is an
+  outline pill beside the lesson's one decision rather than a pill of its own
+  shape — finishing a lesson is where a reader is going, and keeping it is what
+  they do on the way — and the fill and the colour are the whole of what changes,
+  which is what lets the count stay where it is instead of the label saying
+  "Saved". The answer is the server's: the mutation writes the new state and
+  count into the cached lesson from the response, so the heart fills on the press
+  rather than a request later.
 - **Two columns, six to four.** The video takes 60% of the width and the tab
   panel the rest — watched and read at once, which is the whole point of a
   transcript that follows the playhead. It is a ratio rather than a floor, so
@@ -620,6 +632,7 @@ an account:
 | `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom, with no top bar and the whole window                                                                                         |
 | `/courses/{spaceId}/rewards`             | What this course has given you: the codes, what they are for, and how to use them                                                                                     |
 | `/my-courses`                            | The courses you are registered for, wherever they came from                                                                                                           |
+| `/favourites`                            | The lessons you have hearted, newest first, with the course each came from                                                                                            |
 | `/sign-in`                               | Amplify's sign-in, then straight back to whatever you were doing (`?next=`)                                                                                           |
 
 The catalog used to _be_ `/`. It is its own page now — a name in the top bar
@@ -985,7 +998,7 @@ All endpoints require `Authorization: Bearer <Cognito ID token>`.
 | DELETE | `/contents/{contentId}/favourite`                      | Unfavourite it                                                         |
 | PUT    | `/contents/{contentId}/playlist`                       | Add it to the caller's learning playlist                               |
 | DELETE | `/contents/{contentId}/playlist`                       | Remove it from it                                                      |
-| GET    | `/me/favourites`                                       | Everything the caller has favourited                                   |
+| GET    | `/me/favourites`                                       | Everything the caller has favourited (`?type=CONTENT` for one kind)    |
 | GET    | `/me/playlist`                                         | The caller's learning playlist                                         |
 | GET    | `/contents/{contentId}/comments`                       | Its discussion, as two-level threads                                   |
 | POST   | `/contents/{contentId}/comments`                       | Comment on it, or reply to a comment                                   |
@@ -1399,14 +1412,14 @@ pointers, and a pointer whose target is gone is skipped when their list is read.
 
 Five things a learner does: **favouriting** content, keeping a **learning
 playlist**, **commenting**, saving **loops** — named stretches of a lesson's
-video, for hearing a piece again — and marking a lesson **done**. Favouriting
-content and the playlist are infrastructure ahead of the classroom UI that will
-use them; commenting, loops and progress are built end to end, on the lesson
-page.
+video, for hearing a piece again — and marking a lesson **done**. The heart, the
+comments, the loops and progress are built end to end — the classroom draws them
+and the marketplace lists what was hearted at `/favourites`; the learning
+playlist is the one with an API and a typed client and no screen over it yet.
 
 | Table               | Keys                                     | Purpose                                                                |
 | ------------------- | ---------------------------------------- | ---------------------------------------------------------------------- |
-| `FavouritesTable`   | `userId` (hash) + `targetKey` (range)    | a favourite of content or of a comment                                 |
+| `FavouritesTable`   | `userId` (hash) + `targetKey` (range)    | a favourite of content, of a comment, or of a loop                     |
 | `PlaylistTable`     | `userId` (hash) + `contentId` (range)    | what a learner means to watch; GSI `UserAddedIndex` (userId + addedAt) |
 | `CommentsTable`     | `contentId` (hash) + `commentId` (range) | a lesson's discussion, replies included                                |
 | `ContentLoopsTable` | `userId` (hash) + `loopKey` (range)      | a learner's named stretches of a lesson's video                        |
@@ -1634,13 +1647,12 @@ assignment made after the scan.
 > DynamoDB tables never appear in it.
 
 **Not built yet:** enrollment, the drip unlocking a scheduled space describes,
-and the classroom UI over the rest of the learner state — favouriting content
-and the learning playlist have a complete API and a typed client, but nothing in
-the app calls them yet. Comments and loops are built end to end, on the lesson
-page. Members can be invited, given a role, re-sent, and removed, and the
-invitation is emailed through SES — but that needs a verified sending identity
-and an account out of the SES sandbox, or the mail is delivered nowhere (see
-[Members](#members)).
+and the screen over the learning playlist — favouriting, commenting, loops and
+progress are built end to end, and the playlist has a complete API and a typed
+client but nothing in the app calls it yet. Members can be invited, given a role,
+re-sent, and removed, and the invitation is emailed through SES — but that needs
+a verified sending identity and an account out of the SES sandbox, or the mail is
+delivered nowhere (see [Members](#members)).
 
 ## Security notes / best practices
 

@@ -6,6 +6,7 @@ import type {
   CommentThread,
   ContentResponse,
   CreateCommentPayload,
+  FavouriteTargetType,
   ListCommentsResponse,
 } from '@play/types';
 
@@ -13,22 +14,41 @@ import type {
  * The frontend half of the learner surface: favouriting content, keeping a
  * learning playlist, and the discussion on a piece of content.
  *
- * No page renders any of this yet — the classroom does. It is here now so that
- * the classroom is a UI over an API that already exists, rather than a UI that
- * arrives with an API still to be written behind it.
+ * The heart and the discussion are drawn by the classroom, and the lessons
+ * somebody has hearted are listed by the marketplace's favourites page. The
+ * playlist is the one thing here with no screen yet: its API and its hooks
+ * exist so the page over it is a page rather than a page and a half.
  */
 
+/**
+ * The favourites prefix, and each question asked under it.
+ *
+ * The base key is a prefix rather than a key of its own, so a heart invalidates
+ * every favourites question at once: the lesson it was pressed on, the list of
+ * hearted lessons, and the counts beside them are three reads of one fact, and
+ * one of them being stale is the bug this shape prevents.
+ */
+const FAVOURITES = ['learning', 'favourites'] as const;
+
 export const learningKeys = {
-  favourites: ['learning', 'favourites'] as const,
+  favourites: FAVOURITES,
+  favouritesOf: (type?: FavouriteTargetType) => [...FAVOURITES, type ?? 'ALL'] as const,
   playlist: ['learning', 'playlist'] as const,
   comments: (contentId: string) => ['content', contentId, 'comments'] as const,
 };
 
-/** Everything the caller has favourited — content and comments. */
-export function useFavourites() {
+/**
+ * Everything the caller has favourited, or everything of one kind.
+ *
+ * The kind is part of the cache key rather than a filter applied after the
+ * fetch: "the videos I hearted" and "everything I hearted" are two different
+ * reads, and one stored under the other's key would answer the wrong question
+ * with a right-looking list.
+ */
+export function useFavourites(type?: FavouriteTargetType) {
   return useQuery({
-    queryKey: learningKeys.favourites,
-    queryFn: () => api.listFavourites(),
+    queryKey: learningKeys.favouritesOf(type),
+    queryFn: () => api.listFavourites(type),
   });
 }
 

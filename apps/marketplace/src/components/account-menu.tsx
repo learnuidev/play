@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuthenticator } from '@aws-amplify/ui-react';
-import { BookOpenIcon, LogOutIcon, UserIcon } from 'lucide-react';
+import { BookOpenIcon, HeartIcon, LogOutIcon, UserIcon } from 'lucide-react';
 import { Button } from '@ui/components/ui/button';
 import {
   DropdownMenu,
@@ -17,9 +17,10 @@ import {
 /**
  * The signed-in reader's account menu.
  *
- * Two things, and both are about them rather than about a community: the courses
- * they are taking, and signing out. The marketplace has no organizations to
- * navigate — who runs a course is not the reader's business.
+ * Three things, and all of them are about them rather than about a community:
+ * the courses they are taking, the lessons they kept, and signing out. The
+ * marketplace has no organizations to navigate — who runs a course is not the
+ * reader's business.
  */
 export function AccountMenu() {
   const router = useRouter();
@@ -43,6 +44,12 @@ export function AccountMenu() {
           <Link href="/my-courses">
             <BookOpenIcon />
             My learning
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/favourites">
+            <HeartIcon />
+            Favourites
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

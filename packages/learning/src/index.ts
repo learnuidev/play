@@ -10,8 +10,9 @@
  *
  * So the barrel is the package's public surface: the classroom, the routes it
  * asks the app for, and the card a course is listed with. Everything else — the
- * transcript, the loops, the outline, the authoring dialogs — is imported by its
- * own path, which is what the studio's screens already do.
+ * transcript, the loops, the outline, the heart the classroom draws, the
+ * authoring dialogs — is imported by its own path, which is what the studio's
+ * screens and the marketplace's favourites page already do.
  */
 export * from './classroom';
 export * from './lib/learning-routes';

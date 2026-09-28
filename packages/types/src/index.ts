@@ -1099,15 +1099,23 @@ export interface UploadContentFileResponse {
   };
 }
 
-export type FavouriteTargetType = 'CONTENT' | 'COMMENT';
+/**
+ * What a favourite can be aimed at: a lesson, one comment on one, or a loop
+ * somebody kept. The API writes `LOOP` rows too, so a list that only knows the
+ * first two is a list that meets a third kind it cannot name.
+ */
+export type FavouriteTargetType = 'CONTENT' | 'COMMENT' | 'LOOP';
 
-/** One learner's favourite, over a piece of content or a single comment. */
+/** One learner's favourite, over a lesson, a comment, or a loop. */
 export interface Favourite {
   userId: string;
   targetKey: string;
   targetType: FavouriteTargetType;
   targetId: string;
+  /** The lesson the comment or loop hangs off, so it can be read back. */
   contentId?: string;
+  /** Who owns a favourited loop: a loop is keyed by its owner as well as its id. */
+  targetOwnerId?: string;
   createdAt: number;
 }
 
@@ -1115,6 +1123,7 @@ export interface Favourite {
 export interface FavouriteEntry extends Favourite {
   content?: Content;
   comment?: Comment;
+  loop?: ContentLoop;
 }
 
 /** A piece of content in a learner's playlist. */

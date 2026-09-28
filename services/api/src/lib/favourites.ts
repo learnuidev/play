@@ -110,6 +110,18 @@ export interface ListFavouritesResult {
 export interface ListFavouritesOptions {
   limit: number;
   exclusiveStartKey?: Record<string, unknown>;
+  /**
+   * Only favourites of this kind.
+   *
+   * One learner's favourites are one key space ordered by target key, so the
+   * whole list arrives grouped: every comment, then every lesson, then every
+   * loop. A screen that wants one kind — the marketplace's favourites page
+   * wants the lessons — is therefore a `begins_with` on that same key rather
+   * than a page read and thrown away, which is the difference between "the
+   * videos I hearted" being one query and being however many pages of comment
+   * hearts happen to sit in front of them.
+   */
+  targetType?: FavouriteTargetType;
 }
 
 /**
@@ -117,18 +129,30 @@ export interface ListFavouritesOptions {
  * ids are ULIDs, lists each kind in the order its targets were created rather
  * than the order they were favourited in. That is the order a profile reads
  * best in; a strictly chronological list would need a second index for a
- * tie-break nobody has asked for.
+ * tie-break nobody has asked for, and a page that would rather show the newest
+ * first has the row's own `createdAt` to sort by.
  */
 export async function listFavourites(
   userId: string,
   opts: ListFavouritesOptions,
 ): Promise<ListFavouritesResult> {
+  // The kind is part of the sort key, so narrowing to one is a condition on the
+  // key rather than a filter applied after the read: DynamoDB's `FilterExpression`
+  // would still spend the page size on rows the caller never sees.
+  const narrowed = Boolean(opts.targetType);
+
   const res = await client.send(
     new QueryCommand({
       TableName: FAVOURITES_TABLE,
-      KeyConditionExpression: '#userId = :userId',
-      ExpressionAttributeNames: { '#userId': 'userId' },
-      ExpressionAttributeValues: { ':userId': userId },
+      KeyConditionExpression: narrowed
+        ? '#userId = :userId AND begins_with(#targetKey, :prefix)'
+        : '#userId = :userId',
+      ExpressionAttributeNames: narrowed
+        ? { '#userId': 'userId', '#targetKey': 'targetKey' }
+        : { '#userId': 'userId' },
+      ExpressionAttributeValues: narrowed
+        ? { ':userId': userId, ':prefix': `${opts.targetType}#` }
+        : { ':userId': userId },
       ScanIndexForward: true,
       Limit: opts.limit,
       ExclusiveStartKey: opts.exclusiveStartKey,

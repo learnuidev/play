@@ -42,9 +42,14 @@ export function SiteHeader() {
             Discover
           </Link>
           {status === 'authenticated' && (
-            <Link href="/my-courses" className="transition-colors hover:text-foreground">
-              My learning
-            </Link>
+            <>
+              <Link href="/my-courses" className="transition-colors hover:text-foreground">
+                My learning
+              </Link>
+              <Link href="/favourites" className="transition-colors hover:text-foreground">
+                Favourites
+              </Link>
+            </>
           )}
         </nav>
 

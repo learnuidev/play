@@ -23,6 +23,7 @@ import type {
   CreateApiKeyPayload,
   CreateApiKeyResponse,
   FavouriteResponse,
+  FavouriteTargetType,
   GrantRewardPayload,
   InviteMemberPayload,
   InviteMemberResponse,
@@ -565,7 +566,19 @@ export const api = {
   removeFromPlaylist: (contentId: string) =>
     request<PlaylistResponse>(`/contents/${contentId}/playlist`, { method: 'DELETE' }),
 
-  listFavourites: () => request<ListFavouritesResponse>('/me/favourites'),
+  /**
+   * The caller's own favourites, or only one kind of them.
+   *
+   * The whole list is what a profile draws; one kind is what a screen wants, and
+   * the API answers the narrower question with a narrower read rather than a
+   * page whose other rows are discarded here.
+   *
+   * The list asks for the API's largest page rather than its default twenty, for
+   * the reason the key list does: a favourites page that stopped at twenty
+   * without saying so would be a page hiding the video you were looking for.
+   */
+  listFavourites: (type?: FavouriteTargetType) =>
+    request<ListFavouritesResponse>(`/me/favourites?limit=100${type ? `&type=${type}` : ''}`),
 
   listPlaylist: () => request<ListPlaylistResponse>('/me/playlist'),
 

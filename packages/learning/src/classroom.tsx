@@ -7,7 +7,6 @@ import {
   CaptionsIcon,
   CheckIcon,
   ChevronLeftIcon,
-  HeartIcon,
   ListTreeIcon,
   Loader2Icon,
   MoreHorizontalIcon,
@@ -54,6 +53,7 @@ import {
 import { AnimatedTranscript } from "@learning/components/content/animated-transcript";
 import { ContentComments } from "@learning/components/content/content-comments";
 import { ContentDetailsDialog } from "@learning/components/content/content-details-dialog";
+import { ContentFavourite } from "@learning/components/content/content-favourite";
 import { ContentFiles } from "@learning/components/content/content-files";
 import { ContentLoops } from "@learning/components/content/content-loops";
 import { CourseContents } from "@learning/components/content/course-contents";
@@ -167,11 +167,15 @@ const NO_SCROLLBAR =
  * either: the discussion sits under the video and says how many it has where it
  * is written, and a copy up here only made the line longer than the thing it was
  * annotating.
+ *
+ * The favourites went the same way, one step further: the count sits in the
+ * heart that moves it (`ContentFavourite`) rather than on this line beside the
+ * button that moves it, because a number in one place and the control for it in
+ * another reads as two facts about the lesson instead of one.
  */
 function Meta({ content }: { content: Content }) {
   const stats = [
     { icon: PaperclipIcon, value: content.fileCount, label: "files" },
-    { icon: HeartIcon, value: content.favouriteCount, label: "favourites" },
   ].filter((stat) => stat.value > 0);
 
   if (stats.length === 0) return null;
@@ -937,8 +941,8 @@ function ClassroomBody({
           part worth keeping gone: a heading that size made the lesson the
           subject of its own page, when the video is. Below `md` the row wraps —
           the breadcrumb, then what the lesson carries and its actions, then the
-          pill — because a name squeezed between two controls is not a name at
-          700 pixels either. */}
+          heart and the pill together — because a name squeezed between controls
+          is not a name at 700 pixels either. */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <Link
           href={routes.course(spaceId)}
@@ -1002,57 +1006,70 @@ function ClassroomBody({
           )}
         </div>
 
-        {/* The opposite corner to the way back, and the opposite thing: one
-            leaves the lesson, the other finishes it. `ml-auto` is what keeps it
-            in that corner on a narrow window, where the counts and the lesson's
-            actions have taken a line of their own. */}
-        <Button
-          variant={completed ? "outline" : "default"}
-          size="lg"
-          // A pill, and the only one on the page: it is the lesson's one
-          // decision — you are done here — and a shape of its own is what says
-          // so without a second colour saying it.
-          className={
-            completed
-              ? "ml-auto shrink-0 gap-1.5 rounded-full border-emerald-600/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:text-emerald-200"
-              : "ml-auto shrink-0 gap-1.5 rounded-full"
-          }
-          onClick={() =>
-            completion.mutate(completed, {
-              onSuccess: ({ completed: nowComplete, earned }) => {
-                if (nowComplete) toast.success("Lesson marked as complete");
+        {/* The opposite corner to the way back, and the opposite things: one
+            saves the lesson for later, the other finishes it. `ml-auto` is on
+            the pair rather than on either button, so they travel together —
+            the heart pushed to the corner by a pill it does not belong to
+            would read as a control of the pill's rather than of the lesson's. */}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {/* A favourite belongs to somebody, so a reader with no account is
+              offered no heart: there is no list of theirs to put it in. */}
+          {viewerId && (
+            <ContentFavourite
+              contentId={content.contentId}
+              favourited={data?.viewer.favourited ?? false}
+              count={content.favouriteCount}
+            />
+          )}
 
-                // What the milestone check issued, said out loud: a reward
-                // nobody is told about is not a reward, and the tab it lives on
-                // is not where somebody finishing a lesson is looking.
-                if (earned && earned.length > 0) {
-                  toast.success(
-                    earned.length === 1
-                      ? "You earned a reward"
-                      : `You earned ${earned.length} rewards`,
-                    {
-                      description: earned
-                        .map((grant) => grant.code ?? "A reward to claim")
-                        .join(" · "),
-                    },
-                  );
-                }
-              },
-              onError: (err) =>
-                toast.error(
-                  err instanceof Error
-                    ? err.message
-                    : "Could not save your progress",
-                ),
-            })
-          }
-          disabled={completion.isPending}
-        >
-          {completion.isPending ? (
-            <Loader2Icon className="animate-spin" />
-          ) : null}
-          {completed ? "Completed" : "Complete lesson"}
-        </Button>
+          <Button
+            variant={completed ? "outline" : "default"}
+            size="lg"
+            // A pill, and the only one on the page: it is the lesson's one
+            // decision — you are done here — and a shape of its own is what says
+            // so without a second colour saying it.
+            className={
+              completed
+                ? "shrink-0 gap-1.5 rounded-full border-emerald-600/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:text-emerald-200"
+                : "shrink-0 gap-1.5 rounded-full"
+            }
+            onClick={() =>
+              completion.mutate(completed, {
+                onSuccess: ({ completed: nowComplete, earned }) => {
+                  if (nowComplete) toast.success("Lesson marked as complete");
+
+                  // What the milestone check issued, said out loud: a reward
+                  // nobody is told about is not a reward, and the tab it lives on
+                  // is not where somebody finishing a lesson is looking.
+                  if (earned && earned.length > 0) {
+                    toast.success(
+                      earned.length === 1
+                        ? "You earned a reward"
+                        : `You earned ${earned.length} rewards`,
+                      {
+                        description: earned
+                          .map((grant) => grant.code ?? "A reward to claim")
+                          .join(" · "),
+                      },
+                    );
+                  }
+                },
+                onError: (err) =>
+                  toast.error(
+                    err instanceof Error
+                      ? err.message
+                      : "Could not save your progress",
+                  ),
+              })
+            }
+            disabled={completion.isPending}
+          >
+            {completion.isPending ? (
+              <Loader2Icon className="animate-spin" />
+            ) : null}
+            {completed ? "Completed" : "Complete lesson"}
+          </Button>
+        </div>
       </div>
 
       {/* The video on the left, everything filed under it on the right — except
