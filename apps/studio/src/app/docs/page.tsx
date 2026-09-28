@@ -67,7 +67,7 @@ import {
 export const metadata: Metadata = {
   title: 'Play API reference — read Play from your own code',
   description:
-    'The public, read-only API: courses, lessons, transcripts and media, authenticated with one x-api-key header. Every endpoint documented, with a playground.',
+    'The public API: courses, lessons, transcripts and media — read with an API key or an OAuth access token, and written with scopes a person agrees to. Every endpoint documented, with a playground.',
 };
 export default function ApiDocsPage() {
   // Step three of the quickstart is a real request, built from the same
@@ -102,7 +102,7 @@ export default function ApiDocsPage() {
                   v1
                 </Badge>
                 <span className="text-sm text-muted-foreground">
-                  Read-only, by API key or OAuth
+                  Reads, and three writes, by key or OAuth
                 </span>
               </div>
 
@@ -114,7 +114,8 @@ export default function ApiDocsPage() {
                 lessons themselves — the video, the transcript, the notes and the files — reachable
                 by a script, a partner&rsquo;s backend, or a classroom you build somewhere else.
                 Bring an API key and read as its owner, or let people sign in to your app and read
-                as them.
+                as them — and, with the scopes they agree to, keep their progress and post the
+                comments they write.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-card-foreground">
@@ -137,8 +138,8 @@ export default function ApiDocsPage() {
                 />
                 <Fact
                   icon={<ShieldCheckIcon className="size-4" />}
-                  title="Read-only"
-                  body="A key reads courses, lessons and their media. It cannot write, publish, or change anything."
+                  title="Mostly a reader"
+                  body="Courses, lessons and their media, read with a key or a token. Three things under /v1 write, and all three need an OAuth token whose owner agreed to the scope: progress, favourites and comments."
                 />
                 <Fact
                   icon={<ZapIcon className="size-4" />}
@@ -273,11 +274,13 @@ Authorization: Bearer play_at_3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c`}
                 ))}
               </dl>
               <p className="mt-3 text-xs text-muted-foreground">
-                An API key holds every one of these except{' '}
-                <span className="font-mono">profile:read</span>, plus{' '}
+                An API key holds the five reads — every one of these except{' '}
+                <span className="font-mono">profile:read</span> — plus{' '}
                 <span className="font-mono">organization:courses:read</span> when it was made for an
-                organization. Nothing writes: <span className="font-mono">/v1</span> is read-only for
-                both credentials.
+                organization. It holds <strong>no write scope at all</strong>: a key is a script&rsquo;s
+                credential with a fixed reach chosen once, and speaking as somebody or changing their
+                record is a permission a person grants to an app on a consent screen. The three writes
+                at the end of the list are reachable with an OAuth token and nothing else.
               </p>
             </div>
 

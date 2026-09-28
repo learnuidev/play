@@ -458,8 +458,9 @@ product cannot use.
   envelope as every other error here, which is what an integration can read. An
   earlier design answered 403 from a Deny policy; the shape is now consistent
   instead of split between ours and API Gateway's.
-- **`/v1` is read-only and deliberately small.** Adding to it is a decision, not a
-  route.
+- **`/v1` is small and deliberately curated.** Adding to it is a decision, not a
+  route. Most of it reads; the four writes are listed below, under the scopes
+  they cost.
 - **The docs page is data.** A changed response is one object in
   `lib/api-reference.ts`, and the page, the examples and the cURL commands all
   come from it.
@@ -508,13 +509,28 @@ as before.
 
 ### Scopes are what an app may do; a key's reach is what it always was
 
-An API key is not scoped on its row. It holds the read-only catalogue
+An API key is not scoped on its row. It holds the five reads
 (`courses:read`, `lessons:read`, `lessons:stream`), plus
 `organization:courses:read` when its owner named an organization — which is
 exactly the reach keys have always had, now expressed in the vocabulary the OAuth
 side uses so that a handler asks one question of either credential. A key never
 holds `profile:read`: a key belongs to a script, and no person agreed to anything
 about their own account when it was made.
+
+**A key holds no write scope either, and that is the line the writes drew.** Three
+things under `/v1` change somebody's own record — marking a lesson complete,
+saving one to their favourites, and posting a comment under their name — and all
+three are reachable only with an OAuth token whose owner agreed to the scope:
+`learning:write` for the two toggles and `comments:write` for the one that speaks
+for a person. Reading that record (`learning:read`, on `GET /v1/me/learning`) is a
+separate grant from changing it, because seeing what somebody has saved is not the
+same permission as changing it, and a consent screen that merged them would be
+offering more than its sentence said.
+
+The reason writes are OAuth-only is not the scope table: it is that a key has
+*nobody behind it*. A key is minted once, by a person, for a script, with a fixed
+reach and no screen to agree to anything on — and there is no honest way to ask it
+"may this comment appear under your name".
 
 Each `/v1` handler names the scope it needs (`requireScope(caller, 'lessons:read')`)
 rather than the authorizer deciding from the route. A fact about a route belongs
