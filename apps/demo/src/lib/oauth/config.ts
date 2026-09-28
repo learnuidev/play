@@ -38,21 +38,34 @@ export const CLIENT_ID = process.env.NEXT_PUBLIC_PLAY_CLIENT_ID ?? "";
 /**
  * What this app asks for.
  *
- * Four scopes, and read-only: the person who authorizes it can read their own
- * profile, the published catalog, course outlines and lessons, and can play the
- * video. `lessons:stream` is on the list rather than assumed — it is the one
- * permission a catalog-shaped app does not need, and asking for it is a choice
- * this app makes because it plays lessons.
+ * Seven scopes, and they are worth reading as three groups, because that is how
+ * a consent screen reads them:
  *
- * The app must be *registered* for these too: asking for a scope the app is not
- * registered for fails the whole authorization request rather than quietly
- * dropping it, which is what the setup card says to paste into the studio.
+ * - **Reading Play**: the person's profile, the published catalog, a course's
+ *   outline and lessons, and the video itself. `lessons:stream` is separate from
+ *   `lessons:read` on purpose — it is the one permission a catalog-shaped app
+ *   does not need, and asking for it is a choice this app makes because it plays
+ *   lessons.
+ * - **The person's own learning record**: `learning:read` to see what they have
+ *   finished and saved, `learning:write` to change it. Separate because seeing
+ *   what somebody saved is not the same permission as changing it.
+ * - **Speaking as them**: `comments:write`, which puts their name on a comment.
+ *   The one grant here that is about what other people will see.
+ *
+ * The app must be *registered* for every one of them: asking for a scope the app
+ * is not registered for fails the whole authorization request rather than quietly
+ * dropping it. The setup card lists the exact string to paste into the studio,
+ * and changing an app's scopes ends the authorizations it already has — so this
+ * is a set worth getting right the first time.
  */
 export const SCOPES = [
   "profile:read",
   "courses:read",
   "lessons:read",
   "lessons:stream",
+  "learning:read",
+  "learning:write",
+  "comments:write",
 ] as const;
 
 /**

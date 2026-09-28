@@ -70,7 +70,8 @@ export default function HomePage() {
               <ArrowRightIcon />
             </Button>
             <span className="text-xs text-muted-foreground">
-              Asks for {SCOPES.length} read-only permissions, listed below.
+              Asks for {SCOPES.length} permissions — reads, your learning record, and one that
+              posts as you. They are listed below.
             </span>
           </div>
         </div>
@@ -148,10 +149,11 @@ export default function HomePage() {
         <div className="rounded-3xl border border-border/60 bg-card p-6 text-card-foreground">
           <h2 className="text-base font-semibold tracking-tight">What it cannot do</h2>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            No lesson is marked complete, no comment is posted, and nothing is enrolled in — the
-            public API has no writes at all. Nor can it reach a course you cannot: the token acts as
-            you, so an unpublished course of somebody else&rsquo;s is a 403 whether it is asked for
-            here or anywhere else.
+            It cannot reach a course you cannot: the token acts as you, so somebody else&rsquo;s
+            unpublished course is a 403 whether it is asked for here or anywhere else. It cannot
+            enrol you in anything, delete a lesson, or change a course. Of the three things it can
+            write — your progress, your favourites, a comment — none is anybody else&rsquo;s to
+            change, and a comment can be withdrawn in Play but not from here.
           </p>
         </div>
       </section>

@@ -53,7 +53,7 @@ export function SetupCard({ redirectUri }: { redirectUri: string }) {
             <Field label="Name" value="Fieldnotes" />
             <Field
               label="What does it do?"
-              value="A read-only study companion: your courses, lessons and transcripts in one place."
+              value="A study companion: your courses, lessons and transcripts — and a place to keep your progress, favourites and notes."
             />
             <Field label="Redirect URI" value={redirectUri} />
             <Field

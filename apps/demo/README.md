@@ -13,7 +13,9 @@ code:
 - **What can somebody build on `/v1`?** A classroom: an outline, a lesson, the
   video, the transcript that follows along word by word, and the files beside it
   — using the *same* player and transcript components Play's own apps use, driven
-  entirely by the public API.
+  entirely by the public API. It also *writes*: marking lessons complete, saving
+  them, and posting a comment under the authorizer's name, each behind a scope they
+  agreed to.
 
 What it deliberately is not: Play. There is no `@play/auth` and no `@play/api` in
 this app's tree — no sign-in, no Cognito, no session. It holds an OAuth token and
@@ -38,15 +40,22 @@ prose.
    | Name | `Fieldnotes` |
    | What does it do? | anything one sentence long — it is what the consent screen shows |
    | Redirect URI | `http://localhost:4000/auth/play/callback` |
-   | Scopes | `profile:read`, `courses:read`, `lessons:read`, `lessons:stream` |
+   | Scopes | `profile:read`, `courses:read`, `lessons:read`, `lessons:stream`, `learning:read`, `learning:write`, `comments:write` |
    | Public client? | **yes** |
 
    Two of those are easy to get wrong, so they are worth repeating. The redirect
    URI is matched **exactly** — scheme, host, port and path, no wildcards — because
    it is where Play sends a code that acts as somebody. And the app has to be
-   *registered* for `lessons:stream`: a new app starts with three scopes, asking
-   for a fourth it is not registered for fails the whole authorization request,
-   and the demo plays video, so it asks.
+   *registered* for **all seven** scopes: a new app starts with three, and asking
+   for one it is not registered for fails the whole authorization request (with
+   `invalid_scope`, naming the one it does not have) rather than quietly dropping
+   it. This app plays video, keeps your progress and posts comments, so it asks
+   for the scopes that do those three things.
+
+   Editing an app's scopes in the studio **ends the authorizations it already
+   has** — a person agreed to a list printed on a screen, so a changed list is
+   asked again. Adding the two new scopes therefore means signing in again on the
+   next visit, which is the intended behaviour rather than a bug.
 
    **Three ways a redirect URI goes wrong, and what each looks like.** Play refuses
    with `redirect_uri is not registered for this app`, naming the URI it was asked
@@ -112,22 +121,25 @@ redirect URI and scopes and the box ticked.
 | `/` | The flow end to end, the scopes asked for, and the identity Play returns — including the profile, which is the one permission that is about a person rather than a catalog |
 | `/auth/callback` | The second leg: reading `code` and `state`, checking the state, and spending the code with the verifier that never left the tab |
 | `/courses` | `GET /v1/courses` — and the fact that the answer depends on *who* authorized the app |
-| `/courses/{spaceId}` | The classroom. Published courses come from the catalog; a course nobody has listed still opens, through the route authorized by access rather than by publication |
+| `/courses/{spaceId}` | The classroom. Published courses come from the catalog; a course nobody has listed still opens, through the route authorized by access rather than by publication. Mark complete, save, and comment from here — and the saved list at the foot of the page is read back from Play with `GET /v1/me/learning` |
 
 Every page ends with the list of endpoints it called, so the screen stops being
 magic and becomes five documented requests.
 
 ## What it does not do, on purpose
 
-- **Nothing is written.** The public API is read-only; there is no
-  "mark complete", no comment, no enrolment. A demo that appeared to write would
-  be demonstrating an API that does not exist.
 - **Nothing beyond what the person can read.** The token acts as them, so asking
   for somebody else's unpublished course is a 403 whether it is asked for here or
   anywhere else.
-- **No progress, favourites or loops.** Those are endpoints behind a signed-in
-  session in Play's own apps, not part of `/v1` — the line the public API draws,
-  visible as the tabs the shared classroom has here and the ones it does not.
+- **No replies to comments, and no editing or deleting one.** The API posts a
+  top-level comment and nothing else. Posting is the permission; rewriting or
+  retracting under somebody's name is a larger one, and a comment can always be
+  withdrawn in Play by the person whose name is on it.
+- **No enrolment, and nothing that changes a course.** The three writes are the
+  whole of it: somebody's own progress, their own favourites, and a comment.
+- **No loops or playlists.** Those are features of Play's own classroom, reached
+  with a session rather than a token — the line the public API draws, visible as
+  the tabs the shared classroom has here and the ones it does not.
 
 ## How it is put together
 

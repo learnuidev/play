@@ -6,10 +6,11 @@ import { ArrowLeftIcon, EyeOffIcon, Loader2Icon, TriangleAlertIcon } from 'lucid
 import { Badge } from '@ui/components/ui/badge';
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
-import { getCourse, getSections, ApiError } from '@/lib/api/v1';
+import { ApiError, getCourse, getMyLearning, getSections } from '@/lib/api/v1';
 import { useAsync } from '@/lib/use-async';
 import { Outline } from './outline';
 import { LessonPanel } from './lesson-panel';
+import { SavedLessons } from './saved-lessons';
 import { RequestNote } from '@/components/request-note';
 import type { CatalogCourse, CatalogSection } from '@play/types';
 
@@ -29,6 +30,37 @@ import type { CatalogCourse, CatalogSection } from '@play/types';
  */
 export function Classroom({ spaceId }: { spaceId: string }) {
   const [selected, setSelected] = useState<string | undefined>(undefined);
+
+  /**
+   * What this person has finished and saved, for every lesson on the page.
+   *
+   * One read of `/v1/me/learning` for the whole outline, kept in state afterwards
+   * so the tick and the heart move the moment a write lands rather than after a
+   * refetch. Both sets are held as sets of ids: the outline draws a mark beside
+   * every lesson, and asking "is this one done" per row is a lookup, not a search.
+   *
+   * A refusal is remembered too, and shown: without `learning:read` this endpoint
+   * answers 403 and names the scope, and a classroom that quietly drew nothing
+   * would be hiding the one sentence that explains why.
+   */
+  const learning = useAsync(() => getMyLearning(), [spaceId]);
+  const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [favourited, setFavourited] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!learning.data) return;
+    setCompleted(new Set(learning.data.completed.map((entry) => entry.contentId)));
+    setFavourited(new Set(learning.data.favourites.map((entry) => entry.contentId)));
+  }, [learning.data]);
+
+  const mark = useCallback((contentId: string, next: { completed?: boolean; favourited?: boolean }) => {
+    if (next.completed !== undefined) {
+      setCompleted((current) => withId(current, contentId, next.completed as boolean));
+    }
+    if (next.favourited !== undefined) {
+      setFavourited((current) => withId(current, contentId, next.favourited as boolean));
+    }
+  }, []);
 
   const course = useAsync<{
     course: CatalogCourse | undefined;
@@ -157,7 +189,13 @@ export function Classroom({ spaceId }: { spaceId: string }) {
       <div className="mt-8 grid gap-8 lg:grid-cols-[18rem_1fr]">
         <aside className="lg:sticky lg:top-16 lg:max-h-[calc(100svh-6rem)] lg:overflow-y-auto">
           {sections.length > 0 ? (
-            <Outline sections={sections} currentId={currentId} onSelect={select} />
+            <Outline
+              sections={sections}
+              currentId={currentId}
+              completed={completed}
+              favourited={favourited}
+              onSelect={select}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">
               This course has no sections yet, which is a state rather than an error: a course is
@@ -172,6 +210,11 @@ export function Classroom({ spaceId }: { spaceId: string }) {
               key={currentId}
               contentId={currentId}
               {...(nextLesson ? { nextLesson } : {})}
+              state={{
+                completed: completed.has(currentId),
+                favourited: favourited.has(currentId),
+              }}
+              onStateChange={(next) => mark(currentId, next)}
             />
           ) : (
             <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/70 px-6 py-20 text-center">
@@ -183,6 +226,15 @@ export function Classroom({ spaceId }: { spaceId: string }) {
           )}
         </div>
       </div>
+
+      <SavedLessons
+        lessons={learning.data?.favourites ?? []}
+        loading={learning.loading}
+        error={learning.error?.message}
+        currentId={currentId}
+        spaceId={spaceId}
+        onSelect={select}
+      />
 
       <RequestNote
         endpoints={[
@@ -201,4 +253,12 @@ export function Classroom({ spaceId }: { spaceId: string }) {
       />
     </div>
   );
+}
+
+/** A set with one id added or removed, as a new set — state is not mutated here. */
+function withId(current: Set<string>, id: string, present: boolean): Set<string> {
+  const next = new Set(current);
+  if (present) next.add(id);
+  else next.delete(id);
+  return next;
 }

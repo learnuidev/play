@@ -33,7 +33,7 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
         </span>
 
         <nav className="ml-4 hidden items-center gap-3 sm:flex">
-          {pathname !== '/courses' && (
+          {!pathname.startsWith('/courses') && (
             <Link
               href="/courses"
               className="text-sm text-muted-foreground transition-colors hover:text-foreground"

@@ -13,7 +13,8 @@ import type { NotesDocument } from '@play/types';
  *
  * That is a perfectly good answer for a reader, and a lossy one for an editor:
  * the structure is mostly gone, and nothing could be written back. It is what
- * "read-only, and deliberately small" means in practice.
+ * "curated, and deliberately small" means in practice — the API hands over the
+ * document the author wrote and lets the caller decide what to do with it.
  */
 export function notesToText(document: NotesDocument | undefined): string {
   if (!document) return '';

@@ -26,8 +26,9 @@ export function ConnectPrompt({ what }: { what: string }) {
         <p className="text-lg font-medium tracking-tight">Connect your Play account first</p>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
           {what.charAt(0).toUpperCase() + what.slice(1)} is read with a credential Play issues to
-          this app. You will be sent to Play to sign in and approve {SCOPES.length} read-only
-          permissions, then brought straight back here.
+          this app. You will be sent to Play to sign in and approve {SCOPES.length} permissions —
+          mostly reads, plus your own progress and favourites, and one that posts a comment as you —
+          then brought straight back here.
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-3">

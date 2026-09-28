@@ -1,6 +1,6 @@
 'use client';
 
-import { PlayCircleIcon, VideoOffIcon } from 'lucide-react';
+import { CheckCircle2Icon, HeartIcon, PlayCircleIcon, VideoOffIcon } from 'lucide-react';
 import { cn } from '@ui/lib/utils';
 import type { CatalogSection } from '@play/types';
 
@@ -19,10 +19,16 @@ import type { CatalogSection } from '@play/types';
 export function Outline({
   sections,
   currentId,
+  completed,
+  favourited,
   onSelect,
 }: {
   sections: CatalogSection[];
   currentId: string | undefined;
+  /** What this person has finished, from `GET /v1/me/learning`. */
+  completed: Set<string>;
+  /** What they have saved. Drawn beside the lesson, as Play's own outline does. */
+  favourited: Set<string>;
   onSelect: (contentId: string) => void;
 }) {
   return (
@@ -48,12 +54,17 @@ export function Outline({
                         : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                     )}
                   >
-                    {lesson.hasVideo ? (
+                    {completed.has(lesson.contentId) ? (
+                      <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+                    ) : lesson.hasVideo ? (
                       <PlayCircleIcon className="mt-0.5 size-3.5 shrink-0" />
                     ) : (
                       <VideoOffIcon className="mt-0.5 size-3.5 shrink-0 opacity-60" />
                     )}
-                    <span className="min-w-0 leading-snug">{lesson.title}</span>
+                    <span className="min-w-0 flex-1 leading-snug">{lesson.title}</span>
+                    {favourited.has(lesson.contentId) && (
+                      <HeartIcon className="mt-0.5 size-3 shrink-0 fill-current text-muted-foreground" />
+                    )}
                   </button>
                 </li>
               );

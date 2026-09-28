@@ -4,9 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRightIcon,
+  CheckCircle2Icon,
+  CheckIcon,
   DownloadIcon,
   FileTextIcon,
+  HeartIcon,
   Loader2Icon,
+  MessageSquareIcon,
   NotebookPenIcon,
   TriangleAlertIcon,
   VideoOffIcon,
@@ -14,13 +18,23 @@ import {
 import { Badge } from '@ui/components/ui/badge';
 import { Button } from '@ui/components/ui/button';
 import { Separator } from '@ui/components/ui/separator';
+import { Textarea } from '@ui/components/ui/textarea';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@ui/components/ui/tabs';
 import { AnimatedTranscript } from '@learning/components/content/animated-transcript';
 import { VideoPlayer, type VideoPlayerHandle } from '@learning/components/video-player';
 import { buildTranscriptLines } from '@learning/lib/transcript';
 import { parseVtt } from '@learning/lib/vtt';
-import { getAttachments, getLesson, getStream, getSubtitles, ApiError } from '@/lib/api/v1';
+import {
+  ApiError,
+  commentOnLesson,
+  getAttachments,
+  getLesson,
+  getStream,
+  getSubtitles,
+  setLessonCompletion,
+  setLessonFavourite,
+} from '@/lib/api/v1';
 import { notesToText } from '@/lib/api/notes';
 import { useAsync } from '@/lib/use-async';
 
@@ -49,9 +63,15 @@ import { useAsync } from '@/lib/use-async';
 export function LessonPanel({
   contentId,
   nextLesson,
+  state,
+  onStateChange,
 }: {
   contentId: string;
   nextLesson?: { contentId: string; title: string };
+  /** What this person has done with this lesson, as `/v1/me/learning` said. */
+  state: { completed: boolean; favourited: boolean };
+  /** Called after a write lands, so the outline's own marks stay in step. */
+  onStateChange: (next: { completed?: boolean; favourited?: boolean }) => void;
 }) {
   const lesson = useAsync(() => getLesson(contentId), [contentId]);
   const player = useRef<VideoPlayerHandle>(null);
@@ -83,6 +103,61 @@ export function LessonPanel({
   );
 
   const notes = useMemo(() => notesToText(lesson.data?.notes), [lesson.data]);
+
+  /**
+   * The three writes, each with its own pending flag and its own error.
+   *
+   * Deliberately not one shared "saving…": a person pressing Save while a
+   * completion is in flight should see the heart move and the tick still
+   * working, and one error message for both would say the wrong thing about
+   * which call failed. The errors are shown as the API wrote them — a 403 that
+   * names a missing scope is the most useful sentence on this page, because it
+   * says exactly which permission the app was not given.
+   */
+  const [pending, setPending] = useState<null | 'completion' | 'favourite' | 'comment'>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [posted, setPosted] = useState<{ authorName: string; body: string } | null>(null);
+  const [draft, setDraft] = useState('');
+
+  async function run(which: 'completion' | 'favourite' | 'comment', work: () => Promise<void>) {
+    setPending(which);
+    setError(null);
+    try {
+      await work();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That did not work.');
+    } finally {
+      setPending(null);
+    }
+  }
+
+  function toggleCompletion() {
+    const next = !state.completed;
+    void run('completion', async () => {
+      const answer = await setLessonCompletion(contentId, next);
+      onStateChange({ completed: answer.completed });
+    });
+  }
+
+  function toggleFavourite() {
+    const next = !state.favourited;
+    void run('favourite', async () => {
+      const answer = await setLessonFavourite(contentId, next);
+      onStateChange({ favourited: answer.favourited });
+    });
+  }
+
+  function postComment(event: React.FormEvent) {
+    event.preventDefault();
+    const body = draft.trim();
+    if (!body) return;
+
+    void run('comment', async () => {
+      const answer = await commentOnLesson(contentId, body);
+      setPosted({ authorName: answer.comment.authorName, body: answer.comment.body });
+      setDraft('');
+    });
+  }
 
   if (lesson.loading) {
     return (
@@ -152,6 +227,59 @@ export function LessonPanel({
           )}
         </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{current.title}</h1>
+
+        {/*
+          The two things this app can *do* with a lesson, and the state of each.
+          Both are writes under `/v1`, both need `learning:write`, and both are
+          idempotent — so a double press is a toggle that has already happened
+          rather than a second completion.
+        */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant={state.completed ? 'default' : 'secondary'}
+            size="sm"
+            onClick={toggleCompletion}
+            disabled={pending !== null}
+            aria-pressed={state.completed}
+          >
+            {pending === 'completion' ? (
+              <Loader2Icon className="animate-spin" />
+            ) : state.completed ? (
+              <CheckCircle2Icon />
+            ) : (
+              <CheckIcon />
+            )}
+            {state.completed ? 'Completed' : 'Mark complete'}
+          </Button>
+
+          <Button
+            type="button"
+            variant={state.favourited ? 'default' : 'secondary'}
+            size="sm"
+            onClick={toggleFavourite}
+            disabled={pending !== null}
+            aria-pressed={state.favourited}
+          >
+            {pending === 'favourite' ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <HeartIcon className={state.favourited ? 'fill-current' : undefined} />
+            )}
+            {state.favourited ? 'Saved' : 'Save'}
+          </Button>
+
+          <span className="text-xs text-muted-foreground">
+            Written to your own record at Play, with <span className="font-mono">learning:write</span>.
+          </span>
+        </div>
+
+        {error && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3">
+            <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+            <p className="text-xs leading-relaxed text-muted-foreground">{error}</p>
+          </div>
+        )}
       </div>
 
       <Tabs defaultValue={notes ? 'notes' : 'transcript'}>
@@ -166,6 +294,10 @@ export function LessonPanel({
           <TabsTrigger value="material">
             <FileTextIcon className="size-4" />
             Material
+          </TabsTrigger>
+          <TabsTrigger value="discussion">
+            <MessageSquareIcon className="size-4" />
+            Comment
           </TabsTrigger>
         </TabsList>
 
@@ -202,6 +334,47 @@ export function LessonPanel({
 
         <TabsContent value="material" className="mt-5">
           <MaterialTab contentId={contentId} fileCount={current.fileCount} />
+        </TabsContent>
+
+        <TabsContent value="discussion" className="mt-5">
+          <form onSubmit={postComment} className="grid gap-2">
+            <label htmlFor="comment-body" className="text-sm font-medium">
+              Say something about this lesson
+            </label>
+            <Textarea
+              id="comment-body"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="What did you take from it?"
+              rows={3}
+              maxLength={2000}
+            />
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" size="sm" disabled={pending !== null || draft.trim().length === 0}>
+                {pending === 'comment' ? <Loader2Icon className="animate-spin" /> : <MessageSquareIcon />}
+                Post comment
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Posted as you, with <span className="font-mono">comments:write</span> — your name goes
+                on it, and it appears in Play&rsquo;s own discussion.
+              </span>
+            </div>
+          </form>
+
+          {posted && (
+            <div className="mt-4 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3">
+              <p className="text-xs text-muted-foreground">Posted</p>
+              <p className="mt-1 text-sm font-medium">{posted.authorName}</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{posted.body}</p>
+            </div>
+          )}
+
+          <p className="mt-4 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+            This app can post a top-level comment and nothing else: it cannot reply, edit or delete,
+            and it cannot read the thread back — Play&rsquo;s own lesson page is where the discussion
+            lives. That boundary is the API&rsquo;s, not this app&rsquo;s restraint: posting is the
+            permission, and rewriting or retracting under somebody&rsquo;s name is a larger one.
+          </p>
         </TabsContent>
       </Tabs>
 

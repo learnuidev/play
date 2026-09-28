@@ -1,5 +1,9 @@
 import type {
+  ApiCommentResponse,
+  ApiCompletionResponse,
+  ApiFavouriteResponse,
   ApiIdentityResponse,
+  ApiLearningResponse,
   ApiLesson,
   ApiLessonAttachmentsResponse,
   ApiLessonResponse,
@@ -18,16 +22,21 @@ import { currentAccessToken } from '@/lib/oauth/store';
 /**
  * The public API, as this app uses it.
  *
- * Six endpoints, and the file is worth reading top to bottom because that is the
- * entire surface a third-party app has: the catalog, a course and its outline, a
- * lesson, its video, its subtitles and its attachments — plus who the credential
- * is and who is behind it. Nothing here writes anything, and nothing here reads
- * anything an API key could not; what makes it *personal* is that the token acts
- * as the person who authorized this app, so the courses it lists are the ones
- * they can read.
+ * Twelve calls, and the file is worth reading top to bottom because that is the
+ * entire surface a third-party app has. The reads: the catalog, a course and its
+ * outline, a lesson, its video, its subtitles, its attachments, who the
+ * credential is, who is behind it, and what that person has saved and finished.
+ * The writes: marking a lesson complete, saving one to their favourites, and
+ * posting a comment under their name.
  *
- * Every call goes through `v1()`, which is where the one thing all six share
- * lives: presenting the access token, and renewing it once if the answer is 401.
+ * What makes any of it *personal* is the token: it acts as the person who
+ * authorized this app, so the courses listed are the ones they can read, the
+ * record written is their own, and a comment posted is theirs by name. The writes
+ * are the three calls at the bottom, and every one of them needs a scope the
+ * person agreed to on a consent screen.
+ *
+ * Every call goes through `v1()`, which is where what they all share lives:
+ * presenting the access token, and renewing it once if the answer is 401.
  */
 
 /** An HTTP failure, carrying the API's own message so a page can print it. */
@@ -96,6 +105,17 @@ export async function getProfile(): Promise<ApiProfileResponse> {
   return v1<ApiProfileResponse>('/v1/me/profile');
 }
 
+/**
+ * What this person has saved and finished.
+ *
+ * The read that makes the two write calls above worth having: an app that can
+ * mark a lesson complete and cannot see which lessons are complete draws a
+ * checkbox that lies, and the same goes for a heart. One response, both lists.
+ */
+export async function getMyLearning(): Promise<ApiLearningResponse> {
+  return v1<ApiLearningResponse>('/v1/me/learning');
+}
+
 /** The published catalog. */
 export async function listCourses(limit = 24): Promise<CatalogCourse[]> {
   const response = await v1<ListCatalogResponse>(`/v1/courses?limit=${limit}`);
@@ -148,3 +168,50 @@ export async function getAttachments(contentId: string): Promise<ApiLessonAttach
 
 /** A course as a card draws it, for the catalog list. */
 export type CourseCard = CatalogCourse;
+
+/* ------------------------------------------------------------------ writing */
+
+/**
+ * Mark a lesson done, or take it back off the list.
+ *
+ * One call with a method rather than two functions, because it is one piece of
+ * state and a checkbox is doing the same thing either way — the same reason the
+ * API models it as one resource with `PUT` and `DELETE`.
+ */
+export async function setLessonCompletion(
+  contentId: string,
+  completed: boolean,
+): Promise<ApiCompletionResponse> {
+  return v1<ApiCompletionResponse>(`/v1/lessons/${encodeURIComponent(contentId)}/completion`, {
+    method: completed ? 'PUT' : 'DELETE',
+  });
+}
+
+/** Save a lesson to the authorizer's favourites, or unsave it. */
+export async function setLessonFavourite(
+  contentId: string,
+  favourited: boolean,
+): Promise<ApiFavouriteResponse> {
+  return v1<ApiFavouriteResponse>(`/v1/lessons/${encodeURIComponent(contentId)}/favourite`, {
+    method: favourited ? 'PUT' : 'DELETE',
+  });
+}
+
+/**
+ * Post a comment on a lesson, as the person who authorized this app.
+ *
+ * The one call in this file that puts somebody's name on something. Top-level
+ * comments only: the API has no way to reply, deliberately, and no way to edit
+ * or delete — a comment posted here is removed in Play, by the person whose name
+ * is on it.
+ */
+export async function commentOnLesson(
+  contentId: string,
+  body: string,
+): Promise<ApiCommentResponse> {
+  return v1<ApiCommentResponse>(`/v1/lessons/${encodeURIComponent(contentId)}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body }),
+  });
+}
