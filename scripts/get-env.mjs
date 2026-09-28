@@ -181,9 +181,20 @@ const MANAGED = new Set(Object.keys(env));
 const preserved = [];
 try {
   for (const line of fs.readFileSync(outFile, "utf8").split("\n")) {
-    const match = /^\s*([A-Z0-9_]+)\s*=/.exec(line);
+    const trimmed = line.trimEnd();
+    if (!trimmed.trim()) continue;
+
+    // Comments are kept as they are: a note somebody wrote beside a value is
+    // often the reason the value is what it is, and it is the part a generated
+    // file cannot reconstruct.
+    if (trimmed.trimStart().startsWith("#")) {
+      preserved.push(trimmed);
+      continue;
+    }
+
+    const match = /^\s*([A-Z0-9_]+)\s*=/.exec(trimmed);
     if (!match || MANAGED.has(match[1])) continue;
-    preserved.push(line.trimEnd());
+    preserved.push(trimmed);
     MANAGED.add(match[1]);
   }
 } catch {

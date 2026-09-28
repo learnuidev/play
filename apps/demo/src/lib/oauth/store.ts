@@ -49,6 +49,21 @@ export function getTokens(): StoredTokens | null {
   return tokens;
 }
 
+/**
+ * Hydration, once, with everybody who needs it waiting on the same promise.
+ *
+ * The API client asks for this before its first request, so the first request
+ * carries the token a previous visit left behind rather than going out bare and
+ * coming back 401. It runs at most once, deliberately: a second read of storage
+ * after a refresh had replaced the tokens would put the *old* pair back.
+ */
+let hydration: Promise<void> | null = null;
+
+export function hydrateOnce(): Promise<void> {
+  hydration ??= Promise.resolve().then(hydrate);
+  return hydration;
+}
+
 /** Where the tokens are, written through to storage so a reload keeps them. */
 export function setTokens(next: StoredTokens | null): void {
   tokens = next;
@@ -85,6 +100,10 @@ let refreshing: Promise<StoredTokens | null> | null = null;
  * to both is the same: ask the person to sign in again.
  */
 export async function currentAccessToken(): Promise<string | null> {
+  // Before the first request of a page load, and only then: after that the store
+  // is authoritative and this resolves immediately.
+  await hydrateOnce();
+
   const current = tokens;
   if (!current) return null;
 

@@ -67,6 +67,32 @@ export function redirectUri(): string {
   return `${window.location.origin}${CALLBACK_PATH}`;
 }
 
+/**
+ * The client secret, for the deployments that insist on one.
+ *
+ * **This app should not have one, and the empty default is the point.** It is a
+ * browser app: a secret in a bundle is readable by anybody who opens dev tools,
+ * so it proves nothing and pretending otherwise is worse than having none. PKCE
+ * is what actually protects the flow, and Play requires it of confidential
+ * clients too.
+ *
+ * The variable exists because registering an app as a *public* client is a
+ * deliberate choice on a form, and somebody who missed it ends up with a
+ * confidential app and a secret. Rather than making them find the checkbox, this
+ * app accepts the secret, sends it the way a confidential client does — and says
+ * loudly, on the front page, that it should not have one. An honest mistake shown
+ * honestly is a better demonstration of the design than a failure to load.
+ *
+ * Whether a client can keep a secret cannot be changed after registration, so
+ * the fix is a new app registered as a public one.
+ */
+export const CLIENT_SECRET = process.env.NEXT_PUBLIC_PLAY_CLIENT_SECRET ?? '';
+
+/** Whether this build is holding a secret it should not have. */
+export function isConfidential(): boolean {
+  return CLIENT_SECRET.length > 0;
+}
+
 /** Whether the app has been registered — that is, whether `CLIENT_ID` was set. */
 export function isConfigured(): boolean {
   return CLIENT_ID.length > 0 && API_BASE_URL.length > 0;

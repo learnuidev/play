@@ -7,7 +7,8 @@ it from turning back into two apps with copies of each other's code.
 play/
 ├── apps/
 │   ├── studio/           Play Studio — the creator's app (Next.js, port 3000)
-│   └── marketplace/      Play Marketplace — the learner's app (Next.js, port 3001)
+│   ├── marketplace/      Play Marketplace — the learner's app (Next.js, port 3001)
+│   └── demo/             Play Demo — somebody else's app (Next.js, port 4000)
 ├── packages/
 │   ├── types/            @play/types     — the shapes the API and both apps agree on
 │   ├── api/              @play/api       — the API client + React Query hooks
@@ -27,6 +28,7 @@ npm install                       # once, at the root: one lockfile, hoisted nod
 
 npm run dev:studio                # http://localhost:3000
 npm run dev:marketplace           # http://localhost:3001
+npm run dev:demo                  # http://localhost:4000
 
 npm run build                     # both apps
 npm run build:studio              # one app
@@ -41,6 +43,30 @@ npm run deploy --workspace play-backend   # serverless deploy (services/api)
 The two apps are deployed to Vercel as two projects built from this one
 repository; the backend keeps deploying from here to AWS, as above. That setup,
 and the configuration on the other side of it, is [deploy.md](deploy.md).
+
+### The third app is not part of the product
+
+`apps/demo` is a **client**, not a surface: a third-party app that signs people
+in with Play over OAuth and reads `/v1` with the token it is given. It exists so
+that the public API and the OAuth flow have a worked example that is not one of
+Play's own apps — the two things a reader cannot check from inside the product.
+
+Three consequences worth knowing before editing it:
+
+- **It may not import `@play/auth` or `@play/api`.** Those are Play's own
+  signed-in client; the moment this app used either, it would stop being a
+  demonstration of what somebody outside can build. Its only dependencies are
+  `@play/types`, `@play/ui` and `@play/learning` — the shapes, the primitives,
+  and the classroom pieces that are genuinely shared.
+- **It is not deployed and has no backend.** It runs on localhost, holds its
+  tokens in the browser, and registers as a *public* OAuth client precisely
+  because it has nowhere to keep a secret.
+- **It needs one manual step** — registering its client id in the studio — which
+  is why `apps/demo/README.md` exists and why the app renders those instructions
+  itself when the variable is unset.
+
+Its README is the document for it; this one only needs to know that it is a leaf.
+Do not add shared code to `packages/*` for its sake alone.
 
 ## Packages ship source
 
@@ -205,9 +231,11 @@ missing build setting. `packages/auth` is on the list for the sign-in screen's
 own markup (the mark and its headline are Tailwind; the form under them is
 Amplify's and is styled in `packages/auth/src/sign-in.css` instead).
 
-Both apps import the same `globals.css` copy (the theme tokens and variants are
-identical); if the design changes, it changes in both, and the primitives it
-feeds live in one place.
+All three apps import the same `globals.css` copy (the theme tokens and variants
+are identical); if the design changes, it changes in all of them, and the
+primitives it feeds live in one place. The demo's copy lists two `@source` lines
+rather than three, because `@play/auth` is not on its list — nothing there signs
+in to Play.
 
 ### The vocabulary
 
@@ -496,4 +524,9 @@ of permission needs to know which permission to ask its user for.
   printed on a screen; an app whose list has changed is not the app they agreed
   to, so the next visit shows the consent screen again. Editing a name or a
   redirect URI disconnects nobody.
+
+`apps/demo` is the worked example of all of this from the outside: it registers as
+a public client, runs the flow by hand, and reads the classroom endpoints with the
+token it is given. When a change to the OAuth surface would break a client, that
+app is the thing to open — it is the only client here that is not Play.
 

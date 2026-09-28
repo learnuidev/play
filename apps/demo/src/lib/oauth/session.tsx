@@ -12,7 +12,7 @@ import {
 import type { ReactNode } from 'react';
 import { beginAuthorization, revokeTokens, type StoredTokens } from './client';
 import { isConfigured } from './config';
-import { currentAccessToken, getTokens, hydrate, setTokens, subscribe } from './store';
+import { currentAccessToken, getTokens, hydrateOnce, setTokens, subscribe } from './store';
 
 /**
  * The session this app is holding, as the screens see it.
@@ -48,8 +48,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    hydrate();
-    setReady(true);
+    void hydrateOnce().then(() => setReady(true));
   }, []);
 
   /**

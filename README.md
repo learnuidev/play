@@ -80,7 +80,8 @@ One npm workspace, four kinds of package:
 play/
 ├── apps/
 │   ├── studio/           Play Studio — the creator's app (Next.js, port 3000)
-│   └── marketplace/      Play Marketplace — the learner's app (Next.js, port 3001)
+│   ├── marketplace/      Play Marketplace — the learner's app (Next.js, port 3001)
+│   └── demo/             Play Demo — a third-party app on the same API (port 4000)
 ├── packages/             shared source, consumed by both apps
 │   ├── types/            the shapes the API and both apps agree on
 │   ├── api/              the API client and every React Query hook on it
@@ -603,6 +604,7 @@ Then start either app — or both, in two terminals:
 ```bash
 npm run dev:studio        # Play Studio      → http://localhost:3000
 npm run dev:marketplace   # Play Marketplace → http://localhost:3001
+npm run dev:demo          # Play Demo        → http://localhost:4000
 ```
 
 The two apps share one user pool, so the same account works in both: sign in to

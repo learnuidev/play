@@ -69,6 +69,23 @@ prose.
 That is the whole setup. There is no secret to rotate, no server to deploy and
 nothing to keep in step with Play beyond the redirect URI.
 
+### If you registered it as a confidential client
+
+The form defaults to a confidential client, and the studio shows a secret to copy,
+so this is an easy thing to do by accident. It also cannot be undone: whether a
+client can keep a secret is decided when it is registered, because the alternative
+is an app that changes shape underneath the people it has already asked.
+
+The app still runs — put the secret in `NEXT_PUBLIC_PLAY_CLIENT_SECRET` and it
+will send it the way a confidential client does — but it will tell you, on the
+front page, that a browser app holding a secret is holding nothing. That warning
+is the useful half of the demo: the mistake is invisible on the consent screen and
+invisible in the network tab, and a secret that does no work is worse than no
+secret, because it teaches that authentication is happening when it is not.
+
+The right fix is a **new app** registered as a public client, with the same
+redirect URI and scopes and the box ticked.
+
 ## What to look at
 
 | Route | What it demonstrates |

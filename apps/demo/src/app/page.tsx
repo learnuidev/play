@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { ArrowRightIcon, KeyRoundIcon, RefreshCwIcon, ShieldCheckIcon } from 'lucide-react';
 import { Button } from '@ui/components/ui/button';
 import { useSession } from '@/lib/oauth/session';
-import { CALLBACK_PATH, SCOPES, STUDIO_URL } from '@/lib/oauth/config';
+import { CALLBACK_PATH, SCOPES, STUDIO_URL, isConfidential } from '@/lib/oauth/config';
 import { SetupCard } from '@/components/setup-card';
 import { IdentityPanel } from '@/components/identity-panel';
+import { SecretWarning } from '@/components/secret-warning';
 
 /**
  * The front page: what this app is, and the one button that makes it work.
@@ -48,6 +49,8 @@ export default function HomePage() {
           asks Play for permission, and then it reads what Play lets it.
         </p>
       </section>
+
+      {isConfidential() && <SecretWarning />}
 
       {!configured ? (
         <div className="mt-10">

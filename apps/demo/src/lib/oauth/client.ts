@@ -1,4 +1,11 @@
-import { API_BASE_URL, CLIENT_ID, SCOPES, authorizationUrl, redirectUri } from './config';
+import {
+  API_BASE_URL,
+  CLIENT_ID,
+  CLIENT_SECRET,
+  SCOPES,
+  authorizationUrl,
+  redirectUri,
+} from './config';
 import { createPkce, createState } from './pkce';
 
 /**
@@ -18,9 +25,11 @@ import { createPkce, createState } from './pkce';
  * Three things about it are the interesting part, and each is the opposite of
  * what an app that *has* a secret would do:
  *
- * - **No client secret anywhere.** This app is registered as a public client, so
- *   there is nothing to keep — PKCE is what stands in for one. A secret in a
- *   browser bundle would be a secret everybody has.
+ * - **No client secret anywhere** — by default, and that is the intended
+ *   configuration. This app is registered as a public client, so there is nothing
+ *   to keep, and PKCE is what stands in for one. If a secret *is* configured (see
+ *   `config.ts`) it is sent, because the app was registered as confidential; the
+ *   front page says why that is the wrong registration for a browser.
  * - **The refresh token rotates.** Every refresh spends the old one and returns
  *   a new one; a client that stores only the access token will work for an hour
  *   and then have to be authorized again. So both are written back, every time.
@@ -153,6 +162,7 @@ export async function completeAuthorization(callback: CallbackResult): Promise<S
     redirect_uri: redirectUri(),
     code_verifier: pending.verifier,
     client_id: CLIENT_ID,
+    ...clientSecretField(),
   });
 
   return toStoredTokens(tokens);
@@ -169,6 +179,7 @@ export async function refreshTokens(refreshToken: string): Promise<StoredTokens>
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
     client_id: CLIENT_ID,
+    ...clientSecretField(),
   });
   return toStoredTokens(tokens);
 }
@@ -184,8 +195,24 @@ export async function revokeTokens(token: string): Promise<void> {
   await fetch(`${API_BASE_URL}/oauth/revoke`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ token, client_id: CLIENT_ID }).toString(),
+    body: new URLSearchParams({
+      token,
+      client_id: CLIENT_ID,
+      ...clientSecretField(),
+    }).toString(),
   });
+}
+
+/**
+ * `client_secret` when this build has one, and nothing when it does not.
+ *
+ * Written as a spread rather than a conditional field so that the public case
+ * sends no `client_secret` at all — an empty one would be a secret that is
+ * present and wrong, which Play refuses with a different error than a public
+ * client deserves.
+ */
+function clientSecretField(): Record<string, string> {
+  return CLIENT_SECRET ? { client_secret: CLIENT_SECRET } : {};
 }
 
 /** Where to send somebody once they are signed in, and forgets the note. */
