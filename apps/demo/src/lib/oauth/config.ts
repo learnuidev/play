@@ -107,7 +107,7 @@ export function redirectUri(): string {
  * Whether a client can keep a secret cannot be changed after registration, so
  * the fix is a new app registered as a public one.
  */
-export const CLIENT_SECRET = process.env.PLAY_CLIENT_SECRET ?? "";
+export const CLIENT_SECRET = process.env.NEXT_PUBLIC_PLAY_CLIENT_SECRET ?? "";
 
 /** Whether this build is holding a secret it should not have. */
 export function isConfidential(): boolean {
