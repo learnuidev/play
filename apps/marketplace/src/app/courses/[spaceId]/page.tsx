@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -8,13 +8,14 @@ import {
   BookOpenIcon,
   CalendarClockIcon,
   CheckCircle2Icon,
+  CheckIcon,
   CirclePlayIcon,
   GiftIcon,
   Loader2Icon,
   LockIcon,
   UsersIcon,
 } from 'lucide-react';
-import { useEnrollInCourse, useLeaveCourse, useMyRewards } from '@play/api';
+import { useEnrollInCourse, useLeaveCourse, useMyRewards, useSpaceProgress } from '@play/api';
 import { useAuthStatus } from '@play/auth';
 import { SpaceAvatar, spaceAccentColor } from '@learning/components/space/space-avatar';
 import { SpaceTypeBadge } from '@learning/components/space/space-type-badge';
@@ -24,7 +25,13 @@ import { PersonAvatar } from '@play/ui';
 import { formatDate } from '@ui/lib/utils';
 import { useEnrollment } from '@/components/use-enrolled';
 import { useCourseView } from '@/components/use-course-view';
-import type { CatalogCourse, CatalogSection, PublicInstructor } from '@play/types';
+import { CourseProgress } from '@/components/course-progress';
+import type {
+  CatalogCourse,
+  CatalogSection,
+  CourseProgress as CourseProgressData,
+  PublicInstructor,
+} from '@play/types';
 
 /**
  * A course, from the outside: what it is, what it covers, and the button that
@@ -38,6 +45,22 @@ import type { CatalogCourse, CatalogSection, PublicInstructor } from '@play/type
 export default function CoursePage() {
   const { spaceId } = useParams<{ spaceId: string }>();
   const { course, sections, instructors, isLoading, notFound, error } = useCourseView(spaceId);
+
+  /**
+   * How far this reader has got.
+   *
+   * Asked only of somebody who is in the course: the syllabus is public — it is
+   * what a course is weighed by — but a reader's own progress through it is not
+   * a question to put to the API for a stranger, and the endpoint would refuse
+   * it. Signed out, or not registered, this is simply absent, and the page draws
+   * a syllabus with nothing ticked.
+   */
+  const { enrolled } = useEnrollment(spaceId);
+  const { data: progress } = useSpaceProgress(spaceId, enrolled);
+  const completedContentIds = useMemo(
+    () => new Set(progress?.completedContentIds ?? []),
+    [progress],
+  );
 
   if (error) {
     return (
@@ -84,7 +107,7 @@ export default function CoursePage() {
         <CourseCover course={course} />
         <CourseHeader course={course} />
         <Instructors instructors={instructors} />
-        <Syllabus sections={sections} />
+        <Syllabus sections={sections} completedContentIds={completedContentIds} />
       </div>
 
       <aside className="lg:sticky lg:top-20 lg:self-start">
@@ -93,6 +116,7 @@ export default function CoursePage() {
           courseTitle={course.title}
           lessonCount={course.lessonCount}
           firstLessonId={firstLessonId}
+          progress={progress}
         >
           <dl className="grid grid-cols-2 gap-3">
             <Stat icon={<UsersIcon className="size-3.5" />} label="Learning" value={course.studentCount} />
@@ -207,8 +231,22 @@ function Instructors({ instructors }: { instructors: PublicInstructor[] }) {
   );
 }
 
-/** What the course covers: its sections, and the lessons under each. */
-function Syllabus({ sections }: { sections: CatalogSection[] }) {
+/**
+ * What the course covers: its sections, and the lessons under each.
+ *
+ * Every lesson somebody has finished carries a tick, so the syllabus doubles as
+ * the record of what is left. It is the same list either way — a reader who is
+ * not in the course gets it unticked, which is what a course's contents are to
+ * somebody still deciding.
+ */
+function Syllabus({
+  sections,
+  completedContentIds,
+}: {
+  sections: CatalogSection[];
+  /** The lessons this reader has finished. Empty for anybody not registered. */
+  completedContentIds: Set<string>;
+}) {
   return (
     <section className="grid gap-3">
       <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -245,6 +283,16 @@ function Syllabus({ sections }: { sections: CatalogSection[] }) {
                         <BookOpenIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
                       )}
                       <span className="truncate text-sm">{lesson.title}</span>
+
+                      {/* Named for the reader who cannot see it: without the
+                          label the row is simply a lesson, finished or not. */}
+                      {completedContentIds.has(lesson.contentId) && (
+                        <CheckIcon
+                          role="img"
+                          aria-label="Finished"
+                          className="ml-auto size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -269,12 +317,15 @@ function RegisterPanel({
   courseTitle,
   lessonCount,
   firstLessonId,
+  progress,
   children,
 }: {
   spaceId: string;
   courseTitle: string;
   lessonCount: number;
   firstLessonId?: string;
+  /** How far the reader has got, once they are in the course and it is known. */
+  progress?: CourseProgressData;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -333,6 +384,17 @@ function RegisterPanel({
             <CheckCircle2Icon className="size-4" />
             You are registered
           </p>
+
+          {/* What is left, above the way back in: somebody who opens this page
+              rather than continuing from their learning wants to know how far
+              they got before deciding to carry on. */}
+          {progress && (
+            <CourseProgress
+              completedCount={progress.completedCount}
+              lessonCount={progress.lessonCount}
+            />
+          )}
+
           {firstLessonId ? (
             <Button asChild className="w-full">
               <Link href={`${coursePath}/lessons/${firstLessonId}`}>Open the classroom</Link>

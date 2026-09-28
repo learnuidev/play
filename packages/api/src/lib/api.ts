@@ -44,7 +44,7 @@ import type {
   ListMyCoursesResponse,
   ListMyRewardsResponse,
   ListMySpaceInvitationsResponse,
-  ListNextLessonsResponse,
+  ListMyProgressResponse,
   ListOrganizationApiKeysResponse,
   ListOrgMembersResponse,
   ListOrganizationsResponse,
@@ -67,6 +67,7 @@ import type {
   SectionResponse,
   SpaceMemberResponse,
   SpaceMemberRole,
+  SpaceProgressResponse,
   SpaceStatsResponse,
   SpaceThumbnailResponse,
   StreamResponse,
@@ -318,6 +319,13 @@ export const api = {
    */
   listSections: (spaceId: string) => request<ListSectionsResponse>(`/spaces/${spaceId}/sections`),
 
+  /**
+   * How far the caller has got in one course, with the lessons they have
+   * finished named — what an outline ticks and a course page measures.
+   */
+  getSpaceProgress: (spaceId: string) =>
+    request<SpaceProgressResponse>(`/spaces/${spaceId}/progress`),
+
   /** Edits what a course says about itself, from the overview tab. */
   updateSpace: (spaceId: string, patch: UpdateSpacePayload) =>
     request<CreateSpaceResponse>(`/spaces/${spaceId}`, {
@@ -392,8 +400,8 @@ export const api = {
   /** Courses the caller is in, wherever they are. */
   listMyCourses: () => request<ListMyCoursesResponse>('/me/spaces'),
 
-  /** The lesson the caller is up to in each of those courses, in one read. */
-  listMyNextLessons: () => request<ListNextLessonsResponse>('/me/next-lessons'),
+  /** How far the caller has got in each of those courses, in one read. */
+  listMyProgress: () => request<ListMyProgressResponse>('/me/progress'),
 
   /**
    * The marketplace catalog: courses their authors have listed, newest first.

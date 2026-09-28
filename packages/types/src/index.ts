@@ -699,21 +699,41 @@ export interface ListMyCoursesResponse {
 }
 
 /**
- * Where a learner is up to in one of the courses they are in.
+ * How far one learner has got in one course.
  *
- * `contentId` is the lesson they should open next: the first one in the course's
- * own order they have not finished, or the first lesson again once they have
- * finished them all. It is absent for a course with nothing published, which is
- * the one case with no lesson to open at all — a card that would otherwise
- * offer a link to nowhere can tell the two apart.
+ * The lesson they should open next is the first one in the course's own order
+ * they have not finished, or the first lesson again once they have finished them
+ * all. It is absent for a course with nothing published, which is the one case
+ * with no lesson to open at all — a card that would otherwise offer a link to
+ * nowhere can tell the two apart.
+ *
+ * The counts are read against the lessons *still published*: a lesson somebody
+ * finished and its author later deleted is not part of what they have got
+ * through, and counting it would report a course as more finished than it is.
  */
-export interface CourseNextLesson {
+export interface CourseProgress {
   spaceId: string;
-  contentId?: string;
+  /** How many lessons the course has published. */
+  lessonCount: number;
+  /** How many of them this learner has finished. */
+  completedCount: number;
+  nextContentId?: string;
 }
 
-export interface ListNextLessonsResponse {
-  courses: CourseNextLesson[];
+export interface ListMyProgressResponse {
+  courses: CourseProgress[];
+}
+
+/**
+ * One course's progress, with the finished lessons named.
+ *
+ * The ids travel only on the course's own read: an outline draws a tick per row
+ * and needs to know which rows — while a list of courses needs the numbers and
+ * nothing else, and a hundred lesson ids per course would be paid for on every
+ * card.
+ */
+export interface SpaceProgressResponse extends CourseProgress {
+  completedContentIds: string[];
 }
 
 /**

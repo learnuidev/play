@@ -1169,13 +1169,24 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
-  list-my-next-lessons:
-    handler: src/functions/learning/list-my-next-lessons.handler
+  list-my-progress:
+    handler: src/functions/learning/list-my-progress.handler
     events:
       - http:
-          # The lesson the signed-in learner is up to in each of their courses,
-          # across every organization. One read for a page of course cards.
-          path: me/next-lessons
+          # How far the signed-in learner has got in each of their courses,
+          # across every organization: one read for a page of course cards.
+          path: me/progress
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  get-space-progress:
+    handler: src/functions/learning/get-space-progress.handler
+    events:
+      - http:
+          # The same for one course, with its finished lessons named, so an
+          # outline can tick them.
+          path: spaces/{spaceId}/progress
           method: get
           cors: true
           authorizer: ${self:custom.authorizer}

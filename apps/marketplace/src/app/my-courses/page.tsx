@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { GraduationCapIcon } from 'lucide-react';
-import { useMyCourses, useNextLessons } from '@play/api';
+import { useMyCourses, useMyProgress } from '@play/api';
 import { AuthGate, useIsSignedIn } from '@play/auth';
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
@@ -37,19 +37,20 @@ export default function MyCoursesPage() {
 function EnrolledCourses() {
   const signedIn = useIsSignedIn();
   const { data, isLoading } = useMyCourses(signedIn);
-  const { data: nextLessons } = useNextLessons(signedIn);
+  const { data: progress } = useMyProgress(signedIn);
   const courses = data?.courses ?? [];
 
   /**
-   * Where each course is up to, by course.
+   * How far each course has got, by course.
    *
    * A course the API has not answered for yet — and one with nothing published
-   * — is simply not in here, and its card opens the course page instead of a
-   * lesson. Nothing is guessed on the reader's behalf in the meantime: a link to
-   * the wrong lesson is worse than a link to the course.
+   * — is simply not in here, and its card shows no percentage and opens the
+   * course page instead of a lesson. Nothing is guessed on the reader's behalf
+   * in the meantime: a link to the wrong lesson, or a number about their own
+   * work that is not theirs, is worse than a card that says less.
    */
-  const nextBySpace = new Map(
-    (nextLessons?.courses ?? []).map((course) => [course.spaceId, course.contentId]),
+  const progressBySpace = new Map(
+    (progress?.courses ?? []).map((course) => [course.spaceId, course]),
   );
 
   if (isLoading) {
@@ -84,7 +85,7 @@ function EnrolledCourses() {
           key={course.space.spaceId}
           space={course.space}
           role={course.role}
-          nextContentId={nextBySpace.get(course.space.spaceId)}
+          progress={progressBySpace.get(course.space.spaceId)}
         />
       ))}
     </div>

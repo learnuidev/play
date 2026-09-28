@@ -15,6 +15,7 @@ export * from './modules/loop/loop.queries';
 export * from './modules/organization/member.queries';
 export * from './modules/organization/organization.queries';
 export * from './modules/profile/profile.queries';
+export * from './modules/progress/progress.queries';
 export * from './modules/reward/reward.queries';
 export * from './modules/section/section.queries';
 export * from './modules/space-member/space-member.queries';

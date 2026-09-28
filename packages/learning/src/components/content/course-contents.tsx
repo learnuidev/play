@@ -1,8 +1,10 @@
 'use client';
 
+import { useMemo } from 'react';
 import Link from 'next/link';
-import { ChevronLeftIcon } from 'lucide-react';
+import { CheckIcon, ChevronLeftIcon } from 'lucide-react';
 import { cn } from '@ui/lib/utils';
+import { useSpaceProgress } from '@api/modules/progress/progress.queries';
 import { useSections } from '@api/modules/section/section.queries';
 import { useSpace } from '@api/modules/space/space.queries';
 import { Skeleton } from '@ui/components/ui/skeleton';
@@ -19,6 +21,10 @@ import { useLearningRoutes } from '@learning/lib/learning-routes';
  *
  * The header still goes back to the course page, where the community's own
  * navigation is waiting — the tab replaced the column, not the way out of it.
+ *
+ * Every lesson already finished carries a tick, which is what turns this from a
+ * table of contents into a record of what is left: the reader who opens it is
+ * usually asking "where was I", and the answer is the first row without one.
  */
 export function CourseContents({
   spaceId,
@@ -35,6 +41,12 @@ export function CourseContents({
   const { data: outline, isLoading } = useSections(spaceId);
   const sections = outline?.sections ?? [];
   const lessons = sections.reduce((total, section) => total + section.contents.length, 0);
+
+  const { data: progress } = useSpaceProgress(spaceId);
+  const finished = useMemo(
+    () => new Set(progress?.completedContentIds ?? []),
+    [progress],
+  );
 
   return (
     <div className="grid gap-4">
@@ -91,19 +103,30 @@ export function CourseContents({
               ) : (
                 section.contents.map((content) => {
                   const active = content.contentId === contentId;
+                  const done = finished.has(content.contentId);
                   return (
                     <li key={content.contentId}>
                       <Link
                         href={routes.lesson(spaceId, content.contentId)}
                         aria-current={active ? 'page' : undefined}
                         className={cn(
-                          'block truncate rounded-md px-2 py-1.5 text-[13px] transition-colors',
+                          'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] transition-colors',
                           active
                             ? 'bg-muted font-medium text-foreground'
                             : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
                         )}
                       >
-                        {content.title}
+                        <span className="min-w-0 flex-1 truncate">{content.title}</span>
+
+                        {/* Named for the reader who cannot see it: without the
+                            label the row is simply a lesson, finished or not. */}
+                        {done && (
+                          <CheckIcon
+                            role="img"
+                            aria-label="Finished"
+                            className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
+                          />
+                        )}
                       </Link>
                     </li>
                   );
