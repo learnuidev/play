@@ -1180,7 +1180,10 @@ export type ApiScope =
   | 'courses:read'
   | 'lessons:read'
   | 'lessons:stream'
-  | 'organization:courses:read';
+  | 'organization:courses:read'
+  | 'learning:read'
+  | 'learning:write'
+  | 'comments:write';
 
 /**
  * An OAuth app: somebody's client, registered by one of our people.
@@ -1401,6 +1404,78 @@ export interface OAuthTokenRecord {
   createdAt: number;
   /** Epoch seconds, which is also the table's TTL attribute. */
   expiresAt: number;
+}
+
+/**
+ * A lesson the caller has saved, as `/v1` lists it.
+ *
+ * The `spaceTitle` comes with it rather than being looked up per row: a list of
+ * saved lessons that says "Lesson 3" five times and never says which course any
+ * of them belongs to is a list somebody has to open five links to read. It costs
+ * one batch read of the courses involved.
+ */
+export interface ApiFavouriteLesson {
+  contentId: string;
+  title: string;
+  spaceId: string;
+  spaceTitle: string;
+  /** 1-based order inside its section, which is where the lesson sits in a course. */
+  position: number;
+  /** Whether it has a video, so a list can offer to play it. */
+  hasVideo: boolean;
+  favouritedAt: number;
+}
+
+/** One lesson the caller has finished. */
+export interface ApiCompletion {
+  contentId: string;
+  spaceId: string;
+  completedAt: number;
+}
+
+/**
+ * The caller's own learning record: what they have saved and what they have
+ * finished.
+ *
+ * One response rather than two routes, because the two questions are asked
+ * together — a classroom drawing a tick and a heart beside every lesson wants
+ * both answers in one read — and because both are the person's own list, bounded
+ * by what they have done rather than by what the catalog holds. Neither is
+ * paged, for the same reason `GET /v1/courses/{spaceId}/sections` is not: it is
+ * one person's own activity, and a page of it would be a page of their history
+ * with the rest hidden.
+ *
+ * Behind `learning:read`, which is deliberately separate from `learning:write`:
+ * seeing what somebody has saved is not the same permission as changing it.
+ */
+export interface ApiLearningResponse {
+  favourites: ApiFavouriteLesson[];
+  completed: ApiCompletion[];
+}
+
+/** The answer to marking a lesson done, or taking it back off the list. */
+export interface ApiCompletionResponse {
+  completed: boolean;
+  /** Present when `completed` is true. Epoch milliseconds. */
+  completedAt?: number;
+}
+
+/** The answer to saving a lesson, or unsaving it. */
+export interface ApiFavouriteResponse {
+  favourited: boolean;
+  /**
+   * How many people have the lesson saved, after this call.
+   *
+   * A count rather than the person's own state alone, because a lesson page
+   * draws both — and it arrives here rather than from a second read, since this
+   * request has just changed it.
+   */
+  favouriteCount: number;
+}
+
+/** What `POST /v1/lessons/{contentId}/comments` answers with. */
+export interface ApiCommentResponse {
+  comment: ApiComment;
 }
 
 /**

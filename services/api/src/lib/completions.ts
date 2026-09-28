@@ -48,6 +48,37 @@ export async function deleteCompletion(
   );
 }
 
+/**
+ * Every lesson this learner has finished, everywhere.
+ *
+ * Paged to the end rather than answering with one page: this is somebody's own
+ * record, bounded by what they have done rather than by what the service holds,
+ * and a caller that has to page through its own history is a caller being told
+ * about an index it should not have to know about. The same reasoning as
+ * `listTokensForGrant` — and the same rule about `LastEvaluatedKey`, which a
+ * query returns instead of an error when it has stopped early.
+ */
+export async function listCompletionsForUser(userId: string): Promise<LessonCompletion[]> {
+  const completions: LessonCompletion[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: COMPLETIONS_TABLE,
+        KeyConditionExpression: '#userId = :userId',
+        ExpressionAttributeNames: { '#userId': 'userId' },
+        ExpressionAttributeValues: { ':userId': userId },
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+    completions.push(...((res.Items ?? []) as LessonCompletion[]));
+    exclusiveStartKey = res.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return completions;
+}
+
 /** Every lesson this learner has finished in a course. */
 export async function listCompletionsInSpace(
   userId: string,

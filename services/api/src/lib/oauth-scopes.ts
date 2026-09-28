@@ -28,8 +28,17 @@ import { HttpError } from './http';
  * Every scope there is.
  *
  * The order is the order a consent screen shows them in: the person's own
- * account first, then the catalog, then the parts of a course, then the widest
- * one, which is the only scope that reaches anything that is not public.
+ * account, then the catalog, then the parts of a course, then **their own
+ * learning record** — what they finished and what they saved — and last the
+ * three that let an app *write* as somebody, which are the ones worth reading
+ * twice before agreeing to.
+ *
+ * The writes are three scopes rather than one, and that is the whole editorial
+ * decision here: "post comments as you" and "mark lessons complete" are
+ * different sentences with different consequences, and a person who wants an app
+ * to keep their progress is not therefore agreeing to let it speak for them.
+ * `learning:read` and `learning:write` are split for the same reason — seeing
+ * what somebody has saved is not changing it.
  */
 export const API_SCOPES: ApiScope[] = [
   'profile:read',
@@ -37,6 +46,9 @@ export const API_SCOPES: ApiScope[] = [
   'lessons:read',
   'lessons:stream',
   'organization:courses:read',
+  'learning:read',
+  'learning:write',
+  'comments:write',
 ];
 
 /**

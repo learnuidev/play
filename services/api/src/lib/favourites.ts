@@ -166,6 +166,34 @@ export async function listFavourites(
 }
 
 /**
+ * Every favourite of one kind a learner has, read to the end.
+ *
+ * `listFavourites` answers one page, because a screen draws one page; this is for
+ * the callers that are asking "what has this person saved" and mean the whole of
+ * it — `/v1`'s learning record, which is bounded by a person's own activity.
+ * Still a query per page underneath: a `Limit` no pages have, not a scan.
+ */
+export async function listAllFavourites(
+  userId: string,
+  targetType?: FavouriteTargetType,
+): Promise<Favourite[]> {
+  const favourites: Favourite[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const page = await listFavourites(userId, {
+      limit: 100,
+      targetType,
+      ...(exclusiveStartKey ? { exclusiveStartKey } : {}),
+    });
+    favourites.push(...page.favourites);
+    exclusiveStartKey = page.lastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return favourites;
+}
+
+/**
  * A learner's favourites with what they point at filled in.
  *
  * A favourite is a pointer, so one whose target has since been deleted is

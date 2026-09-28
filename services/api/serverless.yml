@@ -1573,6 +1573,62 @@ functions:
           method: get
           cors: true
 
+  # The learner's own side of a lesson: what they have done with it, and what
+  # they have said about it. These are the only routes under `/v1` that write,
+  # and each is behind a scope of its own — `learning:write` for the two
+  # toggles, `comments:write` for the one that puts somebody's name on
+  # something. See docs/workspace.md for what that costs a consent screen.
+  complete-lesson:
+    handler: src/functions/public/complete-lesson.handler
+    events:
+      - http:
+          # `PUT` marks it done, `DELETE` takes it back — one resource, two
+          # methods, and one function, because they are one piece of state and a
+          # checkbox is doing the same thing either way.
+          path: v1/lessons/{contentId}/completion
+          method: put
+          cors: true
+      - http:
+          path: v1/lessons/{contentId}/completion
+          method: delete
+          cors: true
+
+  favourite-lesson:
+    handler: src/functions/public/favourite-lesson.handler
+    events:
+      - http:
+          path: v1/lessons/{contentId}/favourite
+          method: put
+          cors: true
+      - http:
+          path: v1/lessons/{contentId}/favourite
+          method: delete
+          cors: true
+
+  create-lesson-comment:
+    handler: src/functions/public/create-lesson-comment.handler
+    events:
+      - http:
+          # A top-level comment, posted as the person who authorized the app.
+          # No replies: a thread is a shape Play's own screen draws, and an app
+          # that can add one half of a conversation should not be able to aim it
+          # at somebody else's answer.
+          path: v1/lessons/{contentId}/comments
+          method: post
+          cors: true
+
+  get-my-learning:
+    handler: src/functions/public/get-my-learning.handler
+    events:
+      - http:
+          # What this credential's person has saved and finished: the read that
+          # makes the two write scopes worth asking for, because an app that can
+          # mark a lesson complete and cannot see which are complete draws a
+          # checkbox that lies.
+          path: v1/me/learning
+          method: get
+          cors: true
+
   # OAuth: letting somebody else's app act as one of our people, with their
   # consent. Two audiences, and the difference between them is the authorizer.
   #

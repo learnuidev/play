@@ -16,6 +16,7 @@ import { TryIt } from './try-it';
 const METHOD_STYLES: Record<ApiEndpoint['method'], string> = {
   GET: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   POST: 'bg-sky-500/10 text-sky-700 dark:text-sky-400',
+  PUT: 'bg-violet-500/10 text-violet-700 dark:text-violet-400',
   PATCH: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
   DELETE: 'bg-rose-500/10 text-rose-700 dark:text-rose-400',
 };

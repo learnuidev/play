@@ -48,7 +48,7 @@ export interface ApiParameter extends ApiField {
 export interface ApiEndpoint {
   /** The anchor it is linked by, and what the rail scrolls to. */
   id: string;
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   path: string;
   summary: string;
   /** One or two sentences on what it is for and anything surprising about it. */
@@ -68,8 +68,13 @@ export interface ApiEndpoint {
    *   authenticating *itself*, before it is given anything to act with.
    * - `browser` — not a call an integration makes at all: a person's browser,
    *   following a redirect, which is what an authorization request is.
+   * - `oauth-write` — an OAuth access token, and **only** that: the endpoints
+   *   that change somebody's own record hold scopes an API key never has, so a
+   *   key calling one is refused with a 403 naming the scope. Writes are
+   *   something a person grants to an app on a consent screen, not something
+   *   minted once for a script.
    */
-  auth: 'key' | 'session' | 'oauth-client' | 'browser';
+  auth: 'key' | 'session' | 'oauth-client' | 'browser' | 'oauth-write';
   parameters?: ApiParameter[];
   body?: ApiField[];
   /** The status it answers with, e.g. `200 OK`. */
@@ -225,6 +230,48 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
           { name: 'oauth.scope', type: 'string?', description: 'The same list, space-delimited, spelled the way OAuth spells it.' },
           { name: 'owner.userId', type: 'string', description: 'Cognito `sub` of the person the credential acts as. Every read is attributed to them.' },
           { name: 'scopes', type: 'array', description: 'Every scope the credential holds. Empty for an API key unless its owner named an organization.' },
+        ],
+      },
+      {
+        id: 'get-my-learning',
+        method: 'GET',
+        path: '/v1/me/learning',
+        summary: 'What this person has saved, and what they have finished.',
+        description:
+          'The read that makes the two write scopes worth asking for: an app that can mark a lesson complete and cannot see which lessons are complete draws a checkbox that lies, and the same goes for a heart. Both lists arrive in one response, because both are drawn beside every lesson in a course outline and asking a lesson at a time would be a request per row.',
+        auth: 'oauth-write',
+        scope: 'learning:read',
+        responseStatus: '200 OK',
+        responseExample: `{
+  "favourites": [
+    {
+      "contentId": "01JQ8Y5E2F4G6H8J0K2M4P6R8S",
+      "title": "Rolling shutter, explained",
+      "spaceId": "01JQ8Y4C1D2E3F4G5H6J7K8M9P",
+      "spaceTitle": "Documentary camera craft",
+      "position": 3,
+      "hasVideo": true,
+      "favouritedAt": 1772582400000
+    }
+  ],
+  "completed": [
+    {
+      "contentId": "01JQ8Y6F3G5H7J9K1M3P5R7T9V",
+      "spaceId": "01JQ8Y4C1D2E3F4G5H6J7K8M9P",
+      "completedAt": 1772668800000
+    }
+  ]
+}`,
+        responseFields: [
+          { name: 'favourites', type: 'array', description: 'The lessons this person has saved, most recently saved first, each with the course it belongs to.' },
+          { name: 'favourites[].spaceTitle', type: 'string', description: 'What the course is called. Read in one batch for the whole list — a list of saved lessons that never says which course any of them is in is a list of links.' },
+          { name: 'favourites[].hasVideo', type: 'boolean', description: 'Whether there is something to play, so the list can offer it.' },
+          { name: 'completed', type: 'array', description: 'The lessons this person has finished, with the course each belongs to.' },
+        ],
+        notes: [
+          'Both lists are returned **whole**, not paged: they are one person’s own activity, bounded by what they have done rather than by what the service holds.',
+          'A favourite whose lesson has since been deleted is dropped rather than reported as broken — the same answer Play’s own list gives for the same row.',
+          'Hearts on *comments* and on *loops* are not here. Those are things somebody saves while reading a discussion, and an app drawing a course has no use for them.',
         ],
       },
       {
@@ -625,6 +672,182 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         ],
         notes: [
           'A lesson whose subtitles are still being generated answers **200** with its status and no tracks, rather than an error — “no captions yet” is a state a page renders, not a failure it has to catch.',
+        ],
+      },
+      {
+        id: 'complete-lesson',
+        method: 'PUT',
+        path: '/v1/lessons/{contentId}/completion',
+        summary: 'Mark a lesson done.',
+        description:
+          'Marks the lesson finished for the person the token acts as, and earns whatever that crossing earns them in the course they are taking. Reading the lesson is the whole authorization — progress is somebody’s own record of what they have finished, not an editorial act and not an assessment — and `learning:write` is what says an app may keep it for them.',
+        auth: 'oauth-write',
+        scope: 'learning:write',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            choices: 'lessons',
+            description: 'The lesson being finished.',
+            example: '01JQ8Y5E2F4G6H8J0K2M4P6R8S',
+          },
+        ],
+        responseExample: `{
+  "completed": true,
+  "completedAt": 1772582400000
+}`,
+        responseFields: [
+          { name: 'completed', type: 'boolean', description: 'Always true on this method — the lesson is done after it.' },
+          { name: 'completedAt', type: 'number', description: 'Epoch milliseconds. The moment it was **first** finished, which is what a repeat call returns.' },
+        ],
+        notes: [
+          '**Idempotent.** Marking a finished lesson done again is still done, and the original `completedAt` is kept — so a client that retries a request it never saw the answer to cannot rewrite history.',
+          'A lesson with no video can be completed. Progress is about the lesson, not about how much of the video was watched.',
+          'A reward earned by crossing a milestone is granted here and read in Play. It is deliberately not in this response: an app keeping a progress list has no business enumerating somebody’s rewards.',
+        ],
+      },
+      {
+        id: 'uncomplete-lesson',
+        method: 'DELETE',
+        path: '/v1/lessons/{contentId}/completion',
+        summary: 'Take a lesson back off the done list.',
+        description:
+          'The other half of the pair, for the client toggling a checkbox. Removing a completion that was never there is not an error: pressing it twice, or on a lesson that was never marked, has asked for the same state either way.',
+        auth: 'oauth-write',
+        scope: 'learning:write',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            choices: 'lessons',
+            description: 'The lesson being unmarked.',
+            example: '01JQ8Y5E2F4G6H8J0K2M4P6R8S',
+          },
+        ],
+        responseExample: `{
+  "completed": false
+}`,
+        notes: ['A reward already earned is **not** taken back: what somebody has been given is theirs.'],
+      },
+      {
+        id: 'favourite-lesson',
+        method: 'PUT',
+        path: '/v1/lessons/{contentId}/favourite',
+        summary: 'Save a lesson to somebody’s favourites.',
+        description:
+          'Saves the lesson for the person the token acts as, and answers with how many people have saved it — which is the number a lesson page draws beside the heart. Favouriting twice is not two favourites and not two increments: the write is conditional, so the count only moves when a row was actually created.',
+        auth: 'oauth-write',
+        scope: 'learning:write',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            choices: 'lessons',
+            description: 'The lesson being saved.',
+            example: '01JQ8Y5E2F4G6H8J0K2M4P6R8S',
+          },
+        ],
+        responseExample: `{
+  "favourited": true,
+  "favouriteCount": 12
+}`,
+        responseFields: [
+          { name: 'favourited', type: 'boolean', description: 'The state after the call.' },
+          { name: 'favouriteCount', type: 'number', description: 'How many people have this lesson saved, after this call. Floored at zero.' },
+        ],
+        notes: [
+          'Only **lessons** can be saved through this API. Play’s own list also holds hearts on comments and on loops — gestures somebody makes while reading a discussion — and those are not things an app does on their behalf.',
+        ],
+      },
+      {
+        id: 'unfavourite-lesson',
+        method: 'DELETE',
+        path: '/v1/lessons/{contentId}/favourite',
+        summary: 'Unsave a lesson.',
+        description:
+          'The other half of the toggle. Removing a favourite that was not there is not an error — the count only moves if a row was actually deleted.',
+        auth: 'oauth-write',
+        scope: 'learning:write',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            choices: 'lessons',
+            description: 'The lesson being unsaved.',
+            example: '01JQ8Y5E2F4G6H8J0K2M4P6R8S',
+          },
+        ],
+        responseExample: `{
+  "favourited": false,
+  "favouriteCount": 11
+}`,
+      },
+      {
+        id: 'create-lesson-comment',
+        method: 'POST',
+        path: '/v1/lessons/{contentId}/comments',
+        summary: 'Post a comment on a lesson.',
+        description:
+          'The one write under `/v1` that puts somebody’s **name** on something: the comment appears in the lesson’s discussion under the name of the person who authorized the app, exactly as if they had typed it in Play. Nobody who can read a lesson needs any further permission to take part in its discussion, which is why `comments:write` is the whole gate.',
+        auth: 'oauth-write',
+        scope: 'comments:write',
+        responseStatus: '201 Created',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            choices: 'lessons',
+            description: 'The lesson being commented on.',
+            example: '01JQ8Y5E2F4G6H8J0K2M4P6R8S',
+          },
+        ],
+        body: [
+          {
+            name: 'body',
+            type: 'string',
+            required: true,
+            description: 'The comment. 1–2000 characters, trimmed.',
+            example: 'This is the clearest explanation of a rolling shutter I have watched.',
+          },
+        ],
+        responseExample: `{
+  "comment": {
+    "contentId": "01JQ8Y5E2F4G6H8J0K2M4P6R8S",
+    "commentId": "01JQ9C1D2E3F4G5H6J7K8M9P0Q",
+    "organizationId": "01JQ8Y2A1B3C4D5E6F7G8H9J0K",
+    "authorId": "8f14e45f-ea6c-4f2b-9d3a-1c2b3a4d5e6f",
+    "authorName": "Dana Ruiz",
+    "body": "This is the clearest explanation of a rolling shutter I have watched.",
+    "replyCount": 0,
+    "favouriteCount": 0,
+    "createdAt": 1772582400000,
+    "updatedAt": 1772582400000,
+    "favourited": false
+  }
+}`,
+        responseFields: [
+          { name: 'comment', type: 'object', description: 'The comment as it was stored, with the author’s name resolved from their profile.' },
+          { name: 'comment.authorName', type: 'string', description: 'Read from their Play profile at the moment of posting — a name can change between two comments, and what somebody was called when they said something is part of what they said.' },
+          { name: 'comment.favourited', type: 'boolean', description: 'Always false on a new comment: nobody has hearted it yet.' },
+        ],
+        notes: [
+          '**Top-level comments only.** There is no way to reply to a comment through this API: threads are a shape Play’s own screen draws, and a client that can add one half of a conversation should not be able to aim it at somebody else’s answer.',
+          '**No editing and no deleting.** A posted comment can be removed in Play, by the person whose name is on it. Posting is the grant here; rewriting and retracting under somebody’s name is a larger one that nothing asked for.',
+          'The lesson’s comment count moves with it, so the discussion reads as one comment longer everywhere it is drawn.',
         ],
       },
       {
@@ -1198,6 +1421,7 @@ export const API_AUTH_LABELS: Record<ApiEndpoint['auth'], string> = {
   session: 'Signed-in session',
   'oauth-client': 'client_id + client_secret',
   browser: 'A person’s browser',
+  'oauth-write': 'OAuth access token only',
 };
 
 /**
@@ -1243,6 +1467,21 @@ export const OAUTH_SCOPE_DOCS: ApiScopeDoc[] = [
     scope: 'organization:courses:read',
     title: 'Read the courses of an organization',
     reach: '`GET /v1/organizations/{orgId}/courses`, published or not. The only scope that reaches anything unpublished, and the person authorizing must be a member of that organization.',
+  },
+  {
+    scope: 'learning:read',
+    title: 'See your progress and your saved lessons',
+    reach: '`GET /v1/me/learning`: what this person has finished and what they have saved. Their own record — no other account is reachable through it.',
+  },
+  {
+    scope: 'learning:write',
+    title: 'Mark lessons complete, and save them',
+    reach: '`PUT`/`DELETE` on `/v1/lessons/{contentId}/completion` and `/favourite`. Changes the person’s own record and nobody else’s, and cannot delete a lesson or a course.',
+  },
+  {
+    scope: 'comments:write',
+    title: 'Post comments as you',
+    reach: '`POST /v1/lessons/{contentId}/comments`. Your name goes on it. Editing and deleting stay in Play, where the person reading the discussion is the one who wrote it.',
   },
 ];
 

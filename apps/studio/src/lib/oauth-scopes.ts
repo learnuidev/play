@@ -53,6 +53,21 @@ export const OAUTH_SCOPE_COPY: Record<ApiScope, ScopeCopy> = {
     description:
       'This is the only permission that reaches anything unpublished. The app reads only organizations you are already a member of.',
   },
+  'learning:read': {
+    title: 'See your progress and your saved lessons',
+    description:
+      'Which lessons you have finished, and which you have saved to your favourites. Yours alone — no other account is reachable this way.',
+  },
+  'learning:write': {
+    title: 'Mark lessons complete, and save them',
+    description:
+      'Changes your own learning record: finishing a lesson, or adding one to your favourites. It cannot touch anybody else’s, and it cannot delete a lesson or a course.',
+  },
+  'comments:write': {
+    title: 'Post comments as you',
+    description:
+      'Anything it posts appears under your name, in the discussion on a lesson. Editing and deleting stay in Play, where you are the one reading them.',
+  },
 };
 
 /**
