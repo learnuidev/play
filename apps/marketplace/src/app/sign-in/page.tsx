@@ -15,10 +15,10 @@ import { Skeleton } from '@ui/components/ui/skeleton';
  * `SignIn` is the shared screen, so this page offers whatever the deployment
  * offers — a password, or Google — without listing the providers itself.
  *
- * What it does bring is the room: the screen's own frame is a windowful unless
- * the app tells it otherwise, and this app keeps its header and footer around
- * somebody who has not decided to sign in yet. So the page hands it what is left
- * of the window instead — see `--sign-in-min-height` in the shared stylesheet.
+ * What it does not bring is the room: the screen is a windowful on its own, and
+ * the frame around it — see `SiteChrome`, which pins its bar over a screenful on
+ * this route rather than taking a slice of the window out of it — is what lets it
+ * be one while somebody who has not decided to sign in yet still has the bar.
  */
 function SignInScreen() {
   const router = useRouter();
@@ -50,7 +50,9 @@ function SignInScreen() {
   // in never sees the form flash before being redirected.
   if (signedIn) {
     return (
-      <Skeleton className="h-80 w-full max-w-sm rounded-3xl" />
+      <div className="flex min-h-svh items-center justify-center">
+        <Skeleton className="h-80 w-full max-w-[26.25rem] rounded-3xl" />
+      </div>
     );
   }
 
@@ -60,26 +62,24 @@ function SignInScreen() {
 export default function SignInPage() {
   return (
     /**
-     * `h-full` rather than a viewport of its own: the frame has already taken the
-     * header and the footer out of the window, so what is left is this element's
-     * height, and the screen centers itself inside it. The custom property is the
-     * other half of that — it tells the shared screen not to assume it has the
-     * whole viewport, because here it does not.
+     * Nothing of this page's own: the screen is a windowful, and the frame around
+     * it — `SiteChrome`, which pins its bar over a screenful on this route — is
+     * what lets it be one without the bar taking a slice of the window first or
+     * the card ending up below the middle of the window it is the middle of.
+     * Centering, height and the canvas are the shared screen's business, which is
+     * why there is nothing here to say about any of them.
      */
-    <div
-      className="flex h-full items-center justify-center"
-      style={{ '--sign-in-min-height': '0px' } as React.CSSProperties}
-    >
+    <>
       {/* `useSearchParams` needs a boundary in the app router. */}
       <Suspense
         fallback={
-          <div className="w-full max-w-sm">
-            <Skeleton className="h-80 w-full rounded-3xl" />
+          <div className="flex min-h-svh items-center justify-center">
+            <Skeleton className="h-80 w-full max-w-[26.25rem] rounded-3xl" />
           </div>
         }
       >
         <SignInScreen />
       </Suspense>
-    </div>
+    </>
   );
 }

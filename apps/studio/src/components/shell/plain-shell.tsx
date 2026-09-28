@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ClapperboardIcon } from 'lucide-react';
+import { GraduationCapIcon } from 'lucide-react';
 import { cn } from '@ui/lib/utils';
 import { ThemeToggle } from '@ui/components/theme-toggle';
 import { AccountMenu } from './account-menu';
@@ -49,7 +49,7 @@ export function PlainShell({
           href="/"
           className="flex items-center gap-1.5 text-sm font-medium tracking-tight transition-opacity hover:opacity-70"
         >
-          <ClapperboardIcon className="size-4" />
+          <GraduationCapIcon className="size-4" />
           Play
         </Link>
         <span className="text-sm text-muted-foreground">/ {crumb}</span>

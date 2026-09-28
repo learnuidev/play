@@ -4,8 +4,8 @@ import Link from 'next/link';
 import {
   ArrowRightIcon,
   CaptionsIcon,
-  ClapperboardIcon,
   GiftIcon,
+  GraduationCapIcon,
   ListChecksIcon,
   MailIcon,
   NotebookPenIcon,
@@ -554,7 +554,7 @@ function LandingFooter() {
     <footer className="mx-auto mt-24 w-full max-w-6xl px-4">
       <div className="flex flex-col gap-6 border-t border-border/40 pt-8 sm:flex-row sm:items-center">
         <p className="flex items-center gap-1.5 text-sm font-medium tracking-tight">
-          <ClapperboardIcon className="size-4" />
+          <GraduationCapIcon className="size-4" />
           Play Studio
         </p>
 

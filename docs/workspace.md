@@ -224,9 +224,10 @@ the marketplace are the same account. `@play/auth` is where that lives:
   repository draws. `packages/auth/src/sign-in.css` re-points Amplify's design
   tokens at the app's, so the same screen is the studio's in the studio and the
   marketplace's in the marketplace. It has one contract with the app it renders
-  in: on its own it takes the viewport, and an app that keeps a bar and a footer
-  around it sets `--sign-in-min-height` on an ancestor and centers what is left
-  itself, which is what both `/sign-in` pages do.
+  in: the screen is a windowful and the card centers in it, so an app that keeps a
+  bar of its own takes that bar *out of the flow* on the sign-in route and pins it
+  over the top instead of letting it take a slice of the window — which is what
+  both apps' sign-in pages do.
 - `useIsSignedIn` / `useAuthStatus` — for pages that ask the API who the caller
   is, because "the courses I am in" is a 401 when nobody is signed in, not an
   empty list. The status has three states rather than two so a page can tell

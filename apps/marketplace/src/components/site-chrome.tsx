@@ -14,10 +14,20 @@ import { lessonRoute } from '@/lib/routes';
  * somebody came to watch, and the way back to the course is the lesson's own
  * first line.
  *
- * The sign-in page is *not* one of these. Somebody who has not decided to sign in
- * yet is still reading this site, and taking the bar away is how they stop being
- * able to; the shared sign-in screen asks the frame how much room it has left
- * instead, which is what `--sign-in-min-height` is.
+ * Signed in or not, a reader of this site keeps the bar. What changes on the
+ * sign-in route is only where it stands: the shared sign-in screen is a
+ * windowful, and a bar left in the flow would take its own slice of the window
+ * out of that screen — a page one bar taller than the window, with the card
+ * sitting below the middle of a window it is meant to be the middle of. So the
+ * bar is lifted out of the flow there and pinned across the top of the screen
+ * instead, which is why that route wears the `group`/`data-chrome-overlay` hook
+ * its header reads.
+ *
+ * The footer goes further and is left out of that route entirely, which is a
+ * measurement rather than a preference: a screenful of screen plus a footer is a
+ * page 65px taller than the window, and 65px of scrollbar under a page that has
+ * nothing under it. A reader who is signing in has the bar above them, and the
+ * bar is where both links that footer offers live.
  *
  * Every other page is a column in the middle of the screen: the frame supplies
  * the bar and the footer and nothing else, and each page brings its own measure,
@@ -35,6 +45,19 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="h-full w-full px-4 py-4 lg:px-6 lg:py-5">{children}</div>
         </div>
+      </div>
+    );
+  }
+
+  // The sign-in route is the screen and nothing else: the shared screen is a
+  // windowful of its own, and anything else the frame adds — a footer's worth —
+  // is height the window does not have, which shows up as a scrollbar on a page
+  // that is supposed to be one screen with nothing below it.
+  if (pathname === '/sign-in') {
+    return (
+      <div className="group relative flex min-h-svh flex-col" data-chrome-overlay="true">
+        <SiteHeader />
+        <main className="flex-1">{children}</main>
       </div>
     );
   }

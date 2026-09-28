@@ -12,10 +12,10 @@ import { Button } from '@ui/components/ui/button';
 import { CopyButton } from '@/components/copy-button';
 import { CodeBlock } from '@/components/docs/code-block';
 import { CredentialPanel } from '@/components/docs/credential-panel';
-import { DocsHeader } from '@/components/docs/docs-header';
 import { DocsRail } from '@/components/docs/docs-rail';
 import { EndpointCard } from '@/components/docs/endpoint-card';
 import { PlaygroundProvider } from '@/components/docs/playground-context';
+import { PublicHeader } from '@/components/public-header';
 import { API_BASE_URL, API_BASE_URL_IS_CONFIGURED } from '@/lib/api-base';
 import { curlFor } from '@/lib/api-example';
 import {
@@ -44,6 +44,14 @@ import {
  * the only thing the second cannot do here is mint a key — see
  * `CredentialPanel`, which offers them the paste box and a way to sign in rather
  * than a button that would fail.
+ *
+ * Being public is also why it wears `PublicHeader` rather than a bar of its own.
+ * A reference is read by people with no account at all, and the bar over it is
+ * the same bar the front page and the sign-in screen wear: one answer to "what is
+ * this and how do I get in" across every page a stranger can open. What the page
+ * needs beyond that — the way to a key and a v1 badge saying which API this is —
+ * is on the page, above the fold, rather than in a bar that would then be the
+ * only one of its kind.
  */
 
 export const metadata: Metadata = {
@@ -62,7 +70,7 @@ export default function ApiDocsPage() {
 
   return (
     <div className="min-h-svh bg-muted/40">
-      <DocsHeader />
+      <PublicHeader />
 
       {/* No `items-start` here, and that is the whole of why the rail sticks.
           A sticky element cannot leave its containing block, so the aside has to

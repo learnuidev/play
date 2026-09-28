@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ClapperboardIcon, PlusIcon } from "lucide-react";
+import { GraduationCapIcon, PlusIcon } from "lucide-react";
 import { useOrganizations } from "@api/modules/organization/organization.queries";
 import { cn } from "@ui/lib/utils";
 import { Separator } from "@ui/components/ui/separator";
@@ -34,7 +34,7 @@ export function OrgRail({ activeOrgId }: { activeOrgId?: string }) {
             aria-label="Play home"
             className="flex size-8 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity hover:opacity-90"
           >
-            <ClapperboardIcon className="size-4" />
+            <GraduationCapIcon className="size-4" />
           </Link>
         </TooltipTrigger>
         <TooltipContent side="right">Play</TooltipContent>

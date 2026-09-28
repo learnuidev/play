@@ -22,11 +22,18 @@
  */
 
 .play-auth[data-amplify-authenticator] {
-  /* The window, with the card in the middle of it.
-     How much window depends on the app: on its own the screen is the whole page
-     — a page of its own, or the wall the gate draws over an app — while an app
-     that keeps its own bar and footer around it has that much less room to give.
-     `--sign-in-min-height` is how it says so; the default is the viewport. */
+  /* The window, with the card in the middle of it: a screenful, always, whatever
+     the app has put around this element. `svh` rather than `vh` because on a phone
+     the two differ by the browser's own bars, and the small one is the height the
+     page actually has.
+     Stated rather than inherited, deliberately. An app that keeps a bar around
+     this screen leaves it a shorter box, and a canvas that took that box is a
+     panel under the bar rather than the screen — so this element claims the window
+     and the app's sticky bar is drawn over the top of it, which is what the
+     padding below is for. `height` is left alone: `100%` of a box the app sized to
+     its content is a height nobody can predict, and nothing needs it — this
+     element is grown by what it holds and floored by the screen. */
+  min-height: 100svh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -35,20 +42,25 @@
      An app that keeps its own bar around this screen hands it what is left of
      the window from a flex box, and a flex item is as wide as its own content
      until something says otherwise — which drew the washes behind a column no
-     wider than the form, and no taller than it either once the app had set
-     `--sign-in-min-height` to nothing. Claiming the whole box in both
-     directions is what makes it a page rather than a panel.
+     wider than the form. Claiming the whole box in both directions is what makes
+     it a page rather than a panel.
      Where the parent is *not* a flex container — the gate, drawn over a whole
-     app — none of these three has anything to stretch, and the line below is
-     what fills the window. */
+     app — none of these has anything to stretch, which is the rest of the job the
+     `min-height` above does. */
   flex: 1 1 auto;
   align-self: stretch;
   width: 100%;
-  min-height: var(--sign-in-min-height, 100svh);
+  /* Equal top and bottom, so the card lands on the middle of the window rather
+     than near it — which is the whole reason an app's bar is pinned *over* this
+     element instead of sitting above it in the flow. The room at the top is what
+     keeps the card clear of that bar on a short window. */
   padding: 3.5rem 1.25rem;
+  /* Clipped, so the washes end at this element's edges and nothing they spill
+     sideways reaches the page. A window too short for the card scrolls the page
+     instead, which is what an element that grows past the window does anyway. */
+  overflow: hidden;
   position: relative;
   isolation: isolate;
-  overflow: hidden;
   background-color: var(--background, #09090b);
   color: var(--foreground, #fafafa);
 
@@ -85,7 +97,10 @@
   --amplify-components-fieldcontrol-font-size: 1rem;
   --amplify-components-button-font-size: 1rem;
   --amplify-components-tabs-item-font-size: 0.875rem;
-  --amplify-components-authenticator-container-width-max: 22rem;
+  /* 420px where there is room for it, and the page's own width where there is
+     not: Amplify applies this fixed width once its 30rem breakpoint is passed, so
+     `min()` is what keeps a phone in the same stylesheet instead of overflowing. */
+  --amplify-components-authenticator-container-width-max: min(26.25rem, 100%);
   --amplify-components-tabs-panel-padding-inline: 0;
   --amplify-components-tabs-panel-padding-block: 1.25rem 0;
   --amplify-components-tabs-item-border-width: 0;
@@ -105,6 +120,12 @@
  * at this opacity they are closer to light than to colour. They drift, slowly
  * and out of step with each other, so the page is not a static image behind a
  * form — and they stop for anyone who has asked for less motion.
+ *
+ * Each wash is the canvas's own height and a fixed width, and its colour falls
+ * away in an ellipse sized to that box rather than to a number of rems: how far a
+ * corner bleeds is a question about the page, and a fixed reach left the bottom
+ * of a tall canvas grey. The canvas clips what spills out of it, and the blur is
+ * what leaves the gradient no edge on it anywhere.
  */
 .play-auth[data-amplify-authenticator]::before,
 .play-auth[data-amplify-authenticator]::after {
@@ -112,31 +133,35 @@
   position: absolute;
   z-index: -1;
   width: 34rem;
-  height: 34rem;
+  height: 100%;
   border-radius: 999px;
   filter: blur(90px);
   opacity: var(--play-auth-aurora, 0.55);
   pointer-events: none;
 }
 
+/* One at each end of a long side. The light sits at the corner the wash belongs
+   to and fades towards the other, which is why these are ellipses anchored to an
+   edge: in a box that is no longer square, one centred on itself would be a dot
+   in the middle of a band. */
 .play-auth[data-amplify-authenticator]::before {
-  top: -14rem;
+  top: 0;
   left: -10rem;
   background-image: radial-gradient(
-    circle at 50% 50%,
+    ellipse at 50% 0%,
     color-mix(in oklab, #3b82f6 45%, transparent),
-    transparent 68%
+    transparent
   );
   animation: play-auth-drift-a 26s ease-in-out infinite alternate;
 }
 
 .play-auth[data-amplify-authenticator]::after {
   right: -12rem;
-  bottom: -16rem;
+  bottom: 0;
   background-image: radial-gradient(
-    circle at 50% 50%,
+    ellipse at 50% 100%,
     color-mix(in oklab, #8b5cf6 38%, transparent),
-    transparent 68%
+    transparent
   );
   animation: play-auth-drift-b 32s ease-in-out infinite alternate;
 }
@@ -244,6 +269,24 @@ html:not(.dark) .play-auth {
 .play-auth .amplify-tabs__item:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #71717a) 45%, transparent);
+}
+
+/**
+ * One height for both tabs, which is the difference between a control and a jump.
+ *
+ * The two panels are not the same form — making an account asks for an address, a
+ * confirmation code and a visit to the inbox where signing in asks for two fields
+ * — and this screen centers the card, so a panel that grows takes the title above
+ * it *up* the window with it. Toggling between the tabs moved the headline 16px,
+ * which reads as the page flinching rather than as the tab changing.
+ *
+ * So the panel is as tall as the taller of the two however short its own form is.
+ * A reserved height rather than a measured one, because this has to hold before
+ * the form that needs it has been rendered at all; the inactive tab is still
+ * `display: none`, so the room is reserved without anything being drawn in it.
+ */
+.play-auth .amplify-tabs__panel {
+  min-height: 30.125rem;
 }
 
 /* ---- The fields ---- */
@@ -420,6 +463,21 @@ html:not(.dark) .play-auth {
 .play-auth .federated-sign-in-icon {
   width: 1.125rem;
   height: 1.125rem;
+}
+
+/**
+ * The label, which does not inherit the button's colour.
+ *
+ * Amplify draws the label as a `<span class="amplify-text">` inside the button,
+ * and its own rule for that span sets a fixed near-black — the colour those
+ * buttons are drawn in on a *white* page. `color` on the button therefore never
+ * reaches it, and in dark mode this was a dark label on a dark pill: the only
+ * part of the button anyone needs to read was the part that could not be.
+ * One class more specific than Amplify's, so it wins, and it is the app's
+ * foreground the label takes rather than a colour of its own.
+ */
+.play-auth .federated-sign-in-button .amplify-text {
+  color: var(--foreground, #fafafa);
 }
 
 .play-auth .amplify-divider {

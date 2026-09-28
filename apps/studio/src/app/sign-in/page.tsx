@@ -46,7 +46,11 @@ function SignInScreen() {
   // Rendered only once the session is known, so somebody who is already signed
   // in never sees the form flash before being redirected.
   if (signedIn) {
-    return <Skeleton className="h-80 w-full max-w-sm rounded-3xl" />;
+    return (
+      <div className="flex min-h-svh items-center justify-center">
+        <Skeleton className="h-80 w-full max-w-[26.25rem] rounded-3xl" />
+      </div>
+    );
   }
 
   return <SignIn />;
@@ -55,38 +59,37 @@ function SignInScreen() {
 export default function SignInPage() {
   return (
     /**
-     * The public bar, then the screen.
+     * The public bar, and the screen underneath it.
      *
      * A sign-in page with no way off it is a dead end, and the reason somebody is
      * on this one is usually that a link sent them — the front page's button, or
-     * the reference asking for a key. The bar's own button is left off
-     * (`showEntry={false}`): it would point at the page it is sitting above.
+     * the reference asking for a key. So it is the same bar the front page wears,
+     * button and all: the page somebody was sent to is the last one that should
+     * look like a dead end, and its button is the same one the marketplace keeps
+     * on this route.
+     *
+     * Underneath it in the literal sense: the bar is taken out of the flow and
+     * pinned across the top, so the screen below is a whole windowful with the bar
+     * drawn over its first line. Left in the flow the bar would take 3rem out of
+     * the window, the screen would fill what was left, and the page would be a
+     * screenful *plus* a bar — one small scroll for nothing, with the card sitting
+     * below the middle of the window it is supposed to be the middle of.
      */
-    <div className="flex min-h-svh flex-col bg-background">
-      <PublicHeader showEntry={false} />
-
-      {/*
-       * `flex-1` and the custom property are one decision: the screen's frame is a
-       * windowful unless the app says otherwise, and here the bar above it has
-       * already taken some of the window. `--sign-in-min-height: 0` tells the
-       * shared screen not to assume the whole viewport, and the centering below is
-       * this element's job instead — see the note in the shared stylesheet.
-       */}
-      <div
-        className="flex flex-1 items-center justify-center"
-        style={{ '--sign-in-min-height': '0px' } as React.CSSProperties}
-      >
-        {/* `useSearchParams` needs a boundary in the app router. */}
-        <Suspense
-          fallback={
-            <div className="w-full max-w-sm">
-              <Skeleton className="h-80 w-full rounded-3xl" />
-            </div>
-          }
-        >
-          <SignInScreen />
-        </Suspense>
+    <div className="relative flex min-h-svh flex-col bg-background">
+      <div className="absolute inset-x-0 top-0 z-20">
+        <PublicHeader />
       </div>
+
+      {/* `useSearchParams` needs a boundary in the app router. */}
+      <Suspense
+        fallback={
+          <div className="flex min-h-svh items-center justify-center">
+            <Skeleton className="h-80 w-full max-w-[26.25rem] rounded-3xl" />
+          </div>
+        }
+      >
+        <SignInScreen />
+      </Suspense>
     </div>
   );
 }
