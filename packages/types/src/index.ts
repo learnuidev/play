@@ -493,6 +493,19 @@ export interface SpaceMemberApi {
   pending: boolean;
   /** Sent to whoever may manage the roster, and to the invited person. */
   email?: string;
+  /**
+   * What they call themselves, when they have a profile.
+   *
+   * A roster used to be a list of ids — `Member a1b2c3` beside a circle with two
+   * letters in it — which stops being readable the moment a course has more than
+   * one person on it. The name and the photo come from the same profile the
+   * marketplace reads, so a roster row and a course page cannot disagree about
+   * who somebody is. Absent for a pending invitation, which has no account
+   * behind it yet.
+   */
+  name?: string;
+  /** A signed URL for that profile's photo, when they have one. */
+  photoUrl?: string;
   isYou: boolean;
   /** This pending invitation is addressed to the signed-in user. */
   isInvitationForYou: boolean;
@@ -547,6 +560,124 @@ export interface MySpaceInvitation {
 
 export interface ListMySpaceInvitationsResponse {
   invitations: MySpaceInvitation[];
+}
+
+/**
+ * The links a person may put on their profile.
+ *
+ * A fixed set rather than a list of {label, url}: the marketplace draws one row
+ * of small links under a name, and a field anybody can label anything in is a
+ * row that arrives as four words of somebody's own choosing. Five is what a
+ * teaching profile actually uses — where their work is, where they write, where
+ * they are reachable — and the ones nobody filled in are simply absent.
+ */
+export type SocialKey = 'website' | 'x' | 'linkedin' | 'youtube' | 'github';
+
+export const SOCIAL_KEYS: SocialKey[] = ['website', 'x', 'linkedin', 'youtube', 'github'];
+
+export const SOCIAL_LABELS: Record<SocialKey, string> = {
+  website: 'Website',
+  x: 'X',
+  linkedin: 'LinkedIn',
+  youtube: 'YouTube',
+  github: 'GitHub',
+};
+
+/**
+ * What the field asks for, as a placeholder.
+ *
+ * The stored value is an absolute URL, so the placeholder shows the whole shape
+ * rather than a handle: a form that takes `@annaruiz` in one field and
+ * `annaruiz.com` in the next is a form nobody can predict, and the profile is
+ * rendered as a link in an app that does not know which platform it is pointing
+ * at.
+ */
+export const SOCIAL_PLACEHOLDERS: Record<SocialKey, string> = {
+  website: 'https://annaruiz.com',
+  x: 'https://x.com/annaruiz',
+  linkedin: 'https://linkedin.com/in/annaruiz',
+  youtube: 'https://youtube.com/@annaruiz',
+  github: 'https://github.com/annaruiz',
+};
+
+/** Only the links this person filled in. An empty object is a complete answer. */
+export type ProfileSocials = Partial<Record<SocialKey, string>>;
+
+/**
+ * Who somebody is, as the person themselves sees it.
+ *
+ * This is the studio's own record of a person, not the identity provider's: the
+ * name here is one they chose and can change, which is the whole reason it
+ * exists. It is keyed by the Cognito `sub` that every membership in the product
+ * already uses, and the account it belongs to owns it and nothing else.
+ */
+export interface Profile {
+  userId: string;
+  /** What to call them. Never empty: an account is named when it is first read. */
+  name: string;
+  bio: string;
+  socials: ProfileSocials;
+  /** Where their photo lives in the bucket. Absent means they have not set one. */
+  photoKey?: string;
+  /** A signed URL for that photo, minted per response, when they have one. */
+  photoUrl?: string;
+  updatedAt: number;
+}
+
+export const PROFILE_NAME_MIN_LENGTH = 2;
+export const PROFILE_NAME_MAX_LENGTH = 80;
+export const PROFILE_BIO_MAX_LENGTH = 500;
+export const PROFILE_LINK_MAX_LENGTH = 200;
+
+export interface ProfileResponse {
+  profile: Profile;
+}
+
+/** Editing one's own profile. An absent field is left alone; `''` clears it. */
+export interface UpdateProfilePayload {
+  name?: string;
+  bio?: string;
+  socials?: ProfileSocials;
+}
+
+export interface UploadProfilePhotoResponse {
+  profile: Profile;
+  upload: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+  };
+}
+
+/**
+ * Somebody who teaches, as the marketplace is allowed to see them.
+ *
+ * The public half of a profile, and it is a *different shape* rather than a
+ * trimmed `Profile` for the reason the catalog is a different shape from a
+ * space: what a course page needs is a name, a face and a sentence, and the
+ * person's own screen is the only one that gets to know their id, their
+ * settings and when they last changed anything.
+ *
+ * `name` is never empty. An instructor who has never opened their profile is
+ * named from what the API already holds about them, because a course page that
+ * credits nobody credits nothing.
+ */
+export interface PublicInstructor {
+  userId: string;
+  name: string;
+  bio: string;
+  socials: ProfileSocials;
+  photoUrl?: string;
+}
+
+export interface ListInstructorsResponse {
+  instructors: PublicInstructor[];
+}
+
+/** One instructor, and everything they teach that is on the marketplace. */
+export interface InstructorResponse {
+  instructor: PublicInstructor;
+  courses: CatalogCourse[];
 }
 
 /**
@@ -1179,10 +1310,19 @@ export interface CatalogSection {
   lessons: CatalogLesson[];
 }
 
-/** One listed course in full: what it is, and what is in it. */
+/** One listed course in full: what it is, who teaches it, and what is in it. */
 export interface CatalogCourseResponse {
   course: CatalogCourse;
   sections: CatalogSection[];
+  /**
+   * Who teaches it, in the order they were put on the course.
+   *
+   * Not part of `CatalogCourse`, which the catalog's own listing draws: a page
+   * of twenty courses does not name twenty teachers, and answering "who teaches
+   * this" for each of them is a roster read and a profile read per card. Here it
+   * is one question about one course, on the page that asks it.
+   */
+  instructors: PublicInstructor[];
 }
 
 /**

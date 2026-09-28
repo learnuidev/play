@@ -39,17 +39,24 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
  * an account: the invitation names an address, and whoever can sign in as it
  * claims the course from its own page. That is what makes a course shareable
  * with a guest rather than only with colleagues.
+ *
+ * `defaultRole` is what the dialog opens on, for the screens that are about one
+ * role rather than about the roster: the Instructors panel invites people who
+ * are going to teach, and asking somebody to pick "Instructor" from a list that
+ * already knows why they are there is a question with one right answer.
  */
 export function InviteSpaceMemberDialog({
   spaceId,
   trigger,
+  defaultRole = 'STUDENT',
 }: {
   spaceId: string;
   trigger: ReactNode;
+  defaultRole?: SpaceMemberRole;
 }) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<SpaceMemberRole>('STUDENT');
+  const [role, setRole] = useState<SpaceMemberRole>(defaultRole);
   const [result, setResult] = useState<InviteSpaceMemberResponse | null>(null);
 
   const invite = useInviteSpaceMember(spaceId);
@@ -61,7 +68,7 @@ export function InviteSpaceMemberDialog({
   function reset() {
     setResult(null);
     setEmail('');
-    setRole('STUDENT');
+    setRole(defaultRole);
   }
 
   async function submit(event: React.FormEvent) {

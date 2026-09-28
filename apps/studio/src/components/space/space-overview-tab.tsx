@@ -35,6 +35,7 @@ import { Label } from '@ui/components/ui/label';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { Textarea } from '@ui/components/ui/textarea';
 import { BlockLabel } from '@/components/shell/page-card';
+import { SpaceInstructorsCard } from '@/components/space/space-instructors-card';
 import { SpaceMarketplaceCard } from '@/components/space/space-marketplace-card';
 
 // Mirrors the server-side limits, so the form fails fast instead of round-tripping.
@@ -455,6 +456,11 @@ export function SpaceOverviewTab({ space, canEdit }: { space: Space; canEdit: bo
           <CourseDetailsForm space={space} canEdit={canEdit} />
         </div>
       </section>
+
+      {/* Above publishing, because it is part of writing the course rather than
+          something done to it afterwards: a course's instructor is who it is
+          credited to, and the marketplace says so on the page that sells it. */}
+      <SpaceInstructorsCard spaceId={space.spaceId} canManage={canEdit} />
 
       {/* Last, because publishing is the end of writing a course rather than
           another field to fill in on the way through it. */}

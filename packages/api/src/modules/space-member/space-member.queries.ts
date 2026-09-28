@@ -5,6 +5,9 @@ import type { SpaceMemberRole } from '@play/types';
 export const spaceMemberKeys = {
   all: ['space-members'] as const,
   list: (spaceId: string) => ['space', spaceId, 'members'] as const,
+  /** The roster read whole, for the screens that pick somebody out of it. */
+  candidates: (spaceId: string) => ['space', spaceId, 'members', 'candidates'] as const,
+  instructors: (spaceId: string) => ['space', spaceId, 'instructors'] as const,
   invitations: () => ['space-members', 'invitations'] as const,
   mine: () => ['space-members', 'mine'] as const,
 };
@@ -57,6 +60,58 @@ export function useSpaceMembers(spaceId: string) {
   });
 }
 
+/**
+ * As much of a roster as the API will hand over in one page.
+ *
+ * Asked for by the screens that need *everybody* rather than a page — choosing
+ * somebody to teach a course is not a choice between the first twenty members —
+ * and it is the same ceiling the API enforces, so asking for more would only
+ * waste a request.
+ */
+const ROSTER_PAGE_SIZE = 100;
+
+/**
+ * The roster as a list to choose from, rather than a page to read.
+ *
+ * Its own cache entry beside the roster's, because it is a different question:
+ * the roster is what the Members tab draws, and this is everybody who could be
+ * added to a course's staff. Sharing one entry would mean either the tab holds a
+ * hundred-strong page it does not draw, or the picker silently offers the first
+ * twenty people.
+ *
+ * `enabled` is what keeps it out of the way: the picker is a dialog, and nobody
+ * should pay for this read until they open it.
+ */
+export function useSpaceMemberCandidates(spaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: spaceMemberKeys.candidates(spaceId),
+    queryFn: () => api.listSpaceMembers(spaceId, ROSTER_PAGE_SIZE),
+    enabled: Boolean(spaceId) && enabled,
+    staleTime: 30 * 1000,
+  });
+}
+
+/**
+ * Who teaches the course: the people it credits, with their names and faces.
+ *
+ * A different question from the roster above, and a much smaller one — the
+ * roster is a page of everybody with their roles, this is the handful a course
+ * page puts its name to. Read by the studio's course page and by the
+ * marketplace, where an enrolled reader of an unlisted course cannot ask the
+ * public catalog for it.
+ *
+ * Held longer than the roster: who teaches a course changes when an author
+ * decides it does, not while somebody is reading the page.
+ */
+export function useSpaceInstructors(spaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: spaceMemberKeys.instructors(spaceId),
+    queryFn: () => api.listSpaceInstructors(spaceId),
+    enabled: Boolean(spaceId) && enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
 export function useInviteSpaceMember(spaceId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -64,6 +119,7 @@ export function useInviteSpaceMember(spaceId: string) {
       api.inviteSpaceMember(spaceId, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: spaceMemberKeys.list(spaceId) });
+      qc.invalidateQueries({ queryKey: spaceMemberKeys.instructors(spaceId) });
     },
   });
 }
@@ -98,6 +154,10 @@ export function useUpdateSpaceMember(spaceId: string) {
       api.updateSpaceMember(spaceId, memberId, role),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: spaceMemberKeys.list(spaceId) });
+      // Assigning somebody to teach a course is this call and nothing else:
+      // the role *is* the credit, so the list of who is credited is one of the
+      // two things a role change changes.
+      qc.invalidateQueries({ queryKey: spaceMemberKeys.instructors(spaceId) });
       qc.invalidateQueries({ queryKey: ['space', spaceId, 'stats'] });
     },
   });
@@ -110,6 +170,7 @@ export function useRemoveSpaceMember(spaceId: string) {
     mutationFn: (memberId: string) => api.removeSpaceMember(spaceId, memberId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: spaceMemberKeys.list(spaceId) });
+      qc.invalidateQueries({ queryKey: spaceMemberKeys.instructors(spaceId) });
       qc.invalidateQueries({ queryKey: ['space', spaceId, 'stats'] });
       qc.invalidateQueries({ queryKey: ['space', spaceId, 'cohorts'] });
     },
@@ -129,6 +190,9 @@ export function useAcceptSpaceInvitation(spaceId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: spaceMemberKeys.all });
       qc.invalidateQueries({ queryKey: spaceMemberKeys.mine() });
+      // An invitation to teach becomes a credit the moment it is accepted, so
+      // the course's own list of who teaches it is stale from here.
+      qc.invalidateQueries({ queryKey: spaceMemberKeys.instructors(spaceId) });
       qc.invalidateQueries({ queryKey: ['space', spaceId] });
     },
   });

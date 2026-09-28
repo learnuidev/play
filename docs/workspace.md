@@ -138,6 +138,55 @@ const routes = useMemo(() => studioLearningRoutes(orgId), [orgId]);
 What the shared component must **not** do is assume a route, read an app's own
 `useParams`, or fetch something only one app's backend is allowed to serve.
 
+## Instructors, and the person behind them
+
+A course is credited to people, and until recently the product could not say who:
+the `INSTRUCTOR` role existed on a course's roster — "runs it, and is named as the
+one who does" — and was named nowhere. There was also nowhere for a person to say
+what they were called: the only name in the system was an identity provider's
+`name` claim, which a password account does not have and nobody can edit.
+
+Two records fix both, and they are deliberately separate:
+
+- **`ProfilesTable`** (`services/api`, keyed by the Cognito `sub`) is the person:
+  a name, a photo, a sentence, five links. It is read by `GET /me/profile` and
+  written by `PUT /me/profile` and `PUT /me/profile/photo` — all under `/me`,
+  with no id in the path, because the caller's own token is the only id there is.
+  The first read is what creates the row, named from the claims the API can see;
+  from then on the person renames themselves. Nothing in it is a permission.
+- **The roster role** stays where it was. Being an instructor *is* the
+  assignment: the studio's Instructors panel (on a course's Overview tab) is a
+  view of the roster's `INSTRUCTOR` rows, and "Add instructor" promotes a member
+  rather than writing to a second list that would have to keep in step with the
+  first.
+
+The two meet in `services/api/src/lib/instructors.ts`, which is the only place
+that answers "who teaches this, and what do they teach":
+
+| Endpoint | Who may read it | Why |
+| --- | --- | --- |
+| `GET /spaces/{spaceId}/instructors` | anyone who can read the course | the studio's panel, and the marketplace's member view of an unlisted course |
+| `GET /catalog/courses/{spaceId}` | anybody — no authorizer | the course page, which carries `instructors` beside its syllabus |
+| `GET /catalog/instructors/{userId}` | anybody — no authorizer | `/instructors/[id]`: the profile, plus every listed course they teach |
+
+Both public routes answer 404 rather than 403 for something that is not listed,
+which is the catalog's own rule: a stranger is not told which ids exist in
+private. What crosses that boundary is the *public* half of a profile — a name, a
+face, a sentence, links — never an address, and an instructor with no profile is
+still credited, named from what the API holds about them, because a course page
+that credits nobody credits nothing.
+
+Two shared pieces keep the two apps honest about it: `PublicInstructor` in
+`@play/types` is the wire shape both draw, and `PersonAvatar` in `@play/ui` is
+the circle they draw it in — the photo when there is one, and a person silhouette
+rather than initials when there is not, because initials are also what a missing
+photo looks like.
+
+A roster row carries `name` and `photoUrl` too, read in one batch with the page
+it belongs to. That is what makes the studio's Members tab readable and what the
+Instructors panel picks from: choosing somebody to teach a course means choosing
+them by name.
+
 ## Styling
 
 Tailwind v4 scans the app's directory by default, so each app's `globals.css`
@@ -234,13 +283,13 @@ the marketplace are the same account. `@play/auth` is where that lives:
   "nobody" apart from "not yet", which is what stops a signed-in reader being
   told to sign in for the length of one session restore.
 
-**What is public.** In the marketplace: `/`, `/discover`, a course page and a
-lesson. In the studio: `/` (the front page), `/docs` (the API reference) and
-`/sign-in`; everything behind a gate is reached from them. A public page must not
-call an endpoint that needs a session — `/docs` is the worked example, where the
-playground offers a pasted key to a reader with no account and a sign-in link
-instead of the key-minting button, and waits for `useAuthStatus` to settle before
-deciding which.
+**What is public.** In the marketplace: `/`, `/discover`, a course page, an
+instructor's page and a lesson. In the studio: `/` (the front page), `/docs` (the
+API reference) and `/sign-in`; everything behind a gate is reached from them. A
+public page must not call an endpoint that needs a session — `/docs` is the
+worked example, where the playground offers a pasted key to a reader with no
+account and a sign-in link instead of the key-minting button, and waits for
+`useAuthStatus` to settle before deciding which.
 
 Redirect URLs are derived from `window.location.origin`, so the studio gets
 `localhost:3000/auth/callback` and the marketplace `localhost:3001/auth/callback`

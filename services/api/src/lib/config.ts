@@ -24,6 +24,7 @@ export const env = {
   spaceRewardsTableName: required('SPACE_REWARDS_TABLE', process.env.SPACE_REWARDS_TABLE),
   rewardGrantsTableName: required('REWARD_GRANTS_TABLE', process.env.REWARD_GRANTS_TABLE),
   apiKeysTableName: required('API_KEYS_TABLE', process.env.API_KEYS_TABLE),
+  profilesTableName: required('PROFILES_TABLE', process.env.PROFILES_TABLE),
   bucket: required('VIDEOS_BUCKET', process.env.VIDEOS_BUCKET),
   cloudfrontDomain: required('CLOUDFRONT_DOMAIN', process.env.CLOUDFRONT_DOMAIN),
   cloudfrontKeyPairId: required('CLOUDFRONT_KEY_PAIR_ID', process.env.CLOUDFRONT_KEY_PAIR_ID),

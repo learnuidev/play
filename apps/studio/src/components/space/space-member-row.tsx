@@ -25,6 +25,7 @@ import {
 } from '@api/modules/space-member/space-member.queries';
 import { Badge } from '@ui/components/ui/badge';
 import { Button } from '@ui/components/ui/button';
+import { PersonAvatar } from '@play/ui';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,9 +39,15 @@ import {
  * Who a member is, in words, without giving an address away to somebody who
  * cannot use it: only whoever may manage the roster is shown addresses, and
  * everyone else sees who the row *is* rather than what it is keyed by.
+ *
+ * The name comes first because it is the one thing on the row that a person
+ * chose: an address is a sign-in credential, and `Member a1b2c3` is an id. Both
+ * remain the fallback for somebody who has not filled in a profile, or who has
+ * been invited and has no account yet.
  */
 function displayName(member: SpaceMemberApi): string {
   if (member.isYou) return 'You';
+  if (member.name) return member.name;
   if (member.email) return member.email;
   if (member.pending) return 'Invited';
   return `Member ${member.userId.slice(0, 6)}`;
@@ -126,15 +133,15 @@ export function SpaceMemberRow({
 
   return (
     <div className="flex items-center gap-3 rounded-xl border px-4 py-3">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-full border bg-muted/40">
-        {member.pending ? (
+      {member.pending ? (
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full border bg-muted/40">
           <MailIcon className="size-4 text-muted-foreground" />
-        ) : (
-          <span className="text-xs font-semibold uppercase">
-            {displayName(member).slice(0, 2)}
-          </span>
-        )}
-      </div>
+        </div>
+      ) : (
+        /* Their own face when they have one, and the person-with-no-photo circle
+           when they do not — the same circle the marketplace draws for them. */
+        <PersonAvatar name={displayName(member)} photoUrl={member.photoUrl} />
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">

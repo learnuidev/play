@@ -144,6 +144,48 @@ export async function countSpaceStudents(spaceId: string): Promise<number> {
   return count;
 }
 
+/**
+ * Every active instructor of a course, in the order they were added.
+ *
+ * A query of the course's own partition with the role and status filtered in
+ * DynamoDB rather than here, because the answer is a handful of rows out of a
+ * roster that may be hundreds: a course's students are the page, and its
+ * instructors are the line above it. Paged to the end for the same reason the
+ * student count is counted to the end — an instructor on page two is still an
+ * instructor.
+ */
+export async function listActiveInstructors(spaceId: string): Promise<SpaceMember[]> {
+  const instructors: SpaceMember[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: SPACE_MEMBERS_TABLE,
+        KeyConditionExpression: '#spaceId = :spaceId',
+        FilterExpression: '#status = :active AND #role = :instructor',
+        ExpressionAttributeNames: {
+          '#spaceId': 'spaceId',
+          '#status': 'status',
+          '#role': 'role',
+        },
+        ExpressionAttributeValues: {
+          ':spaceId': spaceId,
+          ':active': 'ACTIVE',
+          ':instructor': 'INSTRUCTOR',
+        },
+        ScanIndexForward: true,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    instructors.push(...((res.Items ?? []) as SpaceMember[]));
+    exclusiveStartKey = res.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return instructors;
+}
+
 export interface SpaceInvitationInput {
   spaceId: string;
   organizationId: string;
@@ -334,6 +376,10 @@ export interface ApiSpaceMember {
   pending: boolean;
   /** Sent to whoever may manage the roster, and to the invited person. */
   email?: string;
+  /** What they call themselves, from their profile. Absent when they have none. */
+  name?: string;
+  /** A signed URL for their profile photo, when they have one. */
+  photoUrl?: string;
   isYou: boolean;
   /** Whether the caller is the one who can accept it. */
   isInvitationForYou: boolean;
@@ -347,11 +393,17 @@ export interface ApiSpaceMember {
  * An invitation is addressed to an address rather than to a `sub`, so the caller
  * claims one by being signed in as that address — knowable from the claims the
  * authorizer already put on the request, with no lookup.
+ *
+ * The name and photo are passed in rather than resolved here, because they come
+ * from a profile and from a bucket signature, and the roster is the one caller
+ * that has a batch of them to look up at once. A membership with no account
+ * behind it — an outstanding invitation — has neither.
  */
 export function toApiSpaceMember(
   member: SpaceMember,
   viewer: AuthUser,
   includeEmail: boolean,
+  person?: { name?: string; photoUrl?: string },
 ): ApiSpaceMember {
   const pending = member.status === 'INVITED';
   const invitedEmail = member.invitedEmail?.toLowerCase();
@@ -363,6 +415,8 @@ export function toApiSpaceMember(
     role: member.role,
     pending,
     ...(member.email && (includeEmail || isInvitationForYou) ? { email: member.email } : {}),
+    ...(person?.name ? { name: person.name } : {}),
+    ...(person?.photoUrl ? { photoUrl: person.photoUrl } : {}),
     isYou: !pending && member.userId === viewer.userId,
     isInvitationForYou,
     ...(member.invitedBy ? { invitedBy: member.invitedBy } : {}),

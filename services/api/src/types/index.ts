@@ -625,6 +625,74 @@ export interface SpaceMember {
 }
 
 /**
+ * The links a person may put on their profile, as they are stored.
+ *
+ * Keys and list mirror `@play/types`, and the values are absolute URLs, which is
+ * what the marketplace renders them as. Nothing here is required, and an absent
+ * link is absent rather than empty — a row with four keys and three of them `''`
+ * is a row that has to be cleaned before it can be read.
+ */
+export type SocialKey = 'website' | 'x' | 'linkedin' | 'youtube' | 'github';
+
+export const SOCIAL_KEYS: SocialKey[] = ['website', 'x', 'linkedin', 'youtube', 'github'];
+
+export type ProfileSocials = Partial<Record<SocialKey, string>>;
+
+/**
+ * The row behind a person's own screen: their name, their face, and what they
+ * say about themselves.
+ *
+ * Keyed by the Cognito `sub` — the same identity every membership in this
+ * service is keyed by — and nothing here is a permission: what somebody may do
+ * in an organization or a course is in those tables, and always was. This is
+ * only what to call them and what to draw beside the name.
+ *
+ * It is deliberately separate from the identity provider. A pool attribute is
+ * the provider's to write and would need `cognito-idp` on the shared Lambda
+ * role, while the one thing this row exists to fix is that a person could not
+ * rename themselves: `displayNameOf` reads a claim, and a claim belongs to
+ * whoever federated the sign-in.
+ */
+export interface ProfileRow {
+  /** Partition key: the Cognito `sub`. */
+  userId: string;
+  /** What they call themselves. Never empty — see `toPublicInstructor`. */
+  name: string;
+  bio: string;
+  socials: ProfileSocials;
+  /**
+   * Where the photo lives in the videos bucket, under `people/{userId}/`.
+   * Timestamped per upload, so replacing one writes a new object and CloudFront
+   * never has to be invalidated.
+   */
+  photoKey?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Somebody who teaches, as the marketplace is allowed to see them.
+ *
+ * The public half of a profile: a name, a face, a sentence and their links. No
+ * email, no timestamps, and no id beyond the `sub` that names them in a link —
+ * none of which a course page has any use for.
+ */
+export interface PublicInstructor {
+  userId: string;
+  name: string;
+  bio: string;
+  socials: ProfileSocials;
+  /** A signed URL, minted per response, when they have a photo. */
+  photoUrl?: string;
+}
+
+/** One instructor, and every listed course they teach. */
+export interface InstructorResponse {
+  instructor: PublicInstructor;
+  courses: CatalogCourse[];
+}
+
+/**
  * A group of a course's members: a cohort.
  *
  * Cohorts are how a course runs for more than one intake at once — a September
@@ -929,10 +997,11 @@ export interface CatalogSection {
   lessons: CatalogLesson[];
 }
 
-/** One listed course in full: what it is, and what is in it. */
+/** One listed course in full: what it is, who teaches it, and what is in it. */
 export interface CatalogCourseResponse {
   course: CatalogCourse;
   sections: CatalogSection[];
+  instructors: PublicInstructor[];
 }
 
 /**

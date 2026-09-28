@@ -6,6 +6,7 @@ export const catalogKeys = {
   all: ['catalog'] as const,
   courses: (query = '') => ['catalog', 'courses', query] as const,
   course: (spaceId: string) => ['catalog', 'course', spaceId] as const,
+  instructor: (userId: string) => ['catalog', 'instructor', userId] as const,
 };
 
 /**
@@ -41,6 +42,27 @@ export function useCatalogCourse(spaceId: string) {
     queryFn: () => api.getCatalogCourse(spaceId),
     enabled: Boolean(spaceId),
     staleTime: 60 * 1000,
+  });
+}
+
+/**
+ * One instructor's public page: who they are, and what they teach here.
+ *
+ * Public, like the course that links to it. Held for a while: a person's name,
+ * face and sentence change when they decide they do, not between one reader and
+ * the next, and this is the one page in the marketplace that is about a person
+ * rather than about a course.
+ */
+export function useCatalogInstructor(userId: string) {
+  return useQuery({
+    queryKey: catalogKeys.instructor(userId),
+    queryFn: () => api.getCatalogInstructor(userId),
+    enabled: Boolean(userId),
+    staleTime: 5 * 60 * 1000,
+    // A page that does not exist is a state this screen draws, not a failure to
+    // retry three times: the API answers 404 for an id that teaches nothing
+    // here, and asking again will not change that.
+    retry: false,
   });
 }
 

@@ -8,13 +8,13 @@ import { ThemeToggle } from '@ui/components/theme-toggle';
 import { AccountMenu } from './account-menu';
 
 /**
- * The pages that are not inside an organization: everything you have, and
- * everything waiting for you.
+ * The pages that are not inside an organization: who you are, everything you
+ * have, and everything waiting for you.
  *
  * There is no active community on any of them — that is the point of them — so
- * they get a plain header instead of the community shell. The four are one
+ * they get a plain header instead of the community shell. The five are one
  * family and are navigated between in one click, which is why the header is a
- * component rather than four copies of a header: a person who belongs to no
+ * component rather than five copies of a header: a person who belongs to no
  * organization at all lives here, and this is the whole of their navigation.
  *
  * The API reference is deliberately not one of them. It is a document rather
@@ -23,6 +23,7 @@ import { AccountMenu } from './account-menu';
  * is public now, from the front page by somebody who has no account at all.
  */
 const SURFACES = [
+  { href: '/profile', label: 'Profile' },
   { href: '/organizations', label: 'Organizations' },
   { href: '/spaces', label: 'Spaces' },
   { href: '/invites', label: 'Invites' },

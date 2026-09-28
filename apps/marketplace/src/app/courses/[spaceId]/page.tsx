@@ -20,10 +20,11 @@ import { SpaceAvatar, spaceAccentColor } from '@learning/components/space/space-
 import { SpaceTypeBadge } from '@learning/components/space/space-type-badge';
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
+import { PersonAvatar } from '@play/ui';
 import { formatDate } from '@ui/lib/utils';
 import { useEnrollment } from '@/components/use-enrolled';
 import { useCourseView } from '@/components/use-course-view';
-import type { CatalogCourse, CatalogSection } from '@play/types';
+import type { CatalogCourse, CatalogSection, PublicInstructor } from '@play/types';
 
 /**
  * A course, from the outside: what it is, what it covers, and the button that
@@ -36,7 +37,7 @@ import type { CatalogCourse, CatalogSection } from '@play/types';
  */
 export default function CoursePage() {
   const { spaceId } = useParams<{ spaceId: string }>();
-  const { course, sections, isLoading, notFound, error } = useCourseView(spaceId);
+  const { course, sections, instructors, isLoading, notFound, error } = useCourseView(spaceId);
 
   if (error) {
     return (
@@ -82,6 +83,7 @@ export default function CoursePage() {
       <div className="grid content-start gap-6">
         <CourseCover course={course} />
         <CourseHeader course={course} />
+        <Instructors instructors={instructors} />
         <Syllabus sections={sections} />
       </div>
 
@@ -162,6 +164,46 @@ function CourseHeader({ course }: { course: CatalogCourse }) {
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Who teaches it.
+ *
+ * Above the syllabus rather than under it, because a course is somebody's work
+ * before it is a list of lessons, and the name is the first thing a reader looks
+ * for to decide whether to trust the rest. Each one leads to their own page —
+ * what else they teach, what they say about themselves, where else to find them
+ * — which is the only reason a name on a course page is worth clicking.
+ *
+ * Nothing at all when the course credits nobody: a line saying "no instructor"
+ * would be the page announcing that something is missing rather than simply not
+ * having it yet.
+ */
+function Instructors({ instructors }: { instructors: PublicInstructor[] }) {
+  if (instructors.length === 0) return null;
+
+  return (
+    <section className="grid gap-3">
+      <h2 className="text-base font-semibold tracking-tight">Taught by</h2>
+
+      <ul className="flex flex-wrap gap-3">
+        {instructors.map((instructor) => (
+          <li key={instructor.userId}>
+            <Link
+              href={`/instructors/${encodeURIComponent(instructor.userId)}`}
+              className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 transition-colors hover:bg-muted/40"
+            >
+              <PersonAvatar name={instructor.name} photoUrl={instructor.photoUrl} size="lg" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{instructor.name}</span>
+                <span className="block text-xs text-muted-foreground">Instructor</span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

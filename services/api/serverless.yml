@@ -181,6 +181,7 @@ provider:
     SPACE_REWARDS_TABLE: !Ref SpaceRewardsTable
     REWARD_GRANTS_TABLE: !Ref RewardGrantsTable
     API_KEYS_TABLE: !Ref ApiKeysTable
+    PROFILES_TABLE: !Ref ProfilesTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
     CLOUDFRONT_KEY_PAIR_ID: !GetAtt VideoPublicKey.Id
@@ -328,6 +329,20 @@ provider:
           Resource:
             - !GetAtt ApiKeysTable.Arn
             - !Sub "${ApiKeysTable.Arn}/index/*"
+        # People. Everything else in this service keys a person by their Cognito
+        # `sub` and never needs to say their name; this is the row that does —
+        # what an instructor is called on a marketplace course page, and what the
+        # studio's rosters read instead of the first six characters of an id.
+        # No index: it is only ever read by that key.
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:BatchGetItem
+          Resource:
+            - !GetAtt ProfilesTable.Arn
         - Effect: Allow
           Action:
             - s3:GetObject
@@ -719,6 +734,17 @@ functions:
           method: get
           cors: true
 
+  # An instructor's public page: who they are, and what they teach here. Public
+  # for the same reason the catalog is — a course page links to it, and the
+  # people following that link are deciding whether to register.
+  get-catalog-instructor:
+    handler: src/functions/catalog/get-instructor.handler
+    events:
+      - http:
+          path: catalog/instructors/{userId}
+          method: get
+          cors: true
+
   # Registering for a listed course, and dropping out of one. The membership is
   # the course's own, so both live under the space beside the invitations that
   # create the same row by another route.
@@ -748,6 +774,19 @@ functions:
     events:
       - http:
           path: spaces/{spaceId}/members
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  list-space-instructors:
+    handler: src/functions/space-members/list-instructors.handler
+    events:
+      - http:
+          # Who teaches this course: the handful of people it credits, rather
+          # than the roster of everybody in it. Readable by whoever can read the
+          # course, and the same answer the marketplace gives for the same
+          # course — one course, one answer about who teaches it.
+          path: spaces/{spaceId}/instructors
           method: get
           cors: true
           authorizer: ${self:custom.authorizer}
@@ -1293,6 +1332,39 @@ functions:
       - http:
           path: me/api-keys/{keyId}
           method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # The person, rather than anything they belong to. A profile is what an
+  # instructor is called on a course page and what the studio's own screens draw
+  # beside a name, so it is addressed like the keys above: under `/me`, with no
+  # id in the path, because the caller's own token is the only id there is.
+  get-my-profile:
+    handler: src/functions/profiles/get-my-profile.handler
+    events:
+      - http:
+          path: me/profile
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  update-my-profile:
+    handler: src/functions/profiles/update-my-profile.handler
+    events:
+      - http:
+          path: me/profile
+          method: put
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # The photo is an upload like a course cover: this reserves the object and
+  # points the profile at it, and the bytes go from the browser straight to S3.
+  upload-my-profile-photo:
+    handler: src/functions/profiles/upload-my-profile-photo.handler
+    events:
+      - http:
+          path: me/profile/photo
+          method: put
           cors: true
           authorizer: ${self:custom.authorizer}
 
@@ -2132,6 +2204,28 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+
+    # People. One item per account, keyed by the Cognito `sub` every membership
+    # in this service already uses, holding the name they chose, the sentence
+    # they wrote about themselves, their links, and the key of their photo.
+    #
+    # No index, and no second key: a profile is read by the person it belongs to
+    # or by somebody looking at a course they teach, and both of those start from
+    # an id the caller already has. Nothing here is a permission — what somebody
+    # may do in an organization or a course is in those tables — so the row is
+    # deliberately small and deliberately not the identity provider's: a pool
+    # attribute belongs to whoever federated the sign-in, and the one thing this
+    # table exists to fix is that a person could not rename themselves.
+    ProfilesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
 
     VideosBucket:
       Type: AWS::S3::Bucket

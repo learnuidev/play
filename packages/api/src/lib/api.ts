@@ -37,6 +37,8 @@ import type {
   LoopLikeResponse,
   ListContentsResponse,
   ListFavouritesResponse,
+  ListInstructorsResponse,
+  InstructorResponse,
   ListMyInvitationsResponse,
   ListMyCoursesResponse,
   ListMyRewardsResponse,
@@ -56,6 +58,7 @@ import type {
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
   PlaylistResponse,
+  ProfileResponse,
   RevokeRewardGrantResponse,
   RewardGrantResponse,
   RewardResponse,
@@ -70,11 +73,13 @@ import type {
   UpdateCohortPayload,
   UpdateContentPayload,
   UpdateLoopPayload,
+  UpdateProfilePayload,
   UpdateRewardPayload,
   UpdateSectionPayload,
   UpdateSpacePayload,
   UploadContentFilePayload,
   UploadContentFileResponse,
+  UploadProfilePhotoResponse,
   UploadSpaceThumbnailResponse,
   UploadThumbnailResponse,
   Video,
@@ -324,9 +329,15 @@ export const api = {
   /**
    * The course's roster: who is taking it, and which invitations are still
    * outstanding. Addresses come back only for whoever may manage it.
+   *
+   * `limit` is for the screens that need the whole list rather than a page of
+   * it — picking somebody to teach the course cannot be a choice between the
+   * first twenty members — and it is capped by the API at its own maximum.
    */
-  listSpaceMembers: (spaceId: string) =>
-    request<ListSpaceMembersResponse>(`/spaces/${spaceId}/members`),
+  listSpaceMembers: (spaceId: string, limit?: number) =>
+    request<ListSpaceMembersResponse>(
+      `/spaces/${spaceId}/members${limit ? `?limit=${limit}` : ''}`,
+    ),
 
   inviteSpaceMember: (spaceId: string, payload: InviteSpaceMemberPayload) =>
     request<InviteSpaceMemberResponse>(`/spaces/${spaceId}/members`, {
@@ -349,6 +360,17 @@ export const api = {
     request<void>(`/spaces/${spaceId}/members/${encodeURIComponent(memberId)}`, {
       method: 'DELETE',
     }),
+
+  /**
+   * Who teaches a course: the people it credits, rather than everybody in it.
+   *
+   * The same answer the marketplace gives for the same course, and readable by
+   * anybody who can read the course — the studio draws it on the course's own
+   * page, and an enrolled reader of an unlisted course draws it in the
+   * marketplace, where the public catalog cannot answer for them.
+   */
+  listSpaceInstructors: (spaceId: string) =>
+    request<ListInstructorsResponse>(`/spaces/${spaceId}/instructors`),
 
   /** Sends an outstanding course invitation again, optionally fixing its role. */
   resendSpaceInvitation: (spaceId: string, memberId: string, role?: SpaceMemberRole) =>
@@ -389,6 +411,17 @@ export const api = {
   /** One listed course, with the syllabus anybody may read. */
   getCatalogCourse: (spaceId: string) =>
     request<CatalogCourseResponse>(`/catalog/courses/${spaceId}`, {}, 'none'),
+
+  /**
+   * One instructor's public page: their name, their face, what they say about
+   * themselves, and the courses they teach here.
+   *
+   * Public, like the course it is reached from — the reader following that link
+   * is deciding whether to register, which is not a thing they can be asked to
+   * sign in for first.
+   */
+  getCatalogInstructor: (userId: string) =>
+    request<InstructorResponse>(`/catalog/instructors/${encodeURIComponent(userId)}`, {}, 'none'),
 
   /**
    * Registers the caller for a listed course.
@@ -634,4 +667,26 @@ export const api = {
   /** Revokes one of the organization's keys, whoever made it. Deletes it too. */
   revokeOrganizationApiKey: (orgId: string, keyId: string) =>
     request<void>(`/organizations/${orgId}/api-keys/${keyId}`, { method: 'DELETE' }),
+
+  /**
+   * The caller's own profile: what to call them, what they say about
+   * themselves, and their links.
+   *
+   * Read rather than created on the client's side — the API answers for an
+   * account that has never opened this screen too, naming it as the identity
+   * provider named it, because a course page that credits nobody credits
+   * nothing. Adding the row is the API's business.
+   */
+  getMyProfile: () => request<ProfileResponse>('/me/profile'),
+
+  /** Edits it. Only the fields sent are written; `''` clears one. */
+  updateMyProfile: (payload: UpdateProfilePayload) =>
+    request<ProfileResponse>('/me/profile', { method: 'PUT', body: JSON.stringify(payload) }),
+
+  /** Reserves a photo upload and points the profile at it, as a cover does. */
+  uploadProfilePhoto: (payload: { contentType: string; size?: number }) =>
+    request<UploadProfilePhotoResponse>('/me/profile/photo', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
 };

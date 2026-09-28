@@ -1,10 +1,16 @@
 'use client';
 
 import { useMemo } from 'react';
-import { ApiError, useCatalogCourse, useSections, useSpace } from '@play/api';
+import {
+  ApiError,
+  useCatalogCourse,
+  useSections,
+  useSpace,
+  useSpaceInstructors,
+} from '@play/api';
 import { useIsSignedIn } from '@play/auth';
 import { useEnrollment } from '@/components/use-enrolled';
-import type { CatalogCourse, CatalogSection } from '@play/types';
+import type { CatalogCourse, CatalogSection, PublicInstructor } from '@play/types';
 
 /**
  * A course page's data, from whichever source is allowed to answer.
@@ -19,10 +25,16 @@ import type { CatalogCourse, CatalogSection } from '@play/types';
  * The fallback is asked for only after the catalog has said 404 *and* the reader
  * is known to be enrolled, so a private course is not attempted for a stranger
  * and a listing mistake is not silently papered over.
+ *
+ * Who teaches it follows the same split for the same reason: the catalog carries
+ * the names with the course for anybody, and a member of an unlisted course asks
+ * the course's own endpoint, which they are allowed to read because they are in
+ * it. A course page credits somebody either way.
  */
 export function useCourseView(spaceId: string): {
   course?: CatalogCourse;
   sections: CatalogSection[];
+  instructors: PublicInstructor[];
   isLoading: boolean;
   /** True when there is no such course to show this reader at all. */
   notFound: boolean;
@@ -39,6 +51,7 @@ export function useCourseView(spaceId: string): {
 
   const space = useSpace(useMemberView ? spaceId : '');
   const outline = useSections(useMemberView ? spaceId : '');
+  const memberInstructors = useSpaceInstructors(spaceId, useMemberView);
 
   const memberView = useMemo(() => {
     const found = space.data?.space;
@@ -73,6 +86,11 @@ export function useCourseView(spaceId: string): {
     return {
       course: catalog.data.course,
       sections: catalog.data.sections,
+      // `?? []` because the two halves of this product deploy separately: a
+      // marketplace built after the field was added can be serving a course from
+      // an API that predates it, and a course page must not fall over on a field
+      // that arrived after the page did.
+      instructors: catalog.data.instructors ?? [],
       isLoading: false,
       notFound: false,
       error: undefined,
@@ -83,12 +101,12 @@ export function useCourseView(spaceId: string): {
     return {
       course: memberView?.course,
       sections: memberView?.sections ?? [],
+      instructors: memberInstructors.data?.instructors ?? [],
       isLoading: !memberView,
       notFound: false,
       error: undefined,
     };
   }
-
   // Still deciding whether the catalog's 404 means "no such course" or "not
   // listed, and you are in it".
   const stillResolving = catalog.isLoading || enrollmentLoading;
@@ -96,6 +114,7 @@ export function useCourseView(spaceId: string): {
   return {
     course: undefined,
     sections: [],
+    instructors: [],
     isLoading: stillResolving,
     notFound: catalogMissing && !useMemberView,
     error: catalog.isError && !catalogMissing ? catalog.error : undefined,
