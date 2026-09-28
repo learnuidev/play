@@ -94,6 +94,7 @@ dropped the player API the classroom uses.
 | A screen only one app has | that app's `src/app` and `src/components` |
 | A screen both apps have, with different URLs or data | `@play/learning`, with the differences as props |
 | A screen both apps have and neither varies — the sign-in | `@play/auth` |
+| A credential somebody calls the API with, and the screens for it | `services/api` + the studio's `/api-keys` and `/oauth/*` |
 | A request, its cache key and its invalidation | `@play/api/modules/*/*.queries.ts` |
 | Anything a page renders that is not specific to a screen | `@play/ui` |
 | A shape the API serializes | `@play/types` — and the same shape in `services/api/src/types` |
@@ -263,9 +264,13 @@ the marketplace are the same account. `@play/auth` is where that lives:
   that insists on one cannot render a landing page at all.
 - `AuthGate` — the sign-in wall, for everything that is only for signed-in
   people. It goes in a *layout*, so a section decides once who may see it: the
-  studio wraps `/o/[orgId]`, `/spaces`, `/invites`, `/organizations`, `/api-keys`
-  and `/home`, and the marketplace wraps the pages that need an account and sends
-  anonymous readers to `/sign-in?next=…`.
+  studio wraps `/o/[orgId]`, `/spaces`, `/invites`, `/organizations`, `/api-keys`,
+  `/oauth/apps`, `/oauth/connections` and `/home`, and the marketplace wraps the
+  pages that need an account and sends anonymous readers to `/sign-in?next=…`.
+  The one signed-in page that is *not* behind it is `/oauth/authorize`: a consent
+  screen somebody reaches while signed out has to be able to send them to sign in
+  and come back to the same request, so it handles that itself rather than
+  rendering a wall over a URL an app is waiting on.
 - `SignIn` — the sign-in screen itself, and the *only* place `socialProviders` is
   passed. A page that renders Amplify's `Authenticator` directly would silently
   offer passwords only, however the deployment is configured.
@@ -321,6 +326,42 @@ entry in `serverless.yml` with its path, method and `authorizer`. Leaving the
 authorizer off is how the two public catalog routes are public, and it is the
 only place in the service that happens on purpose.
 
+### Renaming a function is a deployment change, not a tidy-up
+
+The number of functions in `functions:` is not the number of things a rename
+touches. `serverless-plugin-split-stacks` migrates resources **by logical id**: on
+every deploy it reads the deployed stack and puts each resource back into the
+nested stack it is already in. Rename a function and its resources become new, so
+its nested stack moves to the end of the template — while the API Gateway methods
+that reference it, whose logical ids come from their *paths*, stay where they
+were. Add `stackConcurrency` (which chains stacks `i → i−5` so ninety of them are
+not created at once) and an old stack that lands on the same residue class closes
+that chain into a circle:
+
+```
+Circular dependency between resources: [RemoveDashcohortDashmemberNestedStack,
+OauthDashrevokeNestedStack, …, ApiDashcallerDashauthorizerNestedStack,
+ApiGatewayDeployment…]
+```
+
+which surfaces at `validateTemplate`, after packaging has finished. That is what
+happened when the `/v1` authorizer learned its second credential: the function key
+in `serverless.yml` (`api-key-authorizer`, `get-api-key-identity`) is a *deployed*
+name, and the files beside it (`api-caller-authorizer.ts`, `get-api-identity.ts`)
+are what the code is. **Rename the file, not the key** — and if a key must move,
+expect to move it together with the API resources whose logical ids depend on it.
+
+The check for it is local and cheap, because a cycle here is always one backward
+chain plus one edge that disagrees with it: package, then assert that every nested
+stack depends only on stacks that come before it. `serverless package --package
+/tmp/pack` writes the root template out on its own, and
+`aws cloudformation validate-template --template-url s3://…` performs the same
+validation the deploy failed on.
+
+The stack is also **tight against CloudFormation's 500-resource ceiling** — 497 of
+them, the nested stacks included — so anything that adds a root-level resource (a
+table, a bucket) is spending the whole service's headroom rather than its own.
+
 ### The provider environment is a budget
 
 Lambda caps a function's environment at **4 KB**, and this service shares one
@@ -338,46 +379,121 @@ environment instead. Anything that reads one should cache the promise rather
 than the value, so a cold-start burst makes one call rather than one per
 invocation.
 
-## The public API and API keys
+## The public API: keys, and OAuth apps
 
 Everything in this service used to be called by one of our own two apps, with a
-Cognito token behind it. `/v1` is the other kind of caller: a script, a partner's
-backend, a customer's pipeline — something that cannot complete a sign-in — and
-it authenticates with an API key in an `x-api-key` header.
+Cognito token behind it. `/v1` is the other kind of caller, and there are two of
+them:
 
-The pieces, and where they live:
+- an **API key** in an `x-api-key` header — a credential a person makes for a
+  script, which acts as them and reaches a fixed slice chosen once at creation;
+- an **OAuth access token** as `Authorization: Bearer …` — a credential minted
+  because a person authorized *somebody else's app* on a consent screen, which
+  acts as them and reaches exactly the scopes they agreed to.
+
+Both are resolved by one authorizer into one `ApiCaller`, because every `/v1`
+handler asks the same two questions — who is this, and what may they reach — and
+a route that took only one of the two credentials would be a route half the
+product cannot use.
 
 | What | Where |
 | --- | --- |
 | The key's row, its hash, and the lookup by secret | `services/api/src/lib/api-keys.ts` |
-| The header-to-identity step | `services/api/src/functions/auth/api-key-authorizer.ts` |
+| The scope catalogue, and the one place a route's requirement is named | `services/api/src/lib/oauth-scopes.ts` |
+| Apps, client secrets, client authentication, redirect URIs | `services/api/src/lib/oauth-apps.ts` |
+| Authorization requests: what a consent screen is being asked for | `services/api/src/lib/oauth-authorize.ts` |
+| Grants — one person's authorization of one app | `services/api/src/lib/oauth-grants.ts` |
+| Codes, access tokens, refresh tokens | `services/api/src/lib/oauth-tokens.ts` |
+| The OAuth error dialect, client credentials, form bodies | `services/api/src/lib/oauth-http.ts` |
+| The header-to-identity step, for either credential | `services/api/src/functions/auth/api-caller-authorizer.ts` |
 | The public surface itself | `services/api/src/functions/public/*` |
+| Apps, consent, tokens and revocation | `services/api/src/functions/oauth/*` |
 | Making, listing and revoking keys | `services/api/src/functions/api-keys/*` |
-| The screen that issues them | `apps/studio/src/app/api-keys` |
+| The screens that issue and manage them | `apps/studio/src/app/api-keys`, `apps/studio/src/app/oauth/{apps,authorize,connections}` |
 | The reference | `apps/studio/src/app/docs`, described by `apps/studio/src/lib/api-reference.ts` |
 
-Four rules worth keeping:
+### What is true of both credentials
 
-- **A key is never stored, only its hash.** The secret exists once, in the
-  response that creates it. Nothing can read one back, which is why "copy it now"
-  is the shape of that dialog rather than a nicety.
-- **`/v1` is read-only and deliberately small.** It is a surface somebody can
-  integrate against and be held to, not every handler in the service opened to a
-  second kind of caller. Adding to it is a decision, not a route.
-- **The authorizer caches nothing** (`resultTtlInSeconds: 0`). Revocation takes
-  effect on the next request, and the price — one read per call — is what
-  identifying a caller costs everywhere else here.
-- **Revoking a key deletes it.** A hard delete, not a tombstone: the row is the
-  credential and nothing else, so once the key stops working there is no fact
-  left in it worth keeping, and the hash index entry goes with it — which is why
-  a revoked key costs the authorizer exactly what a key that never existed does.
-  The app deletes the row from its cache rather than marking it, and the revoke
-  endpoints answer `204` because there is no longer anything to describe.
-- **A bad key is a Deny policy, not a thrown error.** API Gateway has three
-  documented answers here: a Deny policy is a 403, a thrown error is a 500, and
-  a missing `x-api-key` is a 401 from the gateway itself, because the route
-  names that header as its identity source. Only the first two are ours to
-  choose, and 403 is the one that means what happened.
+- **No credential is stored, only its hash.** A key's secret, a client secret, an
+  authorization code and an access token are all stored as hex SHA-256 and exist
+  in the clear exactly once: in the response that created them. Nothing can read
+  one back, which is why "copy it now" is the shape of those dialogs rather than a
+  nicety.
+- **Nothing is cached in front of the check** (`resultTtlInSeconds: 0`).
+  Revocation — of a key, or of an app somebody disconnected — takes effect on the
+  next request. The price is one DynamoDB read per call, which is what identifying
+  a caller costs everywhere else here.
+- **A bad credential is a Deny policy, not a thrown error.** API Gateway has
+  three documented answers here and only two are decisions: a Deny policy is a
+  403, a thrown error is a 500, and the case this function never sees — no
+  credential at all — is a 403 too, because the authorizer is invoked for every
+  request (see below).
+- **`/v1` is read-only and deliberately small.** Adding to it is a decision, not a
+  route.
 - **The docs page is data.** A changed response is one object in
   `lib/api-reference.ts`, and the page, the examples and the cURL commands all
   come from it.
+
+### One authorizer, two headers
+
+`custom.apiCallerAuthorizer` names **both** `Authorization` and `x-api-key` as
+identity sources, and that is documentation as much as configuration — API
+Gateway only verifies that every identity source is present when authorization
+**caching is on**. With the cache off (which is what makes revocation immediate)
+the request goes straight to the function, headers and all, and the function
+decides: `Bearer` first, then `x-api-key`, and the credential's *prefix*
+(`play_sk_` or `play_at_`) decides how it is looked up. So a request carrying only
+one of the two headers is not refused by the gateway for lacking the other, and a
+key presented as a bearer token works — an integration that would rather send
+every credential the same way is not doing anything wrong.
+
+The one behaviour that changed when the authorizer grew its second credential: a
+request with no credential at all now reaches the function and is refused there,
+so it is a **403** rather than the 401 API Gateway used to answer with before the
+function ran.
+
+### Scopes are what an app may do; a key's reach is what it always was
+
+An API key is not scoped on its row. It holds the read-only catalogue
+(`courses:read`, `lessons:read`, `lessons:stream`), plus
+`organization:courses:read` when its owner named an organization — which is
+exactly the reach keys have always had, now expressed in the vocabulary the OAuth
+side uses so that a handler asks one question of either credential. A key never
+holds `profile:read`: a key belongs to a script, and no person agreed to anything
+about their own account when it was made.
+
+Each `/v1` handler names the scope it needs (`requireScope(caller, 'lessons:read')`)
+rather than the authorizer deciding from the route. A fact about a route belongs
+beside the route, where a new endpoint cannot be added without walking past it —
+and the refusal names the missing scope, because an integration that has run out
+of permission needs to know which permission to ask its user for.
+
+### The five rules the OAuth side keeps
+
+- **A consent screen redirects only to a URI the API has validated.** The studio
+  reads the authorization request out of its own query string, hands it to the API
+  unchanged, and builds the redirect from what comes back — never from the
+  parameters it was opened with. Everything else about the flow (exact-match
+  redirect URIs, PKCE required of every client, `state` echoed verbatim) exists to
+  keep that one sentence true.
+- **Two kinds of authorization failure, and they are not interchangeable.** An
+  unknown client or an unregistered redirect URI is drawn as an error page and
+  **nothing is redirected** — there is no verified place to send a browser, which
+  is the whole risk. Everything after that point (an unregistered scope, an
+  unsupported response type) is reported to the *app* by redirecting with
+  `error=` in the query string, which is what every OAuth library is waiting for.
+  `lib/oauth-authorize.ts` is where that line is drawn, once.
+- **PKCE is required of every client, public or confidential.** A code travels
+  through a browser, a redirect and (usually) a log; the verifier never leaves the
+  client, and that is what makes a code that leaked on the way worthless.
+- **Refresh tokens rotate, and tokens are opaque.** Redeeming a refresh token
+  spends it and issues a new pair, so a copy of one is refused rather than being a
+  second silent way in. There is no reuse *detection* — a client that lost the
+  response to a refresh is indistinguishable from a replay without tombstones for
+  every token ever issued, and guessing wrong there means revoking a working
+  connection.
+- **Changing an app's scopes ends its authorizations.** A person agreed to a list
+  printed on a screen; an app whose list has changed is not the app they agreed
+  to, so the next visit shows the consent screen again. Editing a name or a
+  redirect URI disconnects nobody.
+

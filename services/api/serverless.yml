@@ -35,18 +35,38 @@ custom:
     name: cognito-authorizer
     type: COGNITO_USER_POOLS
     arn: !GetAtt CognitoUserPool.Arn
-  # The authorizer behind `/v1`: the routes a caller reaches with an API key
-  # rather than with a token.
+  # The authorizer behind `/v1`: the routes a caller reaches with a credential
+  # rather than with a sign-in.
+  #
+  # Two credentials, one authorizer, and the reason they cannot be two is that
+  # API Gateway allows one authorizer per method: `/v1` is one set of routes and
+  # has to accept either an API key in `x-api-key` or an OAuth access token as
+  # `Authorization: Bearer …`.
   #
   # `type: request` because the credential is a header we look up ourselves
-  # rather than a token API Gateway already knows how to validate. The identity
-  # source is the header the docs promise, which is also what API Gateway keys
-  # its cache on — and the cache is off (`resultTtlInSeconds: 0`) so that
-  # revoking a key takes effect on the next call rather than within the hour.
-  apiKeyAuthorizer:
+  # rather than a token API Gateway already knows how to validate.
+  #
+  # Both headers are named as identity sources, which is documentation as much as
+  # configuration — and it is worth knowing what it does *not* do. API Gateway
+  # checks that every identity source is present only when authorization caching
+  # is on, and returns 401 itself when one is missing; with the cache off
+  # (`resultTtlInSeconds: 0`) the request goes straight to the function, headers
+  # and all, and the function decides. So a request carrying only one of the two
+  # headers is not refused by the gateway for lacking the other. The cache stays
+  # off because a revocation that takes up to an hour to take effect is not a
+  # revocation, and that is the same trade this service already made for keys.
+  #
+  # One consequence is worth stating because it is a change: a request with no
+  # credential at all now reaches the authorizer and is refused there with a Deny
+  # policy — a 403 — where a missing `x-api-key` used to be a 401 from API
+  # Gateway before the function ran.
+  apiCallerAuthorizer:
+    # The `name` is what the `AWS::ApiGateway::Authorizer` resource is called, and
+    # it stays as it was for the reason spelled out at the function below: it is
+    # a deployed logical id, and moving it moves the resource's whole stack.
     name: api-key-authorizer
     type: request
-    identitySource: method.request.header.x-api-key
+    identitySource: method.request.header.Authorization, method.request.header.x-api-key
     resultTtlInSeconds: 0
   # Google sign-in (optional). The credentials live in SSM Parameter Store so
   # they stay out of the repo and out of shell history — write them with
@@ -181,6 +201,14 @@ provider:
     SPACE_REWARDS_TABLE: !Ref SpaceRewardsTable
     REWARD_GRANTS_TABLE: !Ref RewardGrantsTable
     API_KEYS_TABLE: !Ref ApiKeysTable
+    # Four more table names, which is 4 KB's worth of concern only because this
+    # whole block is: see "The provider environment is a budget" in
+    # docs/workspace.md. These are names, not values — about 130 bytes between
+    # them, against the 2.3 KB the CloudFront key used to spend here.
+    OAUTH_APPS_TABLE: !Ref OAuthAppsTable
+    OAUTH_GRANTS_TABLE: !Ref OAuthGrantsTable
+    OAUTH_TOKENS_TABLE: !Ref OAuthTokensTable
+    OAUTH_CODES_TABLE: !Ref OAuthCodesTable
     PROFILES_TABLE: !Ref ProfilesTable
     VIDEOS_BUCKET: !Ref VideosBucket
     CLOUDFRONT_DOMAIN: !GetAtt VideoDistribution.DomainName
@@ -329,6 +357,30 @@ provider:
           Resource:
             - !GetAtt ApiKeysTable.Arn
             - !Sub "${ApiKeysTable.Arn}/index/*"
+        # OAuth: the apps people register, the authorizations they are given, and
+        # the codes and tokens those produce.
+        #
+        # `BatchGetItem` is here for one read: the connections screen, which
+        # lists a person's grants and needs each app's current name beside it —
+        # an app can rename itself, and what somebody is deciding whether to
+        # disconnect is the app as it is now, not as it was called the day they
+        # authorized it.
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:BatchGetItem
+          Resource:
+            - !GetAtt OAuthAppsTable.Arn
+            - !Sub "${OAuthAppsTable.Arn}/index/*"
+            - !GetAtt OAuthGrantsTable.Arn
+            - !Sub "${OAuthGrantsTable.Arn}/index/*"
+            - !GetAtt OAuthTokensTable.Arn
+            - !Sub "${OAuthTokensTable.Arn}/index/*"
+            - !GetAtt OAuthCodesTable.Arn
         # People. Everything else in this service keys a person by their Cognito
         # `sub` and never needs to say their name; this is the row that does —
         # what an instructor is called on a marketplace course page, and what the
@@ -1412,8 +1464,22 @@ functions:
 
   # The authorizer itself. It has no HTTP event: API Gateway invokes it on behalf
   # of the routes below, and it is never reachable as an endpoint of its own.
+  #
+  # **The key stays `api-key-authorizer`, and that is not an oversight.** The
+  # handler behind it is `api-caller-authorizer.ts`, which is what it now is; the
+  # name below is the name of a *deployed* thing. Renaming it moves its nested
+  # stack to the end of the template — `serverless-plugin-split-stacks` migrates
+  # by logical id and keeps existing resources where they are — while the `/v1`
+  # methods that depend on the authorizer stay in the stacks they already
+  # occupy. The plugin then chains stacks `i -> i-5` for `stackConcurrency`, and
+  # a dependency pointing *forward* into a stack on that chain closes it into a
+  # circle: "Circular dependency between resources: [... 49 nested stacks ...]",
+  # at template validation, after eleven minutes of packaging.
+  #
+  # The route-facing name is `custom.apiCallerAuthorizer`, which says what it is.
+  # This one is the physical name, and it is load-bearing.
   api-key-authorizer:
-    handler: src/functions/auth/api-key-authorizer.handler
+    handler: src/functions/auth/api-caller-authorizer.handler
 
   # The public API: `/v1`. Read-only, addressed by a key, and the surface the
   # docs page describes.
@@ -1422,16 +1488,38 @@ functions:
   # a Cognito token, and they are deliberately few: a curated surface someone can
   # integrate against and be held to, rather than every handler this service has
   # opened to a second kind of caller.
+  # Named for the key it used to take rather than for what it does now, and kept
+  # that way on purpose: this function's API resources — `/v1/me` itself — are
+  # migrated back into *this* nested stack by logical id on every deploy, so
+  # renaming the key would leave them in an old stack pointing at a new one,
+  # which is the circular dependency described at `api-key-authorizer` below.
+  # The handler is `get-api-identity.ts`: the code says what it is, the deployed
+  # name is a name.
   get-api-key-identity:
-    handler: src/functions/public/get-api-key-identity.handler
+    handler: src/functions/public/get-api-identity.handler
     events:
       - http:
-          # What the presented key is, and what it reaches. The first call any
-          # new integration makes.
+          # What the presented credential is, and what it reaches. The first call
+          # any new integration makes.
           path: v1/me
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
+
+  get-api-profile:
+    handler: src/functions/public/get-api-profile.handler
+    events:
+      - http:
+          # Who the credential acts as: a name, a face, a sentence, links. The
+          # call an app makes to greet somebody rather than merely serve them.
+          #
+          # Behind `profile:read` — the one thing here an app has to ask for
+          # separately from reading anything, because a name is a person and a
+          # catalog is not.
+          path: v1/me/profile
+          method: get
+          cors: true
+          authorizer: ${self:custom.apiCallerAuthorizer}
 
   list-public-courses:
     handler: src/functions/public/list-public-courses.handler
@@ -1440,7 +1528,7 @@ functions:
           path: v1/courses
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-public-course:
     handler: src/functions/public/get-public-course.handler
@@ -1449,7 +1537,7 @@ functions:
           path: v1/courses/{spaceId}
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
 
   list-organization-courses:
     handler: src/functions/public/list-organization-courses.handler
@@ -1461,7 +1549,7 @@ functions:
           path: v1/organizations/{orgId}/courses
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
 
   # A lesson, to a key that may read it: the pieces a page needs to teach with —
   # the outline it sits in, the lesson itself, its video, its subtitles, and the
@@ -1479,7 +1567,7 @@ functions:
           path: v1/courses/{spaceId}/sections
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-lesson:
     handler: src/functions/public/get-lesson.handler
@@ -1488,7 +1576,7 @@ functions:
           path: v1/lessons/{contentId}
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-lesson-stream:
     handler: src/functions/public/get-lesson-stream.handler
@@ -1499,7 +1587,7 @@ functions:
           path: v1/lessons/{contentId}/stream
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-lesson-subtitles:
     handler: src/functions/public/get-lesson-subtitles.handler
@@ -1508,7 +1596,7 @@ functions:
           path: v1/lessons/{contentId}/subtitles
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
 
   list-lesson-attachments:
     handler: src/functions/public/list-lesson-attachments.handler
@@ -1517,7 +1605,137 @@ functions:
           path: v1/lessons/{contentId}/attachments
           method: get
           cors: true
-          authorizer: ${self:custom.apiKeyAuthorizer}
+          authorizer: ${self:custom.apiCallerAuthorizer}
+
+  # OAuth: letting somebody else's app act as one of our people, with their
+  # consent. Two audiences, and the difference between them is the authorizer.
+  #
+  # ## Registration and consent — behind the Cognito authorizer
+  #
+  # Everything a person does while signed in to the studio: registering an app,
+  # editing it, reading and ending the authorizations they have granted, and the
+  # two calls the consent screen makes — one to find out what it is being asked
+  # for, one to say yes.
+  oauth-list-apps:
+    handler: src/functions/oauth/list-apps.handler
+    events:
+      - http:
+          path: oauth/apps
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-create-app:
+    handler: src/functions/oauth/create-app.handler
+    events:
+      - http:
+          path: oauth/apps
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-get-app:
+    handler: src/functions/oauth/get-app.handler
+    events:
+      - http:
+          path: oauth/apps/{appId}
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-update-app:
+    handler: src/functions/oauth/update-app.handler
+    events:
+      - http:
+          path: oauth/apps/{appId}
+          method: patch
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-delete-app:
+    handler: src/functions/oauth/delete-app.handler
+    events:
+      - http:
+          path: oauth/apps/{appId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-rotate-app-secret:
+    handler: src/functions/oauth/rotate-app-secret.handler
+    events:
+      - http:
+          path: oauth/apps/{appId}/secret
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-describe-authorization:
+    handler: src/functions/oauth/describe-authorization.handler
+    events:
+      - http:
+          # What an authorization URL is asking for, before anybody agrees to it:
+          # the consent screen's one read.
+          path: oauth/authorization-request
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-authorize:
+    handler: src/functions/oauth/authorize.handler
+    events:
+      - http:
+          # "Allow": mints the code the studio then hands to the app's redirect
+          # URI. The studio never composes that redirect itself.
+          path: oauth/authorize
+          method: post
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-list-connections:
+    handler: src/functions/oauth/list-connections.handler
+    events:
+      - http:
+          # What I have let in: every app authorized on this account, and what
+          # each one may do.
+          path: oauth/connections
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  oauth-delete-connection:
+    handler: src/functions/oauth/delete-connection.handler
+    events:
+      - http:
+          # Disconnect: the grant and every token the app holds for this account.
+          path: oauth/connections/{appId}
+          method: delete
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
+  # ## The token endpoint — no authorizer
+  #
+  # The one route on this service whose caller is a third party's *backend*. It
+  # authenticates itself: the client id and secret are form parameters or an
+  # HTTP Basic header, checked in the handler, and API Gateway has no opinion
+  # about them. `cors: true` is still set, because a public client — one with no
+  # secret, which is what a browser app is — calls this from a page.
+  oauth-token:
+    handler: src/functions/oauth/token.handler
+    events:
+      - http:
+          path: oauth/token
+          method: post
+          cors: true
+
+  # RFC 7009 revocation, for an app that is done with somebody.
+  oauth-revoke:
+    handler: src/functions/oauth/revoke.handler
+    events:
+      - http:
+          path: oauth/revoke
+          method: post
+          cors: true
 
   process-video:
     handler: src/functions/processing/process-video.handler
@@ -2226,6 +2444,164 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+
+    # OAuth apps: somebody's client, registered by one of our people.
+    #
+    # Keyed by the app's own id, so everything the studio does with an app — its
+    # settings page, rotating its secret, deleting it — is a read of the row it
+    # names. The client id has an index of its own because the *token endpoint*
+    # is the other way round: it holds a client id and nothing else, and needs
+    # the app that id belongs to.
+    #
+    # There is no index on the client secret's hash, and that is a decision: the
+    # secret is only ever presented *with* a client id, so it is compared against
+    # the hash on the row that was already found, in constant time, rather than
+    # looked up as a key space of its own. That comparison is what makes a public
+    # client — which has no hash at all — expressible: a row either has something
+    # to compare or has nothing, and absence is the flag.
+    OAuthAppsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: appId
+            AttributeType: S
+          - AttributeName: clientId
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: appId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          # What a request authenticates as.
+          - IndexName: ClientIdIndex
+            KeySchema:
+              - AttributeName: clientId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          # The apps one person has registered, newest first.
+          - IndexName: UserCreatedIndex
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+    # OAuth grants: one person's authorization of one app.
+    #
+    # Keyed by the person *and* the app together, rather than by an id of its
+    # own, because that pair is what a grant is. Authorizing the same app twice
+    # replaces the answer instead of stacking a second row, "the grants for my
+    # account" is a query on the table rather than an index, and "may this app
+    # act as this person" is a read of the exact row that says so.
+    #
+    # The one index is the other direction — everyone who has authorized one app
+    # — and it exists for exactly one caller: deleting an app has to end every
+    # authorization of it, or an app that no longer exists leaves working tokens
+    # behind. Nothing reads it to count connections: who authorized an app is
+    # between them and the app, and an app's owner is not told.
+    OAuthGrantsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: appId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: appId
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: AppGrantedIndex
+            KeySchema:
+              - AttributeName: appId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+    # OAuth tokens: the access and refresh tokens a grant produces.
+    #
+    # One table for both kinds, because they are the same row with a different
+    # lifetime and a different job. Keyed by a ULID neither side ever sees, with
+    # the hash indexed for the authentication path — the same shape as the keys
+    # table, and for the same reason: the authorizer holds a secret and nothing
+    # else.
+    #
+    # `GrantKeyCreatedIndex` is what makes revocation a query: a token carries
+    # `userId#appId` as one synthesized attribute, so "every credential this
+    # authorization produced" is a read of an index rather than a scan of the
+    # table. `expiresAt` is a TTL attribute, which is a cleanup rather than a
+    # control — expiry is checked in the handler, because DynamoDB deletes
+    # within 48 hours and a credential that works for two days past its expiry
+    # is not a credential with an expiry.
+    OAuthTokensTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: tokenId
+            AttributeType: S
+          - AttributeName: tokenHash
+            AttributeType: S
+          - AttributeName: grantKey
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: N
+        KeySchema:
+          - AttributeName: tokenId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: TokenHashIndex
+            KeySchema:
+              - AttributeName: tokenHash
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: GrantKeyCreatedIndex
+            KeySchema:
+              - AttributeName: grantKey
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        TimeToLiveSpecification:
+          AttributeName: expiresAt
+          Enabled: true
+
+    # OAuth authorization codes.
+    #
+    # Keyed by the hash of the code, because the hash is the only thing anybody
+    # ever looks one up by: a code is minted for one client and spent by that
+    # same client a second later, so there is no listing, no ownership question
+    # and nothing to revoke — it is deleted the moment it is redeemed, and it is
+    # worthless 60 seconds after it was made either way.
+    #
+    # The TTL is a backstop for codes that are never redeemed at all: a person
+    # who closes the tab leaves a row behind, and it should not be this table's
+    # job to notice.
+    OAuthCodesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: codeHash
+            AttributeType: S
+        KeySchema:
+          - AttributeName: codeHash
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: expiresAt
+          Enabled: true
 
     # People. One item per account, keyed by the Cognito `sub` every membership
     # in this service already uses, holding the name they chose, the sentence

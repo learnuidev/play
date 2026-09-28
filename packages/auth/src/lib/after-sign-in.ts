@@ -30,6 +30,13 @@ const KEY = 'play:after-sign-in';
 export function internalPath(value: string | null | undefined): string | null {
   if (!value) return null;
   if (!value.startsWith('/') || value.startsWith('//')) return null;
+  // A backslash is the other half of the same attack, and the half that a
+  // `startsWith('/')` check does not catch: `/\evil.com` starts with a single
+  // slash, and the URL parser Next's router feeds it to reads the backslash as
+  // a second one — `new URL('/\\evil.com', 'https://app.example/sign-in')` is
+  // `https://evil.com/`. So a sign-in page forwarding to it would hand somebody
+  // to another origin the moment they finished signing in.
+  if (value.includes('\\')) return null;
   return value;
 }
 

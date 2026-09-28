@@ -20,8 +20,11 @@ import type {
   CreateSpaceResponse,
   CreateVideoPayload,
   CreateVideoResponse,
+  ApproveAuthorizationResponse,
   CreateApiKeyPayload,
   CreateApiKeyResponse,
+  CreateOAuthAppPayload,
+  CreateOAuthAppResponse,
   FavouriteResponse,
   FavouriteTargetType,
   GrantRewardPayload,
@@ -31,6 +34,8 @@ import type {
   InviteSpaceMemberResponse,
   ListApiKeysResponse,
   ListCatalogResponse,
+  ListOAuthAppsResponse,
+  ListOAuthConnectionsResponse,
   ListCohortsResponse,
   ListCommentsResponse,
   ListContentFilesResponse,
@@ -55,6 +60,9 @@ import type {
   ListSpacesResponse,
   ListVideosResponse,
   LoopResponse,
+  OAuthAppResponse,
+  OAuthAuthorizationParams,
+  OAuthAuthorizationRequestResponse,
   OrgMemberResponse,
   OrgRole,
   ResendInvitationResponse,
@@ -64,6 +72,7 @@ import type {
   RevokeRewardGrantResponse,
   RewardGrantResponse,
   RewardResponse,
+  RotateClientSecretResponse,
   SectionResponse,
   SpaceMemberResponse,
   SpaceMemberRole,
@@ -76,6 +85,8 @@ import type {
   UpdateCohortPayload,
   UpdateContentPayload,
   UpdateLoopPayload,
+  UpdateOAuthAppPayload,
+  UpdateOAuthAppResponse,
   UpdateProfilePayload,
   UpdateRewardPayload,
   UpdateSectionPayload,
@@ -683,6 +694,86 @@ export const api = {
     request<void>(`/me/api-keys/${keyId}`, { method: 'DELETE' }),
 
   /**
+   * The OAuth apps the caller has registered.
+   *
+   * The other half of "how do I call this API from my own code", and the newer
+   * half: a key is one credential that acts as one person forever, and an app is
+   * a client that a person can *authorize* — so the app acts as them, with only
+   * the scopes they agreed to on a screen, and can be disconnected from the
+   * connections screen without anybody rotating anything.
+   */
+  listOAuthApps: () => request<ListOAuthAppsResponse>('/oauth/apps'),
+
+  /**
+   * Registers an app. The response carries the client secret, once, and only for
+   * a confidential client: a public client has none, because one shipped inside
+   * a browser bundle is not a secret.
+   */
+  createOAuthApp: (payload: CreateOAuthAppPayload) =>
+    request<CreateOAuthAppResponse>('/oauth/apps', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getOAuthApp: (appId: string) => request<OAuthAppResponse>(`/oauth/apps/${appId}`),
+
+  /**
+   * Edits an app. Only the fields sent are written, and changing the scopes ends
+   * every authorization the app has — the people who connected it are asked
+   * again, with the new list on the screen.
+   */
+  updateOAuthApp: (appId: string, patch: UpdateOAuthAppPayload) =>
+    request<UpdateOAuthAppResponse>(`/oauth/apps/${appId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  /** Deletes an app, ending every authorization of it on the way out. */
+  deleteOAuthApp: (appId: string) => request<void>(`/oauth/apps/${appId}`, { method: 'DELETE' }),
+
+  /**
+   * Replaces the client secret, and hands the new one over exactly once. The old
+   * secret stops working the moment this returns.
+   */
+  rotateOAuthAppSecret: (appId: string) =>
+    request<RotateClientSecretResponse>(`/oauth/apps/${appId}/secret`, { method: 'POST' }),
+
+  /**
+   * What an authorization URL is asking for: which app, which scopes, and whether
+   * this person has already agreed to them.
+   *
+   * Sent as the query string the client used, unchanged — the parameters are the
+   * RFC 6749 ones precisely so that a third party's library can build them and
+   * nothing here has to translate.
+   */
+  describeAuthorization: (params: OAuthAuthorizationParams) =>
+    request<OAuthAuthorizationRequestResponse>(
+      `/oauth/authorization-request?${authorizationQuery(params)}`,
+    ),
+
+  /**
+   * "Allow". Answers with the code, the URI it must be delivered to, and the
+   * state to echo — and the page redirects to exactly that URI, never to the one
+   * in its own query string.
+   */
+  approveAuthorization: (params: OAuthAuthorizationParams) =>
+    request<ApproveAuthorizationResponse>('/oauth/authorize', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  /** What the caller has let in: every app authorized on their account. */
+  listOAuthConnections: () =>
+    request<ListOAuthConnectionsResponse>('/oauth/connections'),
+
+  /**
+   * Disconnects an app: the authorization and every token it holds for this
+   * account, so it stops working on its next call rather than within the hour.
+   */
+  deleteOAuthConnection: (appId: string) =>
+    request<void>(`/oauth/connections/${appId}`, { method: 'DELETE' }),
+
+  /**
    * Every key made for an organization, whoever made it. An admin's list: keys
    * outlive the people who made them, and somebody has to be able to cut one off.
    */
@@ -715,3 +806,20 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 };
+
+/**
+ * An authorization request as a query string.
+ *
+ * `undefined` values are dropped rather than sent as the string `undefined` —
+ * `state` and `scope` are both optional, and a request that carried
+ * `scope=undefined` would be one the API refuses for naming a scope nobody has
+ * ever heard of.
+ */
+function authorizationQuery(params: OAuthAuthorizationParams): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === '') continue;
+    query.set(key, String(value));
+  }
+  return query.toString();
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRightIcon, KeyRoundIcon, PlusIcon } from 'lucide-react';
+import { ArrowRightIcon, KeyRoundIcon, PlusIcon, SquareCodeIcon } from 'lucide-react';
 import { useApiKeys, useRevokeApiKey } from '@api/modules/api-key/api-key.queries';
 import { useOrganizations } from '@api/modules/organization/organization.queries';
 import { Button } from '@ui/components/ui/button';
@@ -24,6 +24,11 @@ import { OrganizationApiKeysCard } from '@/components/api-keys/organization-api-
  * settings page: making one is a two-field dialog, and the secret is shown once
  * and never again, so the screen that makes keys and the screen that lists them
  * have to be the same screen.
+ *
+ * The card at the bottom is the one thing this screen says about the *other*
+ * kind of credential: a key is a script's, and an app that acts for people is a
+ * different thing with a different screen, built the moment somebody needs to
+ * sign somebody in rather than to read a catalog.
  */
 export default function ApiKeysPage() {
   const keysQuery = useApiKeys();
@@ -110,6 +115,26 @@ export default function ApiKeysPage() {
           <Link href="/docs">
             Read the API reference
             <ArrowRightIcon />
+          </Link>
+        </Button>
+      </section>
+
+      {/* The other kind of caller, and one line about which is which. A key acts
+          as one person forever; an app asks each person for permission. Somebody
+          reading this page is usually deciding between the two, and the answer
+          depends on whether a human is signing in. */}
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-border/60 bg-card px-6 py-5 text-card-foreground shadow-sm">
+        <div className="min-w-0">
+          <p className="text-base font-semibold tracking-tight">Building an app people sign in to?</p>
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            Register an OAuth app instead. It acts as whoever authorizes it, asks for named
+            permissions, and anybody can disconnect it.
+          </p>
+        </div>
+        <Button asChild variant="secondary">
+          <Link href="/oauth/apps">
+            <SquareCodeIcon />
+            OAuth apps
           </Link>
         </Button>
       </section>

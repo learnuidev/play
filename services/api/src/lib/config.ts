@@ -25,6 +25,22 @@ export const env = {
   rewardGrantsTableName: required('REWARD_GRANTS_TABLE', process.env.REWARD_GRANTS_TABLE),
   apiKeysTableName: required('API_KEYS_TABLE', process.env.API_KEYS_TABLE),
   profilesTableName: required('PROFILES_TABLE', process.env.PROFILES_TABLE),
+  /**
+   * OAuth: the apps people register, the authorizations those apps are given,
+   * and the two kinds of credential a grant produces — authorization codes on
+   * their way through a browser, and the access and refresh tokens they become.
+   *
+   * Four tables rather than one because they are four different lifetimes: an app
+   * is a setting somebody maintains, a grant is a permission a person can read
+   * and take back, a code lives for a minute and a token for an hour or a month.
+   * What they have in common is that none of the three credential tables ever
+   * holds a secret — the plaintext exists once, in the response that created it,
+   * and what is stored is a SHA-256 of it.
+   */
+  oauthAppsTableName: required('OAUTH_APPS_TABLE', process.env.OAUTH_APPS_TABLE),
+  oauthGrantsTableName: required('OAUTH_GRANTS_TABLE', process.env.OAUTH_GRANTS_TABLE),
+  oauthTokensTableName: required('OAUTH_TOKENS_TABLE', process.env.OAUTH_TOKENS_TABLE),
+  oauthCodesTableName: required('OAUTH_CODES_TABLE', process.env.OAUTH_CODES_TABLE),
   bucket: required('VIDEOS_BUCKET', process.env.VIDEOS_BUCKET),
   cloudfrontDomain: required('CLOUDFRONT_DOMAIN', process.env.CLOUDFRONT_DOMAIN),
   cloudfrontKeyPairId: required('CLOUDFRONT_KEY_PAIR_ID', process.env.CLOUDFRONT_KEY_PAIR_ID),

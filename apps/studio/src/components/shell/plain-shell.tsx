@@ -12,10 +12,15 @@ import { AccountMenu } from './account-menu';
  * have, and everything waiting for you.
  *
  * There is no active community on any of them — that is the point of them — so
- * they get a plain header instead of the community shell. The five are one
+ * they get a plain header instead of the community shell. The seven are one
  * family and are navigated between in one click, which is why the header is a
- * component rather than five copies of a header: a person who belongs to no
+ * component rather than seven copies of a header: a person who belongs to no
  * organization at all lives here, and this is the whole of their navigation.
+ *
+ * The two `/oauth` ones were added when apps arrived beside keys. Each level
+ * filters out the surface it is already on, so the three developer screens —
+ * keys, apps, connections — never link to each other from a page that is one of
+ * them.
  *
  * The API reference is deliberately not one of them. It is a document rather
  * than a surface — its own header, its own rail, read once and left — and it is
@@ -28,6 +33,8 @@ const SURFACES = [
   { href: '/spaces', label: 'Spaces' },
   { href: '/invites', label: 'Invites' },
   { href: '/api-keys', label: 'API keys' },
+  { href: '/oauth/apps', label: 'OAuth apps' },
+  { href: '/oauth/connections', label: 'Connected apps' },
 ];
 
 export function PlainShell({

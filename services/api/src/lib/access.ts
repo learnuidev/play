@@ -9,7 +9,7 @@ import { getSection } from './sections';
 import { isSpaceMember } from './space-members';
 import { getSpace } from './spaces';
 import type {
-  ApiKeyCaller,
+  ApiCaller,
   Cohort,
   Comment,
   Content,
@@ -20,6 +20,20 @@ import type {
   SpaceReward,
   Video,
 } from '../types';
+
+/**
+ * The organization a key was *made for*, when the caller is a key that has one.
+ *
+ * The organization shortcut is a key's, and deliberately not an app's. A key
+ * scoped to an organization is that organization's own credential, made by one
+ * of its members and visible to its admins; an OAuth token acts as the person
+ * who authorized it, and gives an app exactly the reach that person has and no
+ * more. Answering `undefined` for an OAuth caller is what enforces that: the
+ * check below falls through to what the person may read.
+ */
+function organizationOfKey(caller: ApiCaller): string | undefined {
+  return caller.kind === 'key' ? caller.organizationId : undefined;
+}
 
 /** Roles that may create, change, or delete what an organization owns. */
 const WRITE_ROLES: OrgRole[] = ['ADMIN', 'EDITOR'];
@@ -52,50 +66,57 @@ export async function requireOrganizationAccess(
 }
 
 /**
- * Authorizes an API key against a course.
+ * Authorizes a `/v1` caller against a course.
  *
- * Two ways in, and the second is the one worth stating: the key's owner may
- * read what they may read — an organization they belong to, a course they are
- * registered for — and a key *made for an organization* may read that
- * organization's own courses outright. A key scoped to an organization is that
- * organization's credential, so what it reaches is what the organization owns,
- * which is the same reach `GET /v1/organizations/{orgId}/courses` already gives
- * it for the catalogue.
+ * Two ways in, and which one applies is what the two credentials differ by:
  *
- * It is not an escalation: every active member of an organization can already
- * read its courses, and the key is made by a member and visible to its admins.
+ * - **A key made for an organization** may read that organization's own courses
+ *   outright. A key scoped to an organization is that organization's
+ *   credential, so what it reaches is what the organization owns — the same
+ *   reach `GET /v1/organizations/{orgId}/courses` already gives it for the
+ *   catalogue. It is not an escalation: every active member of an organization
+ *   can already read its courses, and the key was made by a member and is
+ *   visible to its admins.
+ * - **Any other caller** — an unscoped key, or an OAuth token whose holder
+ *   authorized an app — reads what the *person* behind the credential may read:
+ *   an organization they belong to, or a course they are registered for. An
+ *   OAuth token never takes this shortcut, and that is deliberate: an app acts
+ *   as the person who authorized it, and the person's reach is the app's reach.
+ *   An app cannot be handed more than the person who agreed to it has.
  *
  * A course nobody may read answers 403, and one that does not exist 404 — the
  * same answers the signed-in routes give, for the same reasons.
  */
-export async function requireKeySpaceAccess(
+export async function requireCallerSpaceAccess(
   spaceId: string,
-  caller: ApiKeyCaller,
+  caller: ApiCaller,
 ): Promise<Space> {
   const space = await getSpace(spaceId);
   if (!space) throw new HttpError(404, 'Course not found');
 
-  if (caller.organizationId && caller.organizationId === space.organizationId) return space;
+  const scopedTo = organizationOfKey(caller);
+  if (scopedTo && scopedTo === space.organizationId) return space;
 
   await assertSpaceRead(space.spaceId, space.organizationId, caller.userId);
   return space;
 }
 
 /**
- * Authorizes an API key against a lesson.
+ * Authorizes a `/v1` caller against a lesson.
  *
- * The same two ways in as a course, asked of the lesson's own copy of the
+ * The same ways in as a course, asked of the lesson's own copy of the
  * organization — a lesson carries its course and its organization, so this is
  * one read and the same rule rather than a second one.
  */
-export async function requireKeyContentAccess(
+export async function requireCallerContentAccess(
   contentId: string,
-  caller: ApiKeyCaller,
+  caller: ApiCaller,
 ): Promise<Content> {
   const content = await getContent(contentId);
   if (!content) throw new HttpError(404, 'Lesson not found');
 
-  if (caller.organizationId && caller.organizationId === content.organizationId) return content;
+  const scopedTo = organizationOfKey(caller);
+  if (scopedTo && scopedTo === content.organizationId) return content;
 
   await assertSpaceRead(content.spaceId, content.organizationId, caller.userId);
   return content;

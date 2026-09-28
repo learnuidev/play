@@ -1118,13 +1118,289 @@ export interface OrganizationApiKey extends ApiKey {
   userEmail?: string;
 }
 
-/** What a presented key is allowed to act as, read from the authorizer. */
+/**
+ * What a caller behind `/v1` is allowed to act as, read from the authorizer.
+ *
+ * Two kinds of credential reach `/v1`, and this is the one shape they are
+ * resolved into. An API key is the older one: a credential a person made for a
+ * script, which acts as them and reaches a fixed, chosen slice. An OAuth access
+ * token is the newer one: a credential minted because a person *authorized
+ * somebody else's app*, which acts as them and reaches exactly the scopes they
+ * agreed to on a consent screen.
+ *
+ * The two are one type rather than two paths through every handler because the
+ * questions a handler asks are the same either way — who is this, and what may
+ * they reach. What differs is small and worth being able to see at a glance:
+ * a key can be *made for an organization* and reaches that organization's
+ * courses outright (`organizationId`), and an OAuth caller is an app with a
+ * client id, which is what a response tells the caller about when it says who
+ * they are.
+ */
+export type ApiCaller = ApiKeyCaller | OAuthCaller;
+
+/** A caller holding an API key. */
 export interface ApiKeyCaller {
+  kind: 'key';
   keyId: string;
   /** Cognito `sub` of the key's owner — the identity the key acts as. */
   userId: string;
   /** The organization the key was made for, when it has one. */
   organizationId?: string;
+  /** What the key reaches. See `lib/oauth-scopes`. */
+  scopes: ApiScope[];
+}
+
+/** A caller holding an OAuth access token that a person authorized. */
+export interface OAuthCaller {
+  kind: 'oauth';
+  /** ULID of the app the token was issued to. */
+  appId: string;
+  clientId: string;
+  /** Cognito `sub` of the person who authorized the app — who it acts as. */
+  userId: string;
+  /** The scopes the token was issued with, which the person agreed to. */
+  scopes: ApiScope[];
+}
+
+/**
+ * A scope: one thing an app may be allowed to do on somebody's behalf.
+ *
+ * Deliberately coarse, and deliberately few. A scope is a sentence a person
+ * reads on a consent screen and agrees to, not an endpoint name: an app that
+ * asked for `courses:read` and got `catalog:read`, `sections:read` and
+ * `lessons:index` would be asking somebody to agree to three things they cannot
+ * tell apart.
+ *
+ * The catalogue itself — which scopes exist, what each one reaches, and which
+ * ones a new app starts with — is `lib/oauth-scopes`, and it is the one place
+ * that maps a scope onto the routes it opens.
+ */
+export type ApiScope =
+  | 'profile:read'
+  | 'courses:read'
+  | 'lessons:read'
+  | 'lessons:stream'
+  | 'organization:courses:read';
+
+/**
+ * An OAuth app: somebody's client, registered by one of our people.
+ *
+ * The row is what is *stored*, so it carries the hash of the client secret and
+ * never the secret — the same rule the keys table follows, for the same reason:
+ * a leak of this table is then a leak of nothing anybody can authenticate with.
+ * The secret exists once, in the response that made it (or the one that rotated
+ * it), and there is no way to read it back.
+ *
+ * A **public** client — a browser app, a desktop app, a CLI — has no secret at
+ * all: nothing shipped to a machine somebody else controls can keep one, so
+ * storing a hash of something that is not secret would be pretending. A public
+ * client authenticates with its `clientId` and proves itself with PKCE instead,
+ * which is the same proof a confidential client gives and is required of both.
+ */
+export interface OAuthAppRecord {
+  /** ULID, the table key. Public: it addresses the app everywhere in the app's own UI. */
+  appId: string;
+  /**
+   * What a client authenticates *as*, e.g. `play_app_9f2c1a4b…`.
+   *
+   * Public by definition — it travels in an authorization URL a browser can see
+   * — which is why it is a name rather than a secret, and why the secret beside
+   * it exists.
+   */
+  clientId: string;
+  /**
+   * Hex SHA-256 of the client secret. Absent on a public client, and its
+   * absence *is* the flag: a row either has a secret to check or has none, and
+   * an `isPublic` boolean beside a hash that may or may not be there is two
+   * facts that can disagree.
+   */
+  clientSecretHash?: string;
+  /** The opening characters of the secret, e.g. `play_cs_9f2c1a`. For a list. */
+  secretPrefix?: string;
+  /** What the app is called, as it is shown on the consent screen. */
+  name: string;
+  /** The sentence under the name on the consent screen. */
+  description: string;
+  /** Where the app lives. Shown on the consent screen, and where its name links. */
+  homepageUrl?: string;
+  /** The app's mark, shown on the consent screen. */
+  logoUrl?: string;
+  /**
+   * Where the app is allowed to be sent back to, exactly.
+   *
+   * Matched as whole strings rather than by prefix: a redirect URI is where a
+   * person is handed a code that acts as them, so `https://app.example/cb` and
+   * `https://app.example.evil.com/cb` must not be the same answer to the same
+   * question. A client that needs several registers several.
+   */
+  redirectUris: string[];
+  /** The most this app may ever ask for. A consent screen offers a subset. */
+  scopes: ApiScope[];
+  /** Cognito `sub` of whoever registered it. */
+  userId: string;
+  /** Their email at the time, so a support question can be answered by a person. */
+  userEmail?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** An app as its owner sees it. No hash, and no owner: the caller is the owner. */
+export interface OAuthApp {
+  appId: string;
+  clientId: string;
+  name: string;
+  description: string;
+  homepageUrl?: string;
+  logoUrl?: string;
+  redirectUris: string[];
+  scopes: ApiScope[];
+  /** A public client has a client id and no secret. See `OAuthAppRecord`. */
+  isPublic: boolean;
+  /** The opening characters of the secret, for a list. Absent on a public client. */
+  clientSecretPrefix?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * An app as somebody who is not its owner sees it.
+ *
+ * What the consent screen draws — the name, the sentence under it, where it
+ * lives, its mark — and nothing else. The redirect URIs, the registered scopes
+ * and the secret's hash are the owner's business; a person deciding whether to
+ * trust an app needs the four fields here and none of the others.
+ */
+export interface OAuthAppSummary {
+  appId: string;
+  clientId: string;
+  name: string;
+  description: string;
+  homepageUrl?: string;
+  logoUrl?: string;
+}
+
+/**
+ * One person's authorization of one app: a *grant*.
+ *
+ * Keyed by the person and the app together (`userId`, `appId`), because that
+ * pair is what a grant is — authorizing the same app twice replaces the first
+ * answer rather than stacking a second one, and the scopes on the row are the
+ * answer given most recently.
+ *
+ * It is the row a person reads when they ask "what have I let in", and the row
+ * disconnecting deletes, taking the app's tokens with it.
+ */
+export interface OAuthGrantRecord {
+  /** Cognito `sub` of the person who authorized the app. Table key. */
+  userId: string;
+  /** The app they authorized. Sort key. */
+  appId: string;
+  /**
+   * What they agreed to.
+   *
+   * The answer given most recently, rather than the union of every answer: a
+   * person who authorizes an app for less than they did last time has narrowed
+   * it, and a row that kept the wider set would be a consent screen that cannot
+   * be walked back.
+   */
+  scopes: ApiScope[];
+  createdAt: number;
+  /** When the scopes on this row were last agreed to. */
+  updatedAt: number;
+  /**
+   * The last time the app used the grant, accurate to about five minutes.
+   *
+   * On the grant rather than on each token: the grant is what a person reads and
+   * what a person revokes, and a timestamp per token would describe a credential
+   * nobody lists.
+   */
+  lastUsedAt?: number;
+}
+
+/** One app a person has authorized, as the screen that lists them reads it. */
+export interface OAuthConnection {
+  appId: string;
+  clientId: string;
+  name: string;
+  description: string;
+  homepageUrl?: string;
+  logoUrl?: string;
+  /** What the person agreed to. */
+  scopes: ApiScope[];
+  /** When they first authorized it. */
+  createdAt: number;
+  /** When they last re-authorized it, which is also when its scopes last changed. */
+  updatedAt: number;
+  lastUsedAt?: number;
+}
+
+/**
+ * An authorization code, waiting to be exchanged for tokens.
+ *
+ * Stored by hash for the same reason a key is: the table is a list of live
+ * credentials, and the only thing that ever needs the plaintext is the client
+ * that was just handed it. Single-use — redeeming one deletes it — and short
+ * lived, because its whole purpose is to survive one redirect through a browser.
+ */
+export interface OAuthCodeRecord {
+  /** Hex SHA-256 of the code. The table key. */
+  codeHash: string;
+  clientId: string;
+  appId: string;
+  /** Who authorized it. The identity the tokens it becomes will act as. */
+  userId: string;
+  /**
+   * The redirect URI the code was issued for, so the exchange can require the
+   * same one. A code that is replayed to a different URI is a code somebody
+   * moved, and the two must be the same answer to RFC 6749.
+   */
+  redirectUri: string;
+  /**
+   * The S256 challenge the code is bound to.
+   *
+   * Required of every client, public or confidential: a code travels through a
+   * browser, a redirect and (usually) a log, and PKCE is what makes a code that
+   * leaked on the way useless without the verifier that never left the client.
+   */
+  codeChallenge: string;
+  /** The scopes the person agreed to. */
+  scopes: ApiScope[];
+  createdAt: number;
+  /** Epoch seconds, which is also the table's TTL attribute. */
+  expiresAt: number;
+}
+
+/**
+ * An access or refresh token, stored by hash.
+ *
+ * One table for both kinds, because they are the same row with a different
+ * lifetime and a different job: an access token is presented to `/v1` and proves
+ * a grant is still in force, and a refresh token is presented to the token
+ * endpoint and asks for a new one. What they share is everything that matters to
+ * revocation — the app, the person, the scopes — and revoking a grant has to
+ * take both.
+ */
+export interface OAuthTokenRecord {
+  /** ULID. The table key, and never anything a client sees. */
+  tokenId: string;
+  /** Hex SHA-256 of the token. What the lookup is by. */
+  tokenHash: string;
+  kind: 'access' | 'refresh';
+  clientId: string;
+  appId: string;
+  userId: string;
+  /**
+   * `userId#appId`: the grant this token belongs to, as one attribute.
+   *
+   * Synthesized rather than derived, because DynamoDB indexes an attribute and
+   * not an expression — and revocation is by grant, so "every token this
+   * authorization produced" has to be a query rather than a scan.
+   */
+  grantKey: string;
+  scopes: ApiScope[];
+  createdAt: number;
+  /** Epoch seconds, which is also the table's TTL attribute. */
+  expiresAt: number;
 }
 
 /**
@@ -1172,3 +1448,65 @@ export interface ApiLessonAttachment {
   url?: string;
   createdAt: number;
 }
+
+/**
+ * What `GET /v1/me` answers: who the presented credential is.
+ *
+ * `kind` is the discriminator the two credentials are told apart by, and the two
+ * shapes beside it are deliberately different rather than a lowest common
+ * denominator: a key has a name, a prefix and an organization, and an app has a
+ * client id and the scopes a person agreed to. A caller that asked "does this
+ * work" is owed the answer in the terms of the thing it is holding.
+ */
+export interface ApiIdentityResponse {
+  kind: 'key' | 'oauth';
+  /** Present on a key. Absent on an OAuth access token. */
+  key?: ApiKey;
+  /** Present on an OAuth access token. Absent on a key. */
+  oauth?: {
+    app: OAuthAppSummary;
+    scopes: ApiScope[];
+    /** The same scopes as OAuth writes them, for a client that echoes them back. */
+    scope: string;
+  };
+  owner: {
+    /** Cognito `sub` of the person the credential acts as. */
+    userId: string;
+  };
+  /** Every scope the credential holds. What the two above agree on. */
+  scopes: ApiScope[];
+}
+
+/** One scope an app asked for, and whether the person has already agreed to it. */
+export interface OAuthScopeGrant {
+  scope: ApiScope;
+  granted: boolean;
+}
+
+/**
+ * What the consent screen's one read answers.
+ *
+ * A union rather than one shape plus a status code, because the two failures are
+ * not interchangeable and neither is a server error: `ok: false` is a request
+ * that may still be reported to the *client* by redirecting the browser to
+ * `redirectUri`, and a 400 is a request that must be shown to the person instead
+ * because nothing about it has been verified — see `describe-authorization`.
+ */
+export type OAuthAuthorizationRequestResponse =
+  | {
+      ok: true;
+      app: OAuthAppSummary;
+      scopes: OAuthScopeGrant[];
+      /** Validated against the app's registered list. Safe to send a browser to. */
+      redirectUri: string;
+      state?: string;
+      alreadyAuthorized: boolean;
+    }
+  | {
+      ok: false;
+      /** RFC 6749 §4.1.2.1 code, e.g. `invalid_scope`. */
+      oauthError: string;
+      message: string;
+      redirectUri: string;
+      state?: string;
+    };

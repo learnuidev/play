@@ -12,6 +12,7 @@ export * from './modules/content/completion.queries';
 export * from './modules/content/content.queries';
 export * from './modules/learning/learning.queries';
 export * from './modules/loop/loop.queries';
+export * from './modules/oauth/oauth.queries';
 export * from './modules/organization/member.queries';
 export * from './modules/organization/organization.queries';
 export * from './modules/profile/profile.queries';

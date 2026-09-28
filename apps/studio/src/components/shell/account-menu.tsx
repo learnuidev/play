@@ -7,8 +7,10 @@ import {
   BuildingIcon,
   GraduationCapIcon,
   KeyRoundIcon,
+  Link2Icon,
   LogOutIcon,
   MailPlusIcon,
+  SquareCodeIcon,
   UserRoundIcon,
 } from 'lucide-react';
 import { useMyProfile } from '@api/modules/profile/profile.queries';
@@ -91,15 +93,32 @@ export function AccountMenu() {
             Your organizations
           </Link>
         </DropdownMenuItem>
-        {/* The credentials for calling the API, and the reference for what they
-            reach. Here rather than in a sidebar section because neither belongs
-            to a community: a key is the person's own, and it is the same screen
-            whether they are in one organization or none. */}
+        {/* The four developer surfaces. Here rather than in a sidebar section
+            because none of them belongs to a community: a key and an app are the
+            person's own, a connection is what somebody else's app was allowed to
+            do, and the reference is what all three are read against. They are the
+            same four screens whether somebody is in one organization or none.
+
+            Keys before apps, and apps before connections, because that is the
+            order of the questions: do I need a credential, am I building a
+            client, and what have I already let in. */}
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
           <Link href="/api-keys">
             <KeyRoundIcon />
             API keys
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/oauth/apps">
+            <SquareCodeIcon />
+            OAuth apps
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/oauth/connections">
+            <Link2Icon />
+            Connected apps
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

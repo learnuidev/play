@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
-import type { ApiKeyCaller } from '../types';
+import type { ApiCaller } from '../types';
 import { HttpError } from './http';
+import { scopesFromContext } from './oauth-scopes';
 
 interface AuthorizerClaims {
   sub?: string;
@@ -56,30 +57,45 @@ export function requireUserId(event: APIGatewayProxyEvent): string {
 }
 
 /**
- * The key a caller presented, as the API-key authorizer resolved it.
+ * The caller behind `/v1`, as the authorizer resolved them.
  *
  * The other half of `requireUser`: a route behind the Cognito authorizer learns
- * who is calling from the token's claims, and a route behind the key authorizer
- * learns it from the context the authorizer returned. Everything the key
- * authorizes in a handler reads this and nothing else — the identity, and the
- * organization the key was made for.
+ * who is calling from the token's claims, and a route behind the API-caller
+ * authorizer learns it from the context that authorizer returned. Everything
+ * `/v1` authorizes in a handler reads this and nothing else — the identity, the
+ * scopes, and whichever of the two credentials it arrived as.
  *
- * Not reaching this at all is the normal case for a missing key: API Gateway
- * refuses a request that carries no `x-api-key` before the function is invoked,
- * so this guard is here for the request that arrives with an empty context
- * rather than for the one that arrives with no key.
+ * Not reaching this at all is the normal case for a request with no credential:
+ * the authorizer refuses those before the function is invoked, so this guard is
+ * here for the request that arrives with an empty context rather than for the
+ * one that arrives with no credential.
  */
-export function requireApiKeyCaller(event: APIGatewayProxyEvent): ApiKeyCaller {
+export function requireApiCaller(event: APIGatewayProxyEvent): ApiCaller {
   const context = event.requestContext.authorizer as
     | Record<string, string | undefined>
     | undefined;
 
-  const keyId = context?.keyId;
   const userId = context?.userId;
-  if (!keyId || !userId) {
+  if (!userId) {
+    throw new HttpError(401, 'Unauthorized');
+  }
+
+  const scopes = scopesFromContext(context?.scopes);
+
+  if (context?.kind === 'oauth') {
+    const appId = context.appId;
+    const clientId = context.clientId;
+    if (!appId || !clientId) {
+      throw new HttpError(401, 'Unauthorized');
+    }
+    return { kind: 'oauth', appId, clientId, userId, scopes };
+  }
+
+  const keyId = context?.keyId;
+  if (!keyId) {
     throw new HttpError(401, 'Unauthorized');
   }
 
   const organizationId = context?.organizationId;
-  return { keyId, userId, ...(organizationId ? { organizationId } : {}) };
+  return { kind: 'key', keyId, userId, scopes, ...(organizationId ? { organizationId } : {}) };
 }

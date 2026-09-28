@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireKeyContentAccess } from '../../lib/access';
-import { requireApiKeyCaller } from '../../lib/auth';
+import { requireCallerContentAccess } from '../../lib/access';
+import { requireApiCaller } from '../../lib/auth';
+import { requireScope } from '../../lib/oauth-scopes';
 import { buildSignedSubtitleUrl } from '../../lib/cloudfront';
 import { getVideo } from '../../lib/dynamodb';
 import { handle, ok, pathParam } from '../../lib/http';
@@ -19,14 +20,19 @@ import type { SubtitleStatus, SubtitleTrackInfo } from '../../types';
  * appearing a line at a time. It is capped, and a consumer that does not use it
  * can ignore it.
  *
+ * Behind `lessons:stream` rather than `lessons:read`: a subtitle track is part
+ * of playing the lesson, and it is signed for the same reason the manifest is.
+ *
  * A lesson whose subtitles are not ready answers with the status and no tracks
  * rather than an error. "This video has no captions yet" is a state a page
  * renders — a caption button that is not there — where a 409 is a response the
  * caller has to catch to say the same thing.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiKeyCaller(event);
-  const content = await requireKeyContentAccess(pathParam(event, 'contentId'), caller);
+  const caller = requireApiCaller(event);
+  requireScope(caller, 'lessons:stream');
+
+  const content = await requireCallerContentAccess(pathParam(event, 'contentId'), caller);
 
   if (!content.videoId) {
     return ok({ videoId: null, status: 'NONE' as SubtitleStatus, tracks: [], words: [] });

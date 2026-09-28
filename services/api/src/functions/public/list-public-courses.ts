@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireApiKeyCaller } from '../../lib/auth';
+import { requireApiCaller } from '../../lib/auth';
+import { requireScope } from '../../lib/oauth-scopes';
 import { searchListedSpaces, toCatalogCourses } from '../../lib/catalog';
 import { HttpError, encodeNextToken, handle, ok, parseLimit, parsePaging } from '../../lib/http';
 import { listListedSpaces } from '../../lib/spaces';
@@ -9,17 +10,21 @@ const MAX_QUERY_LENGTH = 80;
 const MAX_SEARCH_RESULTS = 24;
 
 /**
- * The published catalog, to a key.
+ * The published catalog, to a key or an authorized app.
  *
  * The same courses `GET /catalog/courses` serves to anybody, with the same
  * search, reached the other way: that route is open to the world and this one
- * asks for a key. Neither is more privileged than the other — the catalog is
- * public — and the reason both exist is that a partner integrating with the API
- * wants one base URL and one way in, while the marketplace's front page wants to
- * render for a visitor who has not signed in.
+ * asks for a credential. Neither is more privileged than the other — the catalog
+ * is public — and the reason both exist is that a partner integrating with the
+ * API wants one base URL and one way in, while the marketplace's front page
+ * wants to render for a visitor who has not signed in.
+ *
+ * `courses:read`, which every credential holds unless its owner narrowed it away
+ * — an app registered for `profile:read` alone is refused here, and told which
+ * scope it is missing.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  requireApiKeyCaller(event);
+  requireScope(requireApiCaller(event), 'courses:read');
 
   const query = (event.queryStringParameters?.query ?? '').trim();
   if (query.length > MAX_QUERY_LENGTH) {

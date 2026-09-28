@@ -1,3 +1,5 @@
+import type { ApiScope } from '@play/types';
+
 /**
  * The API reference, as data.
  *
@@ -46,16 +48,28 @@ export interface ApiParameter extends ApiField {
 export interface ApiEndpoint {
   /** The anchor it is linked by, and what the rail scrolls to. */
   id: string;
-  method: 'GET' | 'POST' | 'DELETE';
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
   summary: string;
   /** One or two sentences on what it is for and anything surprising about it. */
   description: string;
   /**
-   * What authenticates the call: an API key, or a signed-in session. They are
-   * different credentials and the difference matters to whoever is reading.
+   * What authenticates the call. Four kinds of caller reach this service and the
+   * difference matters to whoever is reading:
+   *
+   * - `key` — a credential in a header, either an API key or an OAuth access
+   *   token. Every route under `/v1` takes both; what changes between them is
+   *   what the credential is allowed to reach, which is `scope` below.
+   * - `session` — a signed-in person's token, which is what the studio itself
+   *   sends. The endpoints that mint and revoke credentials live here, so that a
+   *   credential cannot mint another one.
+   * - `oauth-client` — a client id and secret, presented by a third party's
+   *   server to the token endpoint. Not a person and not a key: an app
+   *   authenticating *itself*, before it is given anything to act with.
+   * - `browser` — not a call an integration makes at all: a person's browser,
+   *   following a redirect, which is what an authorization request is.
    */
-  auth: 'key' | 'session';
+  auth: 'key' | 'session' | 'oauth-client' | 'browser';
   parameters?: ApiParameter[];
   body?: ApiField[];
   /** The status it answers with, e.g. `200 OK`. */
@@ -69,6 +83,24 @@ export interface ApiEndpoint {
   responseFields?: ApiField[];
   /** Caveats that change how the answer above should be read. */
   notes?: string[];
+  /**
+   * The scope a call under `/v1` needs, when it needs one.
+   *
+   * Absent on the two that need none — `GET /v1/me` answers who the caller is
+   * whatever they hold, and the endpoints that manage credentials take a session
+   * rather than a scope. An API key holds every scope except `profile:read`, so
+   * this is what tells an app author which permissions to ask a person for.
+   */
+  scope?: ApiScope;
+  /**
+   * How the request body is written. Absent means JSON, which is what every
+   * endpoint in this service takes.
+   *
+   * The one exception is the OAuth endpoints, where RFC 6749 specifies
+   * `application/x-www-form-urlencoded` and every OAuth client library sends it:
+   * documenting JSON there would be documenting a request no library makes.
+   */
+  bodyEncoding?: 'json' | 'form';
 }
 
 export interface ApiEndpointGroup {
@@ -131,39 +163,101 @@ const ORGANIZATION_KEY_FIELDS: ApiField[] = [
   { name: 'userEmail', type: 'string?', description: 'Their email at the time, so an admin list can be read by a person.' },
 ];
 
+/**
+ * An app, as its owner reads it. The client id is public by definition — it
+ * travels in a URL a browser can see — and the secret is not on this shape at
+ * all: the service keeps a hash, so the full secret exists once, in the response
+ * that created it or the one that rotated it.
+ */
+const OAUTH_APP_FIELDS: ApiField[] = [
+  { name: 'appId', type: 'string', description: 'ULID. What addresses the app in the studio, and in the paths above.' },
+  { name: 'clientId', type: 'string', description: 'The public half of the credential, `play_app_…`. Sent to the authorization page and to the token endpoint.' },
+  { name: 'name', type: 'string', description: 'What the app is called on the consent screen.' },
+  { name: 'description', type: 'string', description: 'The sentence under the name on the consent screen.' },
+  { name: 'homepageUrl', type: 'string?', description: 'Where the app lives, linked from the consent screen.' },
+  { name: 'logoUrl', type: 'string?', description: 'The app’s mark on the consent screen and the connections screen.' },
+  { name: 'redirectUris', type: 'array', description: 'Where the app may be sent back to, matched exactly. `https` anywhere, `http` only on localhost, or a native app’s own scheme.' },
+  { name: 'scopes', type: 'array', description: 'The most the app may ever ask a person for.' },
+  { name: 'isPublic', type: 'boolean', description: 'True when the app has no secret and authenticates with PKCE alone.' },
+  { name: 'clientSecretPrefix', type: 'string?', description: 'The opening characters of the secret, `play_cs_…`. Absent on a public client, which has none.' },
+  { name: 'createdAt', type: 'number', description: 'Epoch milliseconds.' },
+  { name: 'updatedAt', type: 'number', description: 'Epoch milliseconds. Moves when any setting does.' },
+];
+
 export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
   {
     id: 'account',
-    title: 'The key itself',
+    title: 'The credential itself',
     description:
-      'What the key you are holding is. Behind an API key, like everything under /v1.',
+      'What the credential you are holding is, and who it acts as. Behind either credential, like everything under /v1.',
     endpoints: [
       {
         id: 'get-me',
         method: 'GET',
         path: '/v1/me',
-        summary: 'Check a key, and see what it reaches.',
+        summary: 'Check a credential, and see everything it reaches.',
         description:
-          'The first call to make with a new key, and the one that answers both questions a key’s owner has: does this work, and what does it unlock. It reads the key’s own record, so the organization it names is the organization that will answer the endpoint below.',
+          'The first call to make with a new credential, and the one that answers both questions its holder has: does this work, and what does it unlock. It answers for either kind — an API key or an OAuth access token — and `kind` says which one you are holding. It needs no scope, which is the point: a credential that has run out of permission still has to be able to find out what it is.',
         auth: 'key',
         responseStatus: '200 OK',
         responseExample: `{
-  "key": {
-    "keyId": "01JQ8Z6K4M7N9P2R5T8V1W3X6Y",
-    "name": "Nightly reporting",
-    "prefix": "play_sk_9f2c1a4b",
-    "createdAt": 1772582400000,
-    "lastUsedAt": 1772668800000,
-    "organizationId": "01JQ8Y2A1B3C4D5E6F7G8H9J0K",
-    "organizationName": "Northwind Learning"
+  "kind": "oauth",
+  "oauth": {
+    "app": {
+      "appId": "01JQ9B7M5N8P1Q4R7T0V3W6X9Y",
+      "clientId": "play_app_7c1d9e2f4a6b8c0d",
+      "name": "Team dashboard",
+      "description": "Shows your team's courses and progress in one place."
+    },
+    "scopes": ["profile:read", "courses:read", "lessons:read"],
+    "scope": "profile:read courses:read lessons:read"
   },
   "owner": {
     "userId": "8f14e45f-ea6c-4f2b-9d3a-1c2b3a4d5e6f"
+  },
+  "scopes": ["profile:read", "courses:read", "lessons:read"]
+}`,
+        responseFields: [
+          { name: 'kind', type: '"key" | "oauth"', description: 'Which credential authenticated the call.' },
+          { name: 'key', type: 'object?', description: 'The key, when `kind` is `key`. Absent otherwise. It has the fields of any other key: `keyId`, `name`, `prefix`, `createdAt`, `lastUsedAt`, and the organization it was made for.' },
+          { name: 'oauth.app', type: 'object?', description: 'The app the token was issued to, when `kind` is `oauth`: its `appId`, `clientId`, `name` and `description`.' },
+          { name: 'oauth.scopes', type: 'array?', description: 'What the token was issued with — the permissions a person agreed to on a consent screen.' },
+          { name: 'oauth.scope', type: 'string?', description: 'The same list, space-delimited, spelled the way OAuth spells it.' },
+          { name: 'owner.userId', type: 'string', description: 'Cognito `sub` of the person the credential acts as. Every read is attributed to them.' },
+          { name: 'scopes', type: 'array', description: 'Every scope the credential holds. Empty for an API key unless its owner named an organization.' },
+        ],
+      },
+      {
+        id: 'get-me-profile',
+        method: 'GET',
+        path: '/v1/me/profile',
+        summary: 'Who the person behind the credential is.',
+        description:
+          'A name, a photo, a sentence and a set of links — the same public half of a profile a marketplace course page credits an instructor with. It is what makes an integration feel like part of the product rather than a script holding a token: an app that knows a name can greet somebody by it. Behind `profile:read`, because a name is a person and a catalog is not, and somebody reading a consent screen can tell those two apart.',
+        auth: 'key',
+        scope: 'profile:read',
+        responseStatus: '200 OK',
+        responseExample: `{
+  "profile": {
+    "userId": "8f14e45f-ea6c-4f2b-9d3a-1c2b3a4d5e6f",
+    "name": "Dana Ruiz",
+    "bio": "Teaches film editing, badly but enthusiastically.",
+    "socials": {
+      "website": "https://dana.example"
+    },
+    "photoUrl": "https://videos.example.net/people/8f14e45f/photo-1772582400000.jpg?Policy=…"
   }
 }`,
         responseFields: [
-          ...KEY_FIELDS,
-          { name: 'owner.userId', type: 'string', description: 'Cognito `sub` of the person the key acts as. Every read is attributed to them.' },
+          { name: 'profile.userId', type: 'string', description: 'Cognito `sub`. The same id `GET /v1/me` reports as `owner.userId`.' },
+          { name: 'profile.name', type: 'string', description: 'What they call themselves. Never empty.' },
+          { name: 'profile.bio', type: 'string', description: 'The sentence they wrote about themselves. Empty when they have not written one.' },
+          { name: 'profile.socials', type: 'object', description: 'Their links, keyed by kind. Empty when they have added none.' },
+          { name: 'profile.photoUrl', type: 'string?', description: 'A signed URL, minted per response and good for a few minutes. Absent when they have no photo.' },
+        ],
+        notes: [
+          'No email, and no timestamps. What this endpoint answers with is what this service shows a stranger on a course page, because a consent screen cannot ask somebody to agree to something they cannot see.',
+          'An API key never holds `profile:read`, so this endpoint answers a key with **403**. A key belongs to a script, and no person agreed to anything on their own behalf when it was made.',
         ],
       },
     ],
@@ -182,6 +276,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'One page of the catalog, or a search across it. With `query` the API searches instead of paging: it reads a bounded stretch of the catalog and matches a case-insensitive substring against each course’s title, its description, and the name of the community it is from.',
         auth: 'key',
+        scope: 'courses:read',
         responseStatus: '200 OK',
         parameters: [
           {
@@ -231,6 +326,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'What a course is, and what is in it: its sections and their lessons, in the order they are taught. The lessons themselves are not here — a lesson’s video, notes, files and discussion are what registering for the course is *for*, and they stay behind the course’s own membership.',
         auth: 'key',
+        scope: 'courses:read',
         responseStatus: '200 OK',
         parameters: [
           {
@@ -294,6 +390,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'The read that makes naming an organization on a key worth doing. A partner integrating with one customer gets that customer’s entire catalogue — the courses written for a team, the drafts, the ones nobody has listed — rather than the subset advertised to the world. Courses come back in the same shape the catalog list returns.',
         auth: 'key',
+        scope: 'organization:courses:read',
         responseStatus: '200 OK',
         parameters: [
           {
@@ -348,6 +445,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'The same shape the syllabus uses — sections, and each lesson’s title and whether it has a video — with one difference that is the whole reason this endpoint exists: it answers for any course the key may read. `GET /v1/courses/{spaceId}` is the catalogue and answers only for a published course; this is the left rail of a classroom, which has to work for the ones nobody has advertised.',
         auth: 'key',
+        scope: 'lessons:read',
         responseStatus: '200 OK',
         parameters: [
           {
@@ -390,6 +488,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'What a lesson is, apart from its media. The notes come back as the document the author wrote — a ProseMirror tree, the same one the classroom renders — rather than as HTML, because this API does not sanitize markup for a caller and a document is not a string anybody has to trust. The poster is here so a page has something to draw before the manifest arrives.',
         auth: 'key',
+        scope: 'lessons:read',
         responseStatus: '200 OK',
         parameters: [
           {
@@ -439,6 +538,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'How to play it. The manifest is signed per request, so a lesson’s video is reachable only by somebody who may read the lesson — and `baseUrl` and `signedQuery` come back beside the URL because the signature covers the video’s whole stream prefix rather than one file. A player has to attach that same query to every segment it asks for, which is the one thing it cannot work out from the manifest alone.',
         auth: 'key',
+        scope: 'lessons:stream',
         responseStatus: '200 OK',
         parameters: [
           {
@@ -477,6 +577,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'Every ready track — the language it was transcribed in, and any translation the author generated — as a signed WebVTT URL for whatever player you use. `words` is the other half of the same recording: each word with when it is said, which is what lets a transcript highlight as it is read rather than appearing a line at a time.',
         auth: 'key',
+        scope: 'lessons:stream',
         responseStatus: '200 OK',
         parameters: [
           {
@@ -534,6 +635,7 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
         description:
           'Everything attached to the lesson, each with a signed URL. They are signed under one policy scoped to the lesson’s own prefix, so a single signature serves every file — which is also why the whole list comes back at once rather than paged: a lesson’s material is a handful of files.',
         auth: 'key',
+        scope: 'lessons:read',
         responseStatus: '200 OK',
         parameters: [
           {
@@ -755,13 +857,394 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
       },
     ],
   },
+  {
+    id: 'oauth',
+    title: 'OAuth: acting as somebody',
+    description:
+      'The flow a third-party app uses to act as one of our people — with that person’s permission, and only as far as the scopes they agreed to. An app registers first (see the group below), then sends people here.',
+    endpoints: [
+      {
+        id: 'authorize',
+        method: 'GET',
+        path: '{studio}/oauth/authorize',
+        summary: 'Send a person here to sign in and grant permission.',
+        description:
+          'Not an API call — this is a page in the studio that a *browser* is sent to, which is the one part of the flow an integration does not make itself. The app builds the URL, opens it, and waits for the browser to come back to its redirect URI with a `code`. The page draws the consent screen: what the app is, what it is asking for, and who is signed in.',
+        auth: 'browser',
+        responseStatus: '302 Found · back to your redirect_uri',
+        parameters: [
+          { in: 'query', name: 'client_id', type: 'string', required: true, description: 'The app’s client id, from the studio.', example: 'play_app_7c1d9e2f4a6b8c0d' },
+          { in: 'query', name: 'redirect_uri', type: 'string', required: true, description: 'Where to send the browser back to. Must match one of the app’s registered URIs **exactly** — no wildcards, no prefix matching. A mismatch is an error page, never a redirect.', example: 'https://example.com/auth/play/callback' },
+          { in: 'query', name: 'response_type', type: 'string', required: true, description: 'Always `code`. The implicit flow is not implemented and not coming.', example: 'code' },
+          { in: 'query', name: 'scope', type: 'string', description: 'Space-delimited, and optional: leaving it off asks for everything the app is registered for. Asking for a scope the app is not registered for fails the whole request rather than being quietly trimmed.', example: 'profile:read courses:read' },
+          { in: 'query', name: 'state', type: 'string', description: 'Opaque, echoed back on the redirect verbatim. Use it: it is what ties the browser that comes back to the request that sent it, and it is the only defence against a login-CSRF that this flow has.', example: 'a1b2c3d4' },
+          { in: 'query', name: 'code_challenge', type: 'string', required: true, description: '`base64url(sha256(code_verifier))`, unpadded. Required of **every** client, public or not.', example: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM' },
+          { in: 'query', name: 'code_challenge_method', type: 'string', required: true, description: 'Always `S256`. `plain` is refused: a challenge sent in the clear proves nothing.', example: 'S256' },
+        ],
+        notes: [
+          'The browser comes back to `redirect_uri?code=…&state=…`, or with `error=access_denied&state=…` if the person pressed Cancel. Both are answers — do not treat a refusal as a hang.',
+          'The code is single-use and lives **60 seconds**. Exchange it immediately; do not store it.',
+          'If the client id or the redirect URI is wrong, the studio draws an error page and **nothing is redirected anywhere**. That is deliberate: forwarding an error to a URI that has not been verified is how an authorization server becomes an open redirector.',
+        ],
+      },
+      {
+        id: 'exchange-code',
+        method: 'POST',
+        path: '/oauth/token',
+        summary: 'Exchange a code for tokens — or a refresh token for a new pair.',
+        description:
+          'The call an app’s *server* makes. One endpoint, two grant types: `authorization_code` turns the code the browser brought back into an access token and a refresh token, and `refresh_token` turns a refresh token into a new pair when the access token expires. There is no `client_credentials` grant.',
+        auth: 'oauth-client',
+        bodyEncoding: 'form',
+        responseStatus: '200 OK',
+        body: [
+          { name: 'grant_type', type: 'string', required: true, description: '`authorization_code` or `refresh_token`.', example: 'authorization_code' },
+          { name: 'code', type: 'string', description: 'The code from the redirect. Required for `authorization_code`.', example: 'play_ac_9f2c1a4b7d8e0f1a2b3c4d5e' },
+          { name: 'code_verifier', type: 'string', description: 'The verifier the challenge was derived from. Required for `authorization_code`, and never sent anywhere before this call.', example: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk' },
+          { name: 'redirect_uri', type: 'string', description: 'The same URI the code was issued for. Required for `authorization_code`, and required to match.', example: 'https://example.com/auth/play/callback' },
+          { name: 'refresh_token', type: 'string', description: 'The refresh token to spend. Required for `refresh_token`.', example: 'play_rt_3a1b9c8d7e6f5a4b3c2d1e0f' },
+          { name: 'scope', type: 'string', description: 'On a refresh only, and only to ask for **less** than the grant holds.', example: 'courses:read' },
+          { name: 'client_id', type: 'string', required: true, description: 'The app’s client id. May go here, or in an HTTP Basic header with the secret.', example: 'play_app_7c1d9e2f4a6b8c0d' },
+          { name: 'client_secret', type: 'string', description: 'Required for a confidential client. Absent for a public one, which authenticates with `client_id` and PKCE alone.', example: 'play_cs_5e4d3c2b1a0f9e8d7c6b5a4d' },
+        ],
+        responseExample: `{
+  "access_token": "play_at_8c7b6a5d4e3f2a1b0c9d8e7f6a5b4c3d",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "play_rt_1f2e3d4c5b6a7988a9b0c1d2e3f4a5b6",
+  "scope": "profile:read courses:read"
+}`,
+        responseFields: [
+          { name: 'access_token', type: 'string', description: 'Present this as `Authorization: Bearer …` on every `/v1` call. Lives **one hour**.' },
+          { name: 'token_type', type: 'string', description: 'Always `Bearer`.' },
+          { name: 'expires_in', type: 'integer', description: 'Seconds until the access token expires. 3600.' },
+          { name: 'refresh_token', type: 'string', description: 'Lives **30 days**, and rotates: redeeming it deletes it and issues a new one. Store the new one every time.' },
+          { name: 'scope', type: 'string', description: 'What the tokens actually hold — always present, even when it equals what you asked for, so a misconfigured app is visible rather than mysterious.' },
+        ],
+        notes: [
+          'Client authentication is `client_secret_basic` (an `Authorization: Basic` header, with both halves percent-encoded) or `client_secret_post` (the two fields in this body). Both work; libraries differ.',
+          'Errors come back in the OAuth shape — `{"error":"invalid_grant","error_description":"…"}` — not in this API’s `{error:{code,message}}` shape, because that is what OAuth client libraries parse.',
+          'Every response here is `Cache-Control: no-store`. A token response is a credential.',
+          'The old refresh token stops working the moment it is spent. If you lose the response to a refresh, you have lost the connection and the person has to authorize the app again.',
+        ],
+      },
+      {
+        id: 'revoke-token',
+        method: 'POST',
+        path: '/oauth/revoke',
+        summary: 'Hand a credential back.',
+        description:
+          'What an app calls when it is done with somebody — they removed their account from the app, or the app is being shut down. Revoking a **refresh** token takes the access tokens issued with it as well, so "I gave it back" is true immediately rather than in an hour.',
+        auth: 'oauth-client',
+        bodyEncoding: 'form',
+        responseStatus: '200 OK',
+        body: [
+          { name: 'token', type: 'string', required: true, description: 'The access or refresh token to revoke.', example: 'play_rt_1f2e3d4c5b6a7988a9b0c1d2e3f4a5b6' },
+          { name: 'token_type_hint', type: 'string', description: '`access_token` or `refresh_token`. Advisory: this service looks the token up and knows what it is.', example: 'refresh_token' },
+          { name: 'client_id', type: 'string', required: true, description: 'The app’s client id.', example: 'play_app_7c1d9e2f4a6b8c0d' },
+          { name: 'client_secret', type: 'string', description: 'Required for a confidential client.', example: 'play_cs_5e4d3c2b1a0f9e8d7c6b5a4d' },
+        ],
+        responseExample: `{}`,
+        notes: [
+          'The answer is **200 whatever happens** — an unknown token, a token belonging to another app, one already revoked. A 404 would make this endpoint a way to ask "is this string a token".',
+          'This is not how a *person* disconnects an app. That is the Connected apps screen, and it ends the authorization itself rather than only its credentials.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'oauth-apps',
+    title: 'Managing OAuth apps',
+    description:
+      'Registering the client, and reading back what it has been allowed to do. All of these take a signed-in session rather than key — an app is somebody’s, and the studio is where it is managed. The screens that drive them are OAuth apps and Connected apps; this is what they call.',
+    endpoints: [
+      {
+        id: 'list-oauth-apps',
+        method: 'GET',
+        path: '/oauth/apps',
+        summary: 'The apps this account has registered.',
+        description:
+          'Newest first, and never paged: the number of apps one person may register is capped at the same number they may hold keys — twenty-five — so a list that stopped short would be a list the owner cannot check their own allowance against.',
+        auth: 'session',
+        responseStatus: '200 OK',
+        responseExample: `{
+  "apps": [
+    {
+      "appId": "01JQ9B7M5N8P1Q4R7T0V3W6X9Y",
+      "clientId": "play_app_7c1d9e2f4a6b8c0d",
+      "name": "Team dashboard",
+      "description": "Shows your team's courses and progress in one place.",
+      "homepageUrl": "https://example.com",
+      "redirectUris": ["https://example.com/auth/play/callback"],
+      "scopes": ["profile:read", "courses:read", "lessons:read"],
+      "isPublic": false,
+      "clientSecretPrefix": "play_cs_5e4d3c2b",
+      "createdAt": 1772582400000,
+      "updatedAt": 1772582400000
+    }
+  ]
+}`,
+        responseFields: [
+          { name: 'apps', type: 'array', description: 'The caller’s apps, newest first.' },
+          ...OAUTH_APP_FIELDS.map((field) => ({ ...field, name: `apps[].${field.name}` })),
+        ],
+      },
+      {
+        id: 'create-oauth-app',
+        method: 'POST',
+        path: '/oauth/apps',
+        summary: 'Register an app, and get its credentials.',
+        description:
+          'Any signed-in person may register an app. Registering one grants nobody anything: the app acts as the people who authorize it, so what it can reach is decided by a consent screen and a grant, not by who registered it. The response carries the client secret exactly once.',
+        auth: 'session',
+        responseStatus: '201 Created',
+        body: [
+          { name: 'name', type: 'string', required: true, description: '2–60 characters. Shown on the consent screen.', example: 'Team dashboard' },
+          { name: 'description', type: 'string', required: true, description: 'Up to 280 characters, and required: a consent screen that names an app and explains nothing is not consent.', example: "Shows your team's courses and progress in one place." },
+          { name: 'homepageUrl', type: 'string', description: 'Optional, and shown on the consent screen with the app’s name.', example: 'https://example.com' },
+          { name: 'logoUrl', type: 'string', description: 'Optional. The app’s mark on the consent screen, and on the connections screen of everybody who authorized it.', example: 'https://example.com/logo.png' },
+          { name: 'redirectUris', type: 'array', required: true, description: 'One to ten absolute URIs, matched exactly at authorization time. `https` anywhere, plain `http` only on localhost, or a native app’s own scheme. No fragments.', example: '["https://example.com/auth/play/callback"]' },
+          { name: 'scopes', type: 'array', required: true, description: 'The most this app may ever ask a person for. At least one, and a subset of the catalogue below.', example: '["profile:read","courses:read","lessons:read"]' },
+          { name: 'isPublic', type: 'boolean', description: 'True for a browser, desktop or CLI app: no secret is minted at all, and the client authenticates with PKCE alone. Defaults to false.', example: 'false' },
+        ],
+        responseExample: `{
+  "app": {
+    "appId": "01JQ9B7M5N8P1Q4R7T0V3W6X9Y",
+    "clientId": "play_app_7c1d9e2f4a6b8c0d",
+    "name": "Team dashboard",
+    "description": "Shows your team's courses and progress in one place.",
+    "redirectUris": ["https://example.com/auth/play/callback"],
+    "scopes": ["profile:read", "courses:read", "lessons:read"],
+    "isPublic": false,
+    "clientSecretPrefix": "play_cs_5e4d3c2b",
+    "createdAt": 1772582400000,
+    "updatedAt": 1772582400000
+  },
+  "secret": "play_cs_5e4d3c2b1a0f9e8d7c6b5a4d3e2f1a0b"
+}`,
+        responseFields: [
+          { name: 'app', type: 'object', description: 'The app as its owner sees it.' },
+          ...OAUTH_APP_FIELDS.map((field) => ({ ...field, name: `app.${field.name}` })),
+          { name: 'secret', type: 'string?', description: 'The client secret, and the only time it is ever transmitted. Absent on a public client.' },
+        ],
+        notes: [
+          'The secret is stored as a SHA-256 hash. Nothing — not support, not an admin — can read one back, so "copy it now" is the shape of that dialog rather than a nicety.',
+          'Registering a **public** client is the right answer for anything that ships to a machine somebody else controls. A secret inside a browser bundle is not a secret, and a screen that handed one over would teach its author that their app is authenticated when anything holding the string is.',
+        ],
+      },
+      {
+        id: 'get-oauth-app',
+        method: 'GET',
+        path: '/oauth/apps/{appId}',
+        summary: 'One app, in full.',
+        description:
+          'The app’s own settings page: every redirect URI, every scope it is registered for, its client id, and the prefix of its secret.',
+        auth: 'session',
+        responseStatus: '200 OK',
+        parameters: [
+          { in: 'path', name: 'appId', type: 'string', required: true, description: 'The app’s ULID — not its client id. The two are different strings, and this path wants the shorter one.', example: '01JQ9B7M5N8P1Q4R7T0V3W6X9Y' },
+        ],
+        responseExample: `{
+  "app": {
+    "appId": "01JQ9B7M5N8P1Q4R7T0V3W6X9Y",
+    "clientId": "play_app_7c1d9e2f4a6b8c0d",
+    "name": "Team dashboard",
+    "description": "Shows your team's courses and progress in one place.",
+    "redirectUris": ["https://example.com/auth/play/callback"],
+    "scopes": ["profile:read", "courses:read", "lessons:read"],
+    "isPublic": false,
+    "clientSecretPrefix": "play_cs_5e4d3c2b",
+    "createdAt": 1772582400000,
+    "updatedAt": 1772582400000
+  }
+}`,
+        notes: ['Somebody else’s app answers **404**, the same answer an id that does not exist gets.'],
+      },
+      {
+        id: 'update-oauth-app',
+        method: 'PATCH',
+        path: '/oauth/apps/{appId}',
+        summary: 'Edit an app.',
+        description:
+          'Only the fields sent are written, and `null` clears an optional one. Changing what the app is *called* or where it is sent back to touches nobody’s connection; changing the **scopes** ends every authorization of the app, because a person agreed to a list printed on a screen and a changed list has to be agreed to again.',
+        auth: 'session',
+        responseStatus: '200 OK',
+        parameters: [
+          { in: 'path', name: 'appId', type: 'string', required: true, description: 'The app’s ULID.', example: '01JQ9B7M5N8P1Q4R7T0V3W6X9Y' },
+        ],
+        body: [
+          { name: 'name', type: 'string', description: 'A new name.', example: 'Team dashboard' },
+          { name: 'description', type: 'string', description: 'A new sentence for the consent screen.', example: 'Courses, progress and certificates in one place.' },
+          { name: 'homepageUrl', type: 'string?', description: '`null` clears it; absent leaves it alone.', example: 'https://example.com' },
+          { name: 'logoUrl', type: 'string?', description: '`null` clears it; absent leaves it alone.', example: 'https://example.com/logo.png' },
+          { name: 'redirectUris', type: 'array', description: 'The whole list, not a change to it. Removing one breaks that flow and disconnects nobody.', example: '["https://example.com/auth/play/callback"]' },
+          { name: 'scopes', type: 'array', description: 'The whole list. Changing it disconnects everybody who has connected the app.', example: '["profile:read","courses:read"]' },
+        ],
+        responseExample: `{
+  "app": {
+    "appId": "01JQ9B7M5N8P1Q4R7T0V3W6X9Y",
+    "clientId": "play_app_7c1d9e2f4a6b8c0d",
+    "name": "Team dashboard",
+    "description": "Courses, progress and certificates in one place.",
+    "redirectUris": ["https://example.com/auth/play/callback"],
+    "scopes": ["profile:read", "courses:read"],
+    "isPublic": false,
+    "clientSecretPrefix": "play_cs_5e4d3c2b",
+    "createdAt": 1772582400000,
+    "updatedAt": 1772680000000
+  },
+  "authorizationsEnded": 3
+}`,
+        responseFields: [
+          { name: 'app', type: 'object', description: 'The app as it now stands.' },
+          { name: 'authorizationsEnded', type: 'integer?', description: 'How many people were disconnected by a scope change. Present only when the scopes changed.' },
+        ],
+        notes: [
+          'Whether a client can keep a secret is **not** editable. It is a fact about where the code runs, decided when the app is registered: flipping it later would either invent a secret into a running browser app or take one away from a deployed server.',
+        ],
+      },
+      {
+        id: 'rotate-oauth-app-secret',
+        method: 'POST',
+        path: '/oauth/apps/{appId}/secret',
+        summary: 'Replace an app’s client secret.',
+        description:
+          'Rotation rather than addition: an app has one secret, and an app that thinks its secret leaked wants the old one to stop working. The previous secret is refused the moment this returns, so the app has to be redeployed with the new value to keep authenticating.',
+        auth: 'session',
+        responseStatus: '200 OK',
+        parameters: [
+          { in: 'path', name: 'appId', type: 'string', required: true, description: 'The app’s ULID.', example: '01JQ9B7M5N8P1Q4R7T0V3W6X9Y' },
+        ],
+        responseExample: `{
+  "app": { "appId": "01JQ9B7M5N8P1Q4R7T0V3W6X9Y", "clientSecretPrefix": "play_cs_9a8b7c6d" },
+  "secret": "play_cs_9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d"
+}`,
+        responseFields: [
+          { name: 'app', type: 'object', description: 'The app, with its new secret prefix.' },
+          { name: 'secret', type: 'string', description: 'The new secret, shown once.' },
+        ],
+        notes: [
+          'A **public** client answers **400**: it has no secret to rotate, and it is told so rather than being handed one.',
+          'People who have connected the app are unaffected. A client secret is what the app authenticates *itself* with; their grants and tokens are theirs.',
+        ],
+      },
+      {
+        id: 'delete-oauth-app',
+        method: 'DELETE',
+        path: '/oauth/apps/{appId}',
+        summary: 'Delete an app, and end everything it was given.',
+        description:
+          'A hard delete that goes further than the row: every authorization of the app is ended and every token those produced is deleted first, so nothing the client was given still works. An app deleted before its tokens would leave credentials behind that authenticate calls, point at no client, and appear on somebody’s connections screen under a name that no longer exists.',
+        auth: 'session',
+        responseStatus: '204 No Content',
+        parameters: [
+          { in: 'path', name: 'appId', type: 'string', required: true, description: 'The app’s ULID.', example: '01JQ9B7M5N8P1Q4R7T0V3W6X9Y' },
+        ],
+        notes: ['Everybody who connected the app is disconnected, and the app is not told: its next call is refused, which is how it finds out.'],
+      },
+      {
+        id: 'list-connections',
+        method: 'GET',
+        path: '/oauth/connections',
+        summary: 'What this account has let in.',
+        description:
+          'Every app this person has authorized, what each one was allowed, when they connected it and when it last did anything. The apps are read live rather than denormalized onto the grant: an app can rename itself at any moment, and somebody deciding whether to keep a connection needs to see what the app *is* rather than what it was called on the day they authorized it.',
+        auth: 'session',
+        responseStatus: '200 OK',
+        responseExample: `{
+  "connections": [
+    {
+      "appId": "01JQ9B7M5N8P1Q4R7T0V3W6X9Y",
+      "clientId": "play_app_7c1d9e2f4a6b8c0d",
+      "name": "Team dashboard",
+      "description": "Shows your team's courses and progress in one place.",
+      "scopes": ["profile:read", "courses:read"],
+      "createdAt": 1772582400000,
+      "updatedAt": 1772582400000,
+      "lastUsedAt": 1772668800000
+    }
+  ]
+}`,
+        responseFields: [
+          { name: 'connections', type: 'array', description: 'The apps this person has authorized, most recently agreed to first.' },
+          { name: 'connections[].scopes', type: 'array', description: 'What this person agreed to — which may be less than the app is registered for, if its registration narrowed after they consented.' },
+          { name: 'connections[].lastUsedAt', type: 'number?', description: 'When the app last used the grant, accurate to about five minutes. Absent until it has.' },
+        ],
+      },
+      {
+        id: 'delete-connection',
+        method: 'DELETE',
+        path: '/oauth/connections/{appId}',
+        summary: 'Disconnect an app from this account.',
+        description:
+          'The person’s own revoke, and the one that has to work while nobody is looking: it deletes the grant and every token the app holds for this account, so the app stops being able to call this API on its next request rather than within the hour its access token would have expired. Nothing is cached in front of the authorizer, which is what makes that true.',
+        auth: 'session',
+        responseStatus: '204 No Content',
+        parameters: [
+          { in: 'path', name: 'appId', type: 'string', required: true, description: 'The app to disconnect — its ULID.', example: '01JQ9B7M5N8P1Q4R7T0V3W6X9Y' },
+        ],
+        notes: [
+          'The app is not told, and there is no webhook: an app finds out by being refused, which is how it finds out that an access token expired too. A callback would mean this service making an outbound request to a URL a client chose.',
+          'An app this person has not authorized answers **404**, the same answer an unknown app id gets.',
+        ],
+      },
+    ],
+  },
 ];
 
 /** How a call is authenticated, said in one line for the badge on each endpoint. */
 export const API_AUTH_LABELS: Record<ApiEndpoint['auth'], string> = {
-  key: 'x-api-key header',
+  key: 'API key or bearer token',
   session: 'Signed-in session',
+  'oauth-client': 'client_id + client_secret',
+  browser: 'A person’s browser',
 };
+
+/**
+ * The scope catalogue, as the reference reads it.
+ *
+ * Two sentences per scope because a consent screen has two jobs here: the
+ * heading is what it says to the person agreeing, and `reach` is what it says to
+ * the developer building against it. They are different sentences — "See your
+ * profile" and "`GET /v1/me/profile`" are not paraphrases of each other — and a
+ * reference that printed only one of them would be wrong for one of its two
+ * readers.
+ */
+export interface ApiScopeDoc {
+  scope: ApiScope;
+  /** What the consent screen says. */
+  title: string;
+  /** What it opens, said to whoever is writing the client. */
+  reach: string;
+}
+
+export const OAUTH_SCOPE_DOCS: ApiScopeDoc[] = [
+  {
+    scope: 'profile:read',
+    title: 'See your profile',
+    reach: '`GET /v1/me/profile`: a name, a photo, a sentence and links. An API key never holds this one.',
+  },
+  {
+    scope: 'courses:read',
+    title: 'Read the published catalog',
+    reach: '`GET /v1/courses` and `GET /v1/courses/{spaceId}` — the courses their authors have listed.',
+  },
+  {
+    scope: 'lessons:read',
+    title: 'Read course outlines and lessons',
+    reach: 'The outline, one lesson, and a lesson’s attachments — including courses that are not published, when the person authorizing may read them.',
+  },
+  {
+    scope: 'lessons:stream',
+    title: 'Play lesson videos',
+    reach: '`GET /v1/lessons/{contentId}/stream` and `/subtitles`: signed media URLs. Its own scope because serving video is what costs money.',
+  },
+  {
+    scope: 'organization:courses:read',
+    title: 'Read the courses of an organization',
+    reach: '`GET /v1/organizations/{orgId}/courses`, published or not. The only scope that reaches anything unpublished, and the person authorizing must be a member of that organization.',
+  },
+];
 
 /**
  * The errors every endpoint can answer with, in one place rather than repeated
@@ -776,12 +1259,12 @@ export const API_ERRORS: { status: string; meaning: string }[] = [
   {
     status: '401',
     meaning:
-      'No key was sent at all. API Gateway refuses a request with no `x-api-key` header before the endpoint runs, so the body is the gateway’s own `{"message":"Unauthorized"}` rather than the error shape below.',
+      'A method that takes a session — everything that mints or revokes a credential — called without one. It is also what a `/v1` call gets when the credential it presented is an OAuth access token whose app has since been deleted, because a token with no client behind it is not an identity.',
   },
   {
     status: '403',
     meaning:
-      'Either the key was rejected — it is unknown or has been revoked — or it is valid but was not made for the organization being asked about, or the caller is not one of that organization’s admins. The first of those is answered by API Gateway before the endpoint runs, so its body is the gateway’s own `{"message":"User is not authorized to access this resource…"}` rather than the shape below; the others are ours.',
+      'A credential that does not authenticate — an unknown or revoked key, an expired or spent access token, a malformed one — or one that authenticates but is not allowed this: **missing a scope** the route needs (`This credential is missing the lessons:stream scope`), a key not made for the organization being asked about, or a caller who is not one of that organization’s admins. The scope refusal names the scope on purpose: a scope is not a secret, and an integration that has run out of permission needs to know which permission to ask its user for.',
   },
   {
     status: '404',

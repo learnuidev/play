@@ -1470,18 +1470,285 @@ export interface ListOrganizationApiKeysResponse {
 }
 
 /**
- * The identity a presented key acts as, which is what `GET /v1/me` answers.
+ * The identity a presented credential acts as, which is what `GET /v1/me`
+ * answers.
  *
- * The one call that says whether a key works at all, and the one worth making
- * from a new integration before anything else is wired up.
+ * The one call that says whether a credential works at all, and the one worth
+ * making from a new integration before anything else is wired up. It answers for
+ * both kinds — an API key and an OAuth access token — which is why `kind` is
+ * here: a caller checking its own credentials wants to know which one it is
+ * holding, and the two shapes beside it are deliberately different rather than a
+ * lowest common denominator.
+ *
+ * Needs no scope: "is this working, and as whom" is exactly the question a
+ * credential that has run out of permission still has to be able to ask.
  */
-export interface ApiKeyIdentityResponse {
-  key: ApiKey;
+export interface ApiIdentityResponse {
+  kind: 'key' | 'oauth';
+  /** Present on a key. Absent on an OAuth access token. */
+  key?: ApiKey;
+  /** Present on an OAuth access token. Absent on a key. */
+  oauth?: {
+    app: OAuthAppSummary;
+    scopes: ApiScope[];
+    /** The same scopes as OAuth writes them: space-delimited. */
+    scope: string;
+  };
   owner: {
-    /** Cognito `sub` of the key's owner — the identity the key acts as. */
+    /** Cognito `sub` of the person the credential acts as. */
     userId: string;
   };
+  /** Every scope the credential holds. The half both kinds agree on. */
+  scopes: ApiScope[];
 }
+
+/**
+ * What `GET /v1/me/profile` answers: the person behind the credential.
+ *
+ * The *public* half of a profile — the same shape a marketplace course page
+ * credits an instructor with — because that is the half this service is willing
+ * to show anybody, and a consent screen cannot ask somebody to agree to
+ * something they have never been able to see.
+ */
+export interface ApiProfileResponse {
+  profile: PublicInstructor;
+}
+
+/* --------------------------------------------------------------------- OAuth */
+
+/**
+ * A scope: one thing an app may do on somebody's behalf.
+ *
+ * The whole vocabulary, and it is short on purpose. A scope is a sentence on a
+ * consent screen, so the number of them is bounded by how many a person can read
+ * and tell apart rather than by how many endpoints this API has. The same list
+ * lives in `services/api/src/lib/oauth-scopes`, and the API is the authority on
+ * it — this copy exists so both apps and every screen can name a scope without
+ * asking the server what they are called.
+ */
+export type ApiScope =
+  /** The person: their name, their face, what they say about themselves, their links. */
+  | 'profile:read'
+  /** The published catalog, and any course that has been listed. */
+  | 'courses:read'
+  /** A course's outline, one lesson, and the files attached to it. */
+  | 'lessons:read'
+  /** A lesson's video and subtitles, as signed URLs. Costs bandwidth: its own scope. */
+  | 'lessons:stream'
+  /** One organization's courses, published or not. The only scope that is not public. */
+  | 'organization:courses:read';
+
+/** Every scope, in the order a consent screen shows them. */
+export const API_SCOPES: ApiScope[] = [
+  'profile:read',
+  'courses:read',
+  'lessons:read',
+  'lessons:stream',
+  'organization:courses:read',
+];
+
+/** What a newly registered app starts with, and the set its owner may narrow. */
+export const DEFAULT_OAUTH_SCOPES: ApiScope[] = ['profile:read', 'courses:read', 'lessons:read'];
+
+/**
+ * An OAuth app, as the person who registered it sees it.
+ *
+ * The client id is public by definition — it travels in an authorization URL a
+ * browser can read — and the secret is not on this shape at all: the API keeps a
+ * hash, so the full secret exists once, in the response that created it (or the
+ * one that rotated it), and nothing can read one back.
+ */
+export interface OAuthApp {
+  /** ULID. What addresses the app in the studio's own URLs. */
+  appId: string;
+  /** The public half of the credential, e.g. `play_app_9f2c1a…`. */
+  clientId: string;
+  name: string;
+  /** The sentence under the name on the consent screen. */
+  description: string;
+  homepageUrl?: string;
+  logoUrl?: string;
+  /** Where the app is allowed to be sent back to. Matched exactly. */
+  redirectUris: string[];
+  /** The most this app may ever ask a person for. */
+  scopes: ApiScope[];
+  /**
+   * A public client: one that cannot keep a secret, so it has none. It
+   * authenticates with its client id and PKCE, which every client uses anyway.
+   */
+  isPublic: boolean;
+  /** The opening characters of the secret, for a list. Absent on a public client. */
+  clientSecretPrefix?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** An app as somebody who is not its owner sees it: what a consent screen draws. */
+export interface OAuthAppSummary {
+  appId: string;
+  clientId: string;
+  name: string;
+  description: string;
+  homepageUrl?: string;
+  logoUrl?: string;
+}
+
+export interface CreateOAuthAppPayload {
+  /** 2–60 characters. Shown on the consent screen. */
+  name: string;
+  /** Required: a consent screen that names an app and explains nothing is not consent. */
+  description: string;
+  homepageUrl?: string;
+  logoUrl?: string;
+  /** One or more absolute URIs. `http` only on localhost. */
+  redirectUris: string[];
+  /** A subset of the catalogue. At least one. */
+  scopes: ApiScope[];
+  /** True for a browser, desktop or CLI app: no secret is minted. */
+  isPublic?: boolean;
+}
+
+/**
+ * The one response that carries a client secret.
+ *
+ * `secret` is the whole secret and the only time it is ever transmitted. Absent
+ * when the app is a public client, which has none by design.
+ */
+export interface CreateOAuthAppResponse {
+  app: OAuthApp;
+  secret?: string;
+}
+
+export interface ListOAuthAppsResponse {
+  apps: OAuthApp[];
+}
+
+export interface OAuthAppResponse {
+  app: OAuthApp;
+}
+
+export interface RotateClientSecretResponse {
+  app: OAuthApp;
+  secret: string;
+}
+
+export interface UpdateOAuthAppPayload {
+  name?: string;
+  description?: string;
+  /** `null` clears it; absent leaves it alone. */
+  homepageUrl?: string | null;
+  logoUrl?: string | null;
+  redirectUris?: string[];
+  /**
+   * Changing this **ends every authorization of the app**: the people who
+   * connected it have to be asked again, with the new list on the screen.
+   */
+  scopes?: ApiScope[];
+}
+
+export interface UpdateOAuthAppResponse extends OAuthAppResponse {
+  /** How many authorizations the scope change ended. Present only when it changed. */
+  authorizationsEnded?: number;
+}
+
+/**
+ * One app a person has authorized — what the connections screen lists.
+ *
+ * The app's name, description and mark are read live rather than stored with the
+ * grant: an app can rename itself at any moment, and somebody deciding whether to
+ * keep a connection needs to see what the app *is*, not what it was called on
+ * the day they authorized it.
+ */
+export interface OAuthConnection {
+  appId: string;
+  clientId: string;
+  name: string;
+  description: string;
+  homepageUrl?: string;
+  logoUrl?: string;
+  /** What this person agreed to. */
+  scopes: ApiScope[];
+  /** When they first connected it. */
+  createdAt: number;
+  /** When they last agreed to it, which is also when its scopes last changed. */
+  updatedAt: number;
+  /** The last time the app used it, accurate to about five minutes. */
+  lastUsedAt?: number;
+}
+
+export interface ListOAuthConnectionsResponse {
+  connections: OAuthConnection[];
+}
+
+/**
+ * The parameters of an authorization request, as they appear in a consent URL.
+ *
+ * The RFC 6749 names, because a third party's OAuth library is what builds this
+ * URL: the studio's consent page reads exactly the query string a client sent,
+ * and hands the same values back. `code_challenge` and its method are required —
+ * S256 only — because this service requires PKCE of every client, public or not.
+ */
+export interface OAuthAuthorizationParams {
+  client_id: string;
+  redirect_uri: string;
+  response_type: string;
+  scope?: string;
+  state?: string;
+  code_challenge: string;
+  code_challenge_method: string;
+}
+
+/** One scope an app asked for, and whether the person has already agreed to it. */
+export interface OAuthScopeGrant {
+  scope: ApiScope;
+  granted: boolean;
+}
+
+/**
+ * What the consent screen's one read answers.
+ *
+ * A union rather than one shape plus a status code, because a refused
+ * authorization request has two possible fates and they are not interchangeable:
+ * `ok: false` is a request that may still be reported to the *app*, by sending
+ * the browser to `redirectUri` with `error=` in the query string — and it is the
+ * one place this API hands a caller a URL to navigate to, which is why the URI
+ * on it has been validated. Anything else is a 400 the screen renders, because
+ * an unverified URI must never be redirected to.
+ */
+export type OAuthAuthorizationRequestResponse =
+  | {
+      ok: true;
+      app: OAuthAppSummary;
+      scopes: OAuthScopeGrant[];
+      redirectUri: string;
+      state?: string;
+      /** True when this person has already agreed to all of it. */
+      alreadyAuthorized: boolean;
+    }
+  | {
+      ok: false;
+      /** RFC 6749 §4.1.2.1 error code, e.g. `invalid_scope`. */
+      oauthError: string;
+      message: string;
+      redirectUri: string;
+      state?: string;
+    };
+
+/**
+ * What "Allow" answers: everything the studio needs to complete the redirect,
+ * and nothing it could get wrong.
+ *
+ * `redirectUri` comes from the API rather than from the query string the page
+ * was opened with. That is the whole point of returning it — the page builds its
+ * redirect from this field, so an attacker-supplied `redirect_uri` in the URL
+ * can never be the destination.
+ */
+export interface ApproveAuthorizationResponse {
+  code: string;
+  redirectUri: string;
+  state?: string;
+}
+
 
 /**
  * A lesson, as the API hands it to somebody building the classroom somewhere

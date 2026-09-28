@@ -25,6 +25,7 @@ export function DocsRail() {
           <RailLink href="#try-it">Try it here</RailLink>
           <RailLink href="#quickstart">Quickstart</RailLink>
           <RailLink href="#authentication">Authentication</RailLink>
+          <RailLink href="#oauth">Signing people in with OAuth</RailLink>
         </ul>
 
         {API_ENDPOINT_GROUPS.map((group) => (

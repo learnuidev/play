@@ -8,6 +8,13 @@ import { CopyButton } from '@/components/copy-button';
  * block is copyable rather than selectable. The label above it says what it is —
  * the response status, or `cURL` — because two unlabelled JSON blocks in a row
  * are a puzzle.
+ *
+ * `min-w-0` and the one on the `<pre>` are what keep a long command from taking
+ * the page's width with it. A block of code is the widest thing on this page by
+ * definition — a cURL with a signed URL in it is hundreds of characters — and a
+ * grid or flex item is sized by its content's minimum unless it is told
+ * otherwise, so without these a single long line makes the whole reference
+ * scroll sideways instead of the one line scrolling inside its own box.
  */
 export function CodeBlock({
   code,
@@ -21,7 +28,7 @@ export function CodeBlock({
   return (
     <figure
       className={cn(
-        'overflow-hidden rounded-2xl border border-border/60 bg-muted/40',
+        'min-w-0 overflow-hidden rounded-2xl border border-border/60 bg-muted/40',
         className,
       )}
     >
@@ -29,7 +36,7 @@ export function CodeBlock({
         <span className="truncate text-xs text-muted-foreground">{label}</span>
         <CopyButton value={code} size="icon" className="size-7" />
       </figcaption>
-      <pre className="overflow-x-auto px-4 py-3.5 font-mono text-xs leading-relaxed">
+      <pre className="min-w-0 overflow-x-auto px-4 py-3.5 font-mono text-xs leading-relaxed">
         <code>{code}</code>
       </pre>
     </figure>

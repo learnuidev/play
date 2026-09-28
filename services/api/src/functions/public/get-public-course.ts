@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireApiKeyCaller } from '../../lib/auth';
+import { requireApiCaller } from '../../lib/auth';
+import { requireScope } from '../../lib/oauth-scopes';
 import { getCatalogCourse, toCatalogSections } from '../../lib/catalog';
 import { listAllContentsBySpace } from '../../lib/contents';
 import { HttpError, handle, ok, pathParam } from '../../lib/http';
@@ -7,15 +8,17 @@ import { listAllSectionsBySpace } from '../../lib/sections';
 import type { Content } from '../../types';
 
 /**
- * One published course and its syllabus, to a key.
+ * One published course and its syllabus, to a key or an authorized app.
  *
  * Listed courses only, and the same answer the marketplace's own course page
- * gets: a key reaches what a course says about itself in public, and a private
- * course answers 404 rather than 403 so that the catalog does not report which
- * course ids exist behind it.
+ * gets: a credential reaches what a course says about itself in public, and a
+ * private course answers 404 rather than 403 so that the catalog does not report
+ * which course ids exist behind it. A course nobody has published is not
+ * unreachable to `/v1` — `GET /v1/courses/{spaceId}/sections` reads an outline
+ * by *access* — but it is not readable here.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  requireApiKeyCaller(event);
+  requireScope(requireApiCaller(event), 'courses:read');
 
   const spaceId = pathParam(event, 'spaceId');
 

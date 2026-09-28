@@ -5,6 +5,7 @@ import {
   BracesIcon,
   KeyRoundIcon,
   ShieldCheckIcon,
+  SquareCodeIcon,
   ZapIcon,
 } from 'lucide-react';
 import { Badge } from '@ui/components/ui/badge';
@@ -14,6 +15,7 @@ import { CodeBlock } from '@/components/docs/code-block';
 import { CredentialPanel } from '@/components/docs/credential-panel';
 import { DocsRail } from '@/components/docs/docs-rail';
 import { EndpointCard } from '@/components/docs/endpoint-card';
+import { renderEmphasis } from '@/components/docs/emphasis';
 import { PlaygroundProvider } from '@/components/docs/playground-context';
 import { PublicHeader } from '@/components/public-header';
 import { API_BASE_URL, API_BASE_URL_IS_CONFIGURED } from '@/lib/api-base';
@@ -22,6 +24,7 @@ import {
   API_ENDPOINT_GROUPS,
   API_ERRORS,
   API_ERROR_EXAMPLE,
+  OAUTH_SCOPE_DOCS,
 } from '@/lib/api-reference';
 
 /**
@@ -39,11 +42,18 @@ import {
  * back to your terminal.
  *
  * It is public, and it is read by two kinds of people because of it: somebody who
- * already has a key, arriving from the keys screen, and somebody deciding whether
- * to get one. The page is written for the first and readable by the second, and
- * the only thing the second cannot do here is mint a key — see
- * `CredentialPanel`, which offers them the paste box and a way to sign in rather
- * than a button that would fail.
+ * already has a credential, arriving from the keys or the apps screen, and
+ * somebody deciding whether to get one. The page is written for the first and
+ * readable by the second, and the only thing the second cannot do here is mint a
+ * key — see `CredentialPanel`, which offers them the paste box and a way to sign
+ * in rather than a button that would fail.
+ *
+ * Two ways in, documented as one page. A **key** is for a script: one header,
+ * one person's reach, no flow. **OAuth** is for software other people sign in
+ * to: a consent screen, scopes, and tokens that can be taken back. They share
+ * every endpoint under `/v1` — the authorizer resolves either credential into
+ * the same identity — so they are one reference with one section about the
+ * difference, rather than two documents that would drift apart.
  *
  * Being public is also why it wears `PublicHeader` rather than a bar of its own.
  * A reference is read by people with no account at all, and the bar over it is
@@ -91,7 +101,9 @@ export default function ApiDocsPage() {
                 <Badge variant="secondary" className="font-medium">
                   v1
                 </Badge>
-                <span className="text-sm text-muted-foreground">Read-only, by API key</span>
+                <span className="text-sm text-muted-foreground">
+                  Read-only, by API key or OAuth
+                </span>
               </div>
 
               <h1 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">
@@ -100,8 +112,9 @@ export default function ApiDocsPage() {
               <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
                 The catalog a creator publishes to, the syllabus their learners read, and the
                 lessons themselves — the video, the transcript, the notes and the files — reachable
-                by a script, a partner&rsquo;s backend, or a classroom you build somewhere else. One
-                header, no sign-in.
+                by a script, a partner&rsquo;s backend, or a classroom you build somewhere else.
+                Bring an API key and read as its owner, or let people sign in to your app and read
+                as them.
               </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-card-foreground">
@@ -119,8 +132,8 @@ export default function ApiDocsPage() {
               <div className="mt-6 grid gap-4 sm:grid-cols-3">
                 <Fact
                   icon={<KeyRoundIcon className="size-4" />}
-                  title="One header"
-                  body="Send x-api-key on every call. No tokens, no refresh, no sign-in flow."
+                  title="Two ways in"
+                  body="An x-api-key header for your own scripts. OAuth access tokens as Authorization: Bearer for apps other people sign in to."
                 />
                 <Fact
                   icon={<ShieldCheckIcon className="size-4" />}
@@ -130,7 +143,7 @@ export default function ApiDocsPage() {
                 <Fact
                   icon={<ZapIcon className="size-4" />}
                   title="Revoked means revoked"
-                  body="Nothing is cached in front of the key check, so a revoked key stops on the next call."
+                  body="Nothing is cached in front of the credential check, so a revoked key — or an app somebody disconnected — stops on the next call."
                 />
               </div>
             </section>
@@ -186,16 +199,22 @@ export default function ApiDocsPage() {
             <section id="authentication" className="mt-16 scroll-mt-24">
               <h2 className="text-2xl font-semibold tracking-tight">Authentication</h2>
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-                Every call under <span className="font-mono">/v1</span> is authenticated by one header
-                and nothing else. There is no signing step, no expiry and no refresh: the key either
-                works or it has been revoked.
+                Every call under <span className="font-mono">/v1</span> takes one of two credentials,
+                in one of two headers. Nothing else about the call changes: the same endpoints, the
+                same shapes, the same authorizer deciding who you are.
               </p>
 
               <div className="mt-6 overflow-hidden rounded-3xl border border-border/60 bg-card text-card-foreground shadow-sm">
                 <pre className="overflow-x-auto px-5 py-4 font-mono text-xs leading-relaxed">
-  {`GET /v1/courses HTTP/1.1
-  Host: ${API_BASE_URL.replace(/^https?:\/\//, '')}
-  x-api-key: play_sk_9f2c1a4b7d8e0f1a2b3c4d5e6f7a8b9c`}
+  {`# A key: one header, no flow, acts as its owner.
+GET /v1/courses HTTP/1.1
+Host: ${API_BASE_URL.replace(/^https?:\/\//, '')}
+x-api-key: play_sk_9f2c1a4b7d8e0f1a2b3c4d5e6f7a8b9c
+
+# An access token: what an app holds after somebody authorized it.
+GET /v1/courses HTTP/1.1
+Host: ${API_BASE_URL.replace(/^https?:\/\//, '')}
+Authorization: Bearer play_at_3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c`}
                 </pre>
               </div>
 
@@ -227,11 +246,45 @@ export default function ApiDocsPage() {
               </div>
             </div>
 
+            <div className="mt-6 rounded-3xl border border-border/60 bg-card p-5 text-card-foreground">
+              <h3 className="text-base font-semibold tracking-tight">What an app can read</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Behind a person&rsquo;s consent, and no further than the scopes they agreed to. The
+                app acts as them — it reads what they may read, never more — and this is the whole
+                catalogue of what it can be given:
+              </p>
+              <dl className="mt-4 divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/60">
+                {OAUTH_SCOPE_DOCS.map((entry) => (
+                  <div
+                    key={entry.scope}
+                    className="grid gap-1 px-4 py-3 sm:grid-cols-[12rem_1fr] sm:gap-4"
+                  >
+                    <dt className="min-w-0 font-mono text-xs text-muted-foreground">
+                      {entry.scope}
+                    </dt>
+                    <dd className="min-w-0">
+                      <p className="text-sm font-medium">{entry.title}</p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        {renderEmphasis(entry.reach)}
+                      </p>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-3 text-xs text-muted-foreground">
+                An API key holds every one of these except{' '}
+                <span className="font-mono">profile:read</span>, plus{' '}
+                <span className="font-mono">organization:courses:read</span> when it was made for an
+                organization. Nothing writes: <span className="font-mono">/v1</span> is read-only for
+                both credentials.
+              </p>
+            </div>
+
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 <Fact
                   icon={<BracesIcon className="size-4" />}
-                  title="The secret is stored as a hash"
-                  body="We keep a SHA-256 of the key and never the key itself. Nobody — not an admin, not support — can read one back, so a lost key is replaced rather than recovered."
+                  title="Secrets are stored as hashes"
+                  body="We keep a SHA-256 of a key, a client secret, a code or a token, and never the value itself. Nobody — not an admin, not support — can read one back, so a lost credential is replaced rather than recovered."
                 />
                 <Fact
                   icon={<ShieldCheckIcon className="size-4" />}
@@ -240,13 +293,144 @@ export default function ApiDocsPage() {
                 />
                 <Fact
                   icon={<KeyRoundIcon className="size-4" />}
-                  title="Managing keys takes a session"
-                  body="The endpoints that create and revoke keys are called with a signed-in session token, not with a key. A key cannot mint another key."
+                  title="Managing credentials takes a session"
+                  body="The endpoints that mint and revoke keys and apps are called with a signed-in session token, not with a key. A credential cannot mint another credential."
                 />
                 <Fact
                   icon={<ZapIcon className="size-4" />}
                   title="Nothing is cached"
-                  body="The authorizer is invoked on every request, so revocation takes effect immediately rather than within the hour a caching authorizer would take."
+                  body="The authorizer is invoked on every request, so revoking a key — or disconnecting an app — takes effect immediately rather than within the hour a caching authorizer would take."
+                />
+              </div>
+            </section>
+
+            {/* The flow, in five steps rather than as an endpoint list: an
+                integrator reading this is holding an OAuth library and needs to
+                know what the library is doing, not only which URLs exist. The
+                endpoint cards for all of it are in the groups below. */}
+            <section id="oauth" className="mt-16 scroll-mt-24">
+              <h2 className="text-2xl font-semibold tracking-tight">
+                Signing people in with OAuth
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+                For software other people sign in to. Instead of one credential that acts as one
+                person forever, an app asks each of them for permission on a screen, reads as them
+                and no further than they allowed, and can be cut off by any of them — or by all of
+                them at once when the app is deleted.
+              </p>
+
+              <div className="mt-6 grid gap-6">
+                <Step step={1} title="Register the app">
+                  <p className="text-sm text-muted-foreground">
+                    In the studio, under OAuth apps. You get a client id, a client secret (or none
+                    at all, if it is a public client), and you say where the app is allowed to be
+                    sent back to. That redirect URI is matched exactly, forever after.
+                  </p>
+                  <Button asChild variant="secondary" size="sm" className="mt-3 w-fit">
+                    <Link href="/oauth/apps">
+                      <SquareCodeIcon />
+                      Go to OAuth apps
+                      <ArrowRightIcon />
+                    </Link>
+                  </Button>
+                </Step>
+
+                <Step step={2} title="Send people to the consent screen">
+                  <p className="text-sm text-muted-foreground">
+                    Your client builds a URL with a client id, a redirect URI, the scopes it wants,
+                    some <span className="font-mono">state</span>, and a PKCE{' '}
+                    <span className="font-mono">code_challenge</span> — and opens it. Play draws the
+                    screen: what your app is, what it is asking for, and who is signed in. Nobody
+                    types a Play password into your app, because nobody signs in anywhere but here.
+                  </p>
+                  <CodeBlock
+                    label="The URL your client opens"
+                    // Written as a joined array rather than as one template
+                    // literal across several lines: inside a template literal a
+                    // backslash before a newline is a *line continuation*, so
+                    // the newlines disappear and what looks like six lines on
+                    // this page is one 380-character string in the DOM — which
+                    // is a code block that cannot wrap and a layout that cannot
+                    // shrink. `\n` says the same thing and stays a newline.
+                    code={[
+                      'https://<your-studio>/oauth/authorize?',
+                      '  client_id=play_app_7c1d9e2f4a6b8c0d&',
+                      '  redirect_uri=https%3A%2F%2Fexample.com%2Fauth%2Fplay%2Fcallback&',
+                      '  response_type=code&',
+                      '  scope=profile%3Aread+courses%3Aread&',
+                      '  state=a1b2c3d4&',
+                      '  code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&',
+                      '  code_challenge_method=S256',
+                    ].join('\n')}
+                  />
+                </Step>
+
+                <Step step={3} title="Take the code back to your server">
+                  <p className="text-sm text-muted-foreground">
+                    The browser comes back to your redirect URI with{' '}
+                    <span className="font-mono">code</span> and your{' '}
+                    <span className="font-mono">state</span> — check the state, then exchange the code
+                    at <span className="font-mono">POST /oauth/token</span> with the verifier your
+                    client kept. The code is single-use and lives sixty seconds.
+                  </p>
+                  <CodeBlock
+                    label="Exchanging the code"
+                    code={`curl -X POST "${API_BASE_URL}/oauth/token" \\
+  -d grant_type=authorization_code \\
+  -d code=$CODE \\
+  -d redirect_uri=https://example.com/auth/play/callback \\
+  -d code_verifier=$VERIFIER \\
+  -d client_id=$PLAY_CLIENT_ID \\
+  -d client_secret=$PLAY_CLIENT_SECRET`}
+                  />
+                </Step>
+
+                <Step step={4} title="Call the API as them">
+                  <CodeBlock
+                    label="cURL"
+                    code={`curl "${API_BASE_URL}/v1/me/profile" \\
+  -H "Authorization: Bearer $ACCESS_TOKEN"`}
+                  />
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    An hour later the access token expires. Spend the refresh token at the same
+                    endpoint and you get a new pair — and the refresh token rotates, so store the
+                    new one every time rather than the one you had.
+                  </p>
+                </Step>
+
+                <Step step={5} title="Be a good citizen">
+                  <p className="text-sm text-muted-foreground">
+                    Handle <span className="font-mono">error=access_denied</span> as an answer rather
+                    than a failure — somebody pressed Cancel, and that is allowed. Ask for the scopes
+                    you actually use. Revoke at{' '}
+                    <span className="font-mono">POST /oauth/revoke</span> when somebody deletes
+                    their account from your app. And expect a{' '}
+                    <span className="font-mono">403</span> that names a scope: it means the person
+                    is still connected but granted you less than this call needs.
+                  </p>
+                </Step>
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <Fact
+                  icon={<ShieldCheckIcon className="size-4" />}
+                  title="PKCE is required of everybody"
+                  body="S256, on every client, public or confidential. A code travels through a browser, a redirect and usually a log; the verifier never leaves the client."
+                />
+                <Fact
+                  icon={<ZapIcon className="size-4" />}
+                  title="Disconnecting is immediate"
+                  body="Deleting a grant deletes the tokens under it, and nothing is cached in front of the check, so the app's next call is refused rather than one within the hour."
+                />
+                <Fact
+                  icon={<KeyRoundIcon className="size-4" />}
+                  title="No password ever reaches an app"
+                  body="The consent screen is this app. An app receives a code, then tokens — never a credential a person typed."
+                />
+                <Fact
+                  icon={<BracesIcon className="size-4" />}
+                  title="No client_credentials grant"
+                  body="An app that acts as itself with nobody behind it is what an API key already is, with a screen for making one. Adding it here would be a second answer to a question that has one."
                 />
               </div>
             </section>
@@ -360,7 +544,11 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-3xl border border-border/60 bg-card p-6 text-card-foreground shadow-sm">
+    {/* `min-w-0`: a grid item does not shrink below its content's minimum
+        width unless it is told to, and these steps carry code blocks — so a
+        long command would otherwise set the width of the whole page rather than
+        scrolling inside its own box. */}
+    <section className="min-w-0 rounded-3xl border border-border/60 bg-card p-6 text-card-foreground shadow-sm">
       <div className="flex items-center gap-3">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted/70 text-xs font-medium">
           {step}

@@ -1,8 +1,9 @@
 import { Badge } from '@ui/components/ui/badge';
 import { cn } from '@ui/lib/utils';
 import { API_AUTH_LABELS, type ApiEndpoint, type ApiField } from '@/lib/api-reference';
-import { curlFor } from '@/lib/api-example';
+import { authorizeUrlFor, curlFor } from '@/lib/api-example';
 import { CodeBlock } from './code-block';
+import { renderEmphasis } from './emphasis';
 import { TryIt } from './try-it';
 
 /**
@@ -15,6 +16,7 @@ import { TryIt } from './try-it';
 const METHOD_STYLES: Record<ApiEndpoint['method'], string> = {
   GET: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
   POST: 'bg-sky-500/10 text-sky-700 dark:text-sky-400',
+  PATCH: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
   DELETE: 'bg-rose-500/10 text-rose-700 dark:text-rose-400',
 };
 
@@ -77,12 +79,22 @@ export function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
   return (
     <article
       id={endpoint.id}
-      className="scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card text-card-foreground shadow-sm"
+      className="min-w-0 scroll-mt-24 overflow-hidden rounded-3xl border border-border/60 bg-card text-card-foreground shadow-sm"
     >
       <header className="border-b border-border/40 px-6 py-5">
         <div className="flex flex-wrap items-center gap-3">
           <MethodBadge method={endpoint.method} />
           <code className="min-w-0 truncate font-mono text-sm">{endpoint.path}</code>
+          {/* The scope, when the call needs one. Beside the credential rather
+              than buried in the prose, because "which permission is this" is a
+              question an app author asks about a call before they make it, and
+              a 403 that names the scope is no help to somebody who has not
+              written the request yet. */}
+          {endpoint.scope && (
+            <Badge variant="secondary" className="shrink-0 font-mono text-xs font-normal">
+              {endpoint.scope}
+            </Badge>
+          )}
           <Badge variant="outline" className="ml-auto shrink-0 font-normal">
             {API_AUTH_LABELS[endpoint.auth]}
           </Badge>
@@ -108,8 +120,16 @@ export function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
       <div className="grid gap-8 px-6 py-6">
         {/* The playground comes first, and above the reference rather than under
             it: the reason somebody scrolls to one of these is usually to find
-            out what it answers, and the answer to that is a Send button. */}
-        <TryIt endpoint={endpoint} />
+            out what it answers, and the answer to that is a Send button.
+
+            It is not offered on the OAuth endpoints, and that is a decision
+            rather than an omission: the token endpoint authenticates a *client*
+            with a client id and secret, and the authorization page is not an API
+            call at all — a Send button on either would be a button that can only
+            fail. What those cards carry instead is the request, written out. */}
+        {(endpoint.auth === 'key' || endpoint.auth === 'session') && (
+          <TryIt endpoint={endpoint} />
+        )}
 
         {endpoint.parameters && endpoint.parameters.length > 0 && (
           <section className="grid gap-3">
@@ -135,7 +155,22 @@ export function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
 
         <section className="grid gap-3">
           <FieldHeading>Request</FieldHeading>
-          <CodeBlock code={curlFor(endpoint)} label="cURL" />
+          {endpoint.auth === 'browser' ? (
+            // Not a call anybody makes: it is a URL a client opens in a browser,
+            // which is why there is no cURL here — a cURL of the studio's
+            // consent screen would be a command that prints HTML.
+            <>
+              <CodeBlock code={authorizeUrlFor(endpoint)} label="The URL your client opens" />
+              <p className="text-xs text-muted-foreground">
+                Built by your client, with its own client id, its own redirect URI, its own{' '}
+                <span className="font-mono">state</span> and a{' '}
+                <span className="font-mono">code_challenge</span> derived from a verifier it keeps.
+                The values here are the documented examples.
+              </p>
+            </>
+          ) : (
+            <CodeBlock code={curlFor(endpoint)} label="cURL" />
+          )}
         </section>
 
         <section className="grid gap-3">
@@ -157,33 +192,4 @@ export function EndpointCard({ endpoint }: { endpoint: ApiEndpoint }) {
       </div>
     </article>
   );
-}
-
-/**
- * The two bits of emphasis the notes use — `code` and **bold**.
- *
- * Written as a tiny renderer rather than as JSX in the data, so the reference
- * stays one object per endpoint: a note that had to be split into spans would be
- * a note nobody adds to.
- */
-function renderEmphasis(text: string): React.ReactNode {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
-
-  return parts.map((part, index) => {
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return (
-        <code key={index} className="font-mono text-foreground">
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return (
-        <strong key={index} className="font-medium text-foreground">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    return <span key={index}>{part}</span>;
-  });
 }

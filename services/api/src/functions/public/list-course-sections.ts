@@ -1,13 +1,14 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireKeySpaceAccess } from '../../lib/access';
-import { requireApiKeyCaller } from '../../lib/auth';
+import { requireCallerSpaceAccess } from '../../lib/access';
+import { requireApiCaller } from '../../lib/auth';
+import { requireScope } from '../../lib/oauth-scopes';
 import { groupContentsBySection, toCatalogSections } from '../../lib/catalog';
 import { handle, ok, pathParam } from '../../lib/http';
 import { listAllContentsBySpace } from '../../lib/contents';
 import { listAllSectionsBySpace } from '../../lib/sections';
 
 /**
- * A course's outline, to a key that may read it.
+ * A course's outline, to a credential that may read it.
  *
  * The shape is the syllabus the public catalogue already serves — sections, and
  * the title and presence of each lesson — with one difference that is the whole
@@ -18,10 +19,12 @@ import { listAllSectionsBySpace } from '../../lib/sections';
  * advertised to the world.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiKeyCaller(event);
+  const caller = requireApiCaller(event);
+  requireScope(caller, 'lessons:read');
+
   const spaceId = pathParam(event, 'spaceId');
 
-  await requireKeySpaceAccess(spaceId, caller);
+  await requireCallerSpaceAccess(spaceId, caller);
 
   const { sections } = await listAllSectionsBySpace(spaceId);
   const { contents } = await listAllContentsBySpace(spaceId);
