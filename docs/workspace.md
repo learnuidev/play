@@ -351,8 +351,10 @@ npm run deploy --workspace play-backend -- --aws-profile <profile>
 
 A new route is two things: a handler under `src/functions/**`, and a `functions:`
 entry in `serverless.yml` with its path, method and `authorizer`. Leaving the
-authorizer off is how the two public catalog routes are public, and it is the
-only place in the service that happens on purpose.
+authorizer off is how the two public catalog routes are public, and the `/v1`
+routes too — they authenticate themselves, for the reason below. A route under
+`/o`, `/spaces` or `/me` takes `${self:custom.authorizer}`, which is the Cognito
+user pool, and that is what makes those routes signed-in-only.
 
 ### Renaming a function is a deployment change, not a tidy-up
 
@@ -368,16 +370,15 @@ that chain into a circle:
 
 ```
 Circular dependency between resources: [RemoveDashcohortDashmemberNestedStack,
-OauthDashrevokeNestedStack, …, ApiDashcallerDashauthorizerNestedStack,
-ApiGatewayDeployment…]
+OauthDashrevokeNestedStack, …, ApiGatewayDeployment…]
 ```
 
 which surfaces at `validateTemplate`, after packaging has finished. That is what
-happened when the `/v1` authorizer learned its second credential: the function key
-in `serverless.yml` (`api-key-authorizer`, `get-api-key-identity`) is a *deployed*
-name, and the files beside it (`api-caller-authorizer.ts`, `get-api-identity.ts`)
-are what the code is. **Rename the file, not the key** — and if a key must move,
-expect to move it together with the API resources whose logical ids depend on it.
+happened when the `/v1` credential endpoint was renamed: the function key in
+`serverless.yml` (`get-api-key-identity`) is a *deployed* name, and the file beside
+it (`get-api-identity.ts`) is what the code is. **Rename the file, not the key** —
+and if a key must move, expect to move it together with the API resources whose
+logical ids depend on it.
 
 The check for it is local and cheap, because a cycle here is always one backward
 chain plus one edge that disagrees with it: package, then assert that every nested
@@ -419,7 +420,7 @@ them:
   because a person authorized *somebody else's app* on a consent screen, which
   acts as them and reaches exactly the scopes they agreed to.
 
-Both are resolved by one authorizer into one `ApiCaller`, because every `/v1`
+Both are resolved by one function into one `ApiCaller`, because every `/v1`
 handler asks the same two questions — who is this, and what may they reach — and
 a route that took only one of the two credentials would be a route half the
 product cannot use.
@@ -433,7 +434,7 @@ product cannot use.
 | Grants — one person's authorization of one app | `services/api/src/lib/oauth-grants.ts` |
 | Codes, access tokens, refresh tokens | `services/api/src/lib/oauth-tokens.ts` |
 | The OAuth error dialect, client credentials, form bodies | `services/api/src/lib/oauth-http.ts` |
-| The header-to-identity step, for either credential | `services/api/src/functions/auth/api-caller-authorizer.ts` |
+| The header-to-identity step, for either credential | `services/api/src/lib/api-caller.ts` |
 | The public surface itself | `services/api/src/functions/public/*` |
 | Apps, consent, tokens and revocation | `services/api/src/functions/oauth/*` |
 | Making, listing and revoking keys | `services/api/src/functions/api-keys/*` |
@@ -451,34 +452,59 @@ product cannot use.
   Revocation — of a key, or of an app somebody disconnected — takes effect on the
   next request. The price is one DynamoDB read per call, which is what identifying
   a caller costs everywhere else here.
-- **A bad credential is a Deny policy, not a thrown error.** API Gateway has
-  three documented answers here and only two are decisions: a Deny policy is a
-  403, a thrown error is a 500, and the case this function never sees — no
-  credential at all — is a 403 too, because the authorizer is invoked for every
-  request (see below).
+- **A refusing credential is a 401 in this API's own shape.** Because the
+  credential is resolved in the handler rather than by an authorizer, an absent
+  or unknown one is `{"error":{"code":401,"message":"Unauthorized"}}` — the same
+  envelope as every other error here, which is what an integration can read. An
+  earlier design answered 403 from a Deny policy; the shape is now consistent
+  instead of split between ours and API Gateway's.
 - **`/v1` is read-only and deliberately small.** Adding to it is a decision, not a
   route.
 - **The docs page is data.** A changed response is one object in
   `lib/api-reference.ts`, and the page, the examples and the cURL commands all
   come from it.
 
-### One authorizer, two headers
+### `/v1` authenticates in the handler, not at the gateway
 
-`custom.apiCallerAuthorizer` names **both** `Authorization` and `x-api-key` as
-identity sources, and that is documentation as much as configuration — API
-Gateway only verifies that every identity source is present when authorization
-**caching is on**. With the cache off (which is what makes revocation immediate)
-the request goes straight to the function, headers and all, and the function
-decides: `Bearer` first, then `x-api-key`, and the credential's *prefix*
-(`play_sk_` or `play_at_`) decides how it is looked up. So a request carrying only
-one of the two headers is not refused by the gateway for lacking the other, and a
-key presented as a bearer token works — an integration that would rather send
-every credential the same way is not doing anything wrong.
+Two credentials reach the public API and they arrive in two different headers: an
+API key in `x-api-key`, an OAuth access token as `Authorization: Bearer …`. **An
+API Gateway authorizer cannot accept either of two headers**, and it is worth
+knowing exactly why, because the naive configuration looks like it works and
+returns 401 for every real caller.
 
-The one behaviour that changed when the authorizer grew its second credential: a
-request with no credential at all now reaches the function and is refused there,
-so it is a **403** rather than the 401 API Gateway used to answer with before the
-function ran.
+Every mapping expression an authorizer is given as an `identitySource` is
+validated on every request: all of them must be present, non-null and non-empty,
+or API Gateway answers 401 itself without invoking the function. The API
+reference is unambiguous that this happens always — only the *property* is
+optional when caching is off:
+
+> These parameters will be used to derive the authorization caching key and to
+> perform runtime validation of the REQUEST authorizer by verifying all of the
+> identity-related request parameters are present, not null and non-empty. Only
+> when this is true does the authorizer invoke the authorizer Lambda function,
+> otherwise, it returns a 401 Unauthorized response without calling the Lambda
+> function.
+
+So `Authorization, x-api-key` means "send both" — a key got a 401 for lacking
+`Authorization`, an access token got a 401 for lacking `x-api-key` — and one
+header locks out whoever uses the other. There is no identity source meaning
+"either", no header both kinds of caller send, and no way to switch the check
+off (omitting the property with caching disabled still defaults to
+`Authorization`).
+
+The credential is therefore resolved *after* the gateway, by `lib/api-caller` —
+the single function every `/v1` handler calls before it does anything else, which
+is what the authorizer was doing anyway. `Bearer` first, then `x-api-key`, and the
+credential's prefix (`play_sk_` / `play_at_`) decides how it is looked up. A key
+presented as a bearer token works, so an integration that would rather send every
+credential the same way is not doing anything wrong.
+
+The `/v1` routes consequently carry **no `authorizer` key**, like the two public
+catalog routes, and that is not an oversight: they authenticate themselves. What
+changes is who refuses a stranger — the handler, answering this API's own
+`{error:{code,message}}` shape, instead of API Gateway answering its bare
+`{"message":"Unauthorized"}`. One DynamoDB read per call, nothing cached, exactly
+as before.
 
 ### Scopes are what an app may do; a key's reach is what it always was
 

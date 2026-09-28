@@ -26,7 +26,7 @@ import { getVideo } from '../../lib/dynamodb';
  * has no business with the second.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiCaller(event);
+  const caller = await requireApiCaller(event);
   requireScope(caller, 'lessons:stream');
 
   const content = await requireCallerContentAccess(pathParam(event, 'contentId'), caller);

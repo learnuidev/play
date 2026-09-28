@@ -9,6 +9,10 @@
 
 Use custom styls like these: text-[15px]
 
+## Backend
+
+- Do NOT deploy for me (unless i EXPLICITLY TELL YOU), thats my job
+
 ## Where things live
 
 Two apps (`apps/studio`, `apps/marketplace`) on one backend (`services/api`),

@@ -20,7 +20,7 @@ import { handle, ok, pathParam } from '../../lib/http';
  * and paging it would cost more than it saved.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiCaller(event);
+  const caller = await requireApiCaller(event);
   requireScope(caller, 'lessons:read');
 
   const content = await requireCallerContentAccess(pathParam(event, 'contentId'), caller);

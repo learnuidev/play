@@ -24,7 +24,7 @@ const MAX_SEARCH_RESULTS = 24;
  * scope it is missing.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  requireScope(requireApiCaller(event), 'courses:read');
+  requireScope(await requireApiCaller(event), 'courses:read');
 
   const query = (event.queryStringParameters?.query ?? '').trim();
   if (query.length > MAX_QUERY_LENGTH) {

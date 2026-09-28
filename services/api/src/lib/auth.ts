@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEvent } from 'aws-lambda';
 import type { ApiCaller } from '../types';
+import { resolveApiCaller } from './api-caller';
 import { HttpError } from './http';
-import { scopesFromContext } from './oauth-scopes';
 
 interface AuthorizerClaims {
   sub?: string;
@@ -57,45 +57,20 @@ export function requireUserId(event: APIGatewayProxyEvent): string {
 }
 
 /**
- * The caller behind `/v1`, as the authorizer resolved them.
+ * The caller behind `/v1`, resolved from the request.
  *
  * The other half of `requireUser`: a route behind the Cognito authorizer learns
- * who is calling from the token's claims, and a route behind the API-caller
- * authorizer learns it from the context that authorizer returned. Everything
- * `/v1` authorizes in a handler reads this and nothing else — the identity, the
- * scopes, and whichever of the two credentials it arrived as.
+ * who is calling from the token's claims, and a `/v1` route learns it from
+ * whichever credential the request carries — see `lib/api-caller`, which is
+ * where that happens and where the reason it is not an API Gateway authorizer is
+ * written down.
  *
- * Not reaching this at all is the normal case for a request with no credential:
- * the authorizer refuses those before the function is invoked, so this guard is
- * here for the request that arrives with an empty context rather than for the
- * one that arrives with no credential.
+ * A credential that does not resolve and one that was never sent are the same
+ * answer (401): a caller holding a wrong key is not told whether a right one ever
+ * existed.
  */
-export function requireApiCaller(event: APIGatewayProxyEvent): ApiCaller {
-  const context = event.requestContext.authorizer as
-    | Record<string, string | undefined>
-    | undefined;
-
-  const userId = context?.userId;
-  if (!userId) {
-    throw new HttpError(401, 'Unauthorized');
-  }
-
-  const scopes = scopesFromContext(context?.scopes);
-
-  if (context?.kind === 'oauth') {
-    const appId = context.appId;
-    const clientId = context.clientId;
-    if (!appId || !clientId) {
-      throw new HttpError(401, 'Unauthorized');
-    }
-    return { kind: 'oauth', appId, clientId, userId, scopes };
-  }
-
-  const keyId = context?.keyId;
-  if (!keyId) {
-    throw new HttpError(401, 'Unauthorized');
-  }
-
-  const organizationId = context?.organizationId;
-  return { kind: 'key', keyId, userId, scopes, ...(organizationId ? { organizationId } : {}) };
+export async function requireApiCaller(event: APIGatewayProxyEvent): Promise<ApiCaller> {
+  const caller = await resolveApiCaller(event);
+  if (!caller) throw new HttpError(401, 'Unauthorized');
+  return caller;
 }

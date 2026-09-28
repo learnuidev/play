@@ -29,7 +29,7 @@ import type { SubtitleStatus, SubtitleTrackInfo } from '../../types';
  * caller has to catch to say the same thing.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiCaller(event);
+  const caller = await requireApiCaller(event);
   requireScope(caller, 'lessons:stream');
 
   const content = await requireCallerContentAccess(pathParam(event, 'contentId'), caller);

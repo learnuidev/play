@@ -24,7 +24,7 @@ const APP_GRANTED_INDEX = 'AppGrantedIndex';
 /**
  * How stale `lastUsedAt` may be before a request bothers to write it.
  *
- * The same window the key authorizer uses, for the same reason: authenticating
+ * The same window a key's usage is recorded on, for the same reason: authenticating
  * is a read and recording that something was used is a write, and putting that
  * write in front of every call a customer makes — to keep a timestamp the
  * connections screen shows as "2 minutes ago" instead of "5 minutes ago" — is

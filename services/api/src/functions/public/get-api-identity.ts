@@ -23,7 +23,7 @@ import type { ApiIdentityResponse } from '../../types';
  * something every credential may help itself to.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiCaller(event);
+  const caller = await requireApiCaller(event);
 
   if (caller.kind === 'key') {
     const record = await getApiKey(caller.keyId);

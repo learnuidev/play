@@ -131,8 +131,8 @@ export async function getOAuthApp(appId: string): Promise<OAuthAppRecord | undef
  * The app a client id belongs to.
  *
  * Through its own index rather than by reading every app, and it is the same
- * shape of lookup the key authorizer does: the token endpoint holds a client id
- * and nothing else, so that id has to be a key space of its own.
+ * shape of lookup a presented key gets: the token endpoint holds a client id and
+ * nothing else, so that id has to be a key space of its own.
  */
 export async function getOAuthAppByClientId(
   clientId: string,

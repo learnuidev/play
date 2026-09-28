@@ -19,7 +19,7 @@ import { listAllSectionsBySpace } from '../../lib/sections';
  * advertised to the world.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiCaller(event);
+  const caller = await requireApiCaller(event);
   requireScope(caller, 'lessons:read');
 
   const spaceId = pathParam(event, 'spaceId');

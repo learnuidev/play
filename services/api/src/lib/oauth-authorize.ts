@@ -167,9 +167,17 @@ function requireRegisteredRedirectUri(app: OAuthAppRecord, raw: string | undefin
   }
 
   if (!app.redirectUris.includes(normalized)) {
+    // The requested URI is repeated back, and that is deliberate: it is the one
+    // parameter of the request that is already in the address bar of whoever is
+    // reading this, so repeating it tells an attacker nothing they cannot see —
+    // and it is the difference between "something is wrong" and "this is the
+    // string that is wrong", which is what an app's author needs at the moment
+    // their redirect URI does not match. The *registered* list stays out of the
+    // message: that would let anybody who can construct an authorize URL read
+    // back an app's configuration.
     throw new HttpError(
       400,
-      'redirect_uri is not registered for this app. A redirect URI must match one of the app’s registered URIs exactly.',
+      `redirect_uri is not registered for this app: the request asked for ${normalized}. A redirect URI must match one of the app’s registered URIs exactly — same scheme, host, port and path.`,
     );
   }
 

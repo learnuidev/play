@@ -31,7 +31,7 @@ const ORGANIZATION_CREATED_INDEX = 'OrganizationCreatedIndex';
 /**
  * GSI on the keys table: the hash a presented secret is looked up by.
  *
- * The authorizer has the secret and nothing else — no id, no owner — so the
+ * `lib/api-caller` has the secret and nothing else — no id, no owner — so the
  * hash has to be a key space of its own, and an entry leaves it exactly when the
  * key behind it is deleted. It is a separate index rather than the
  * table's own key so that a row stays addressable by `keyId` for everything the
@@ -98,8 +98,8 @@ export function generateApiKeySecret(): string {
  * bits of machine-generated randomness that exists in exactly one place, where
  * the only attack that matters is a precomputed table — which a salt defeats and
  * which a 192-bit secret defeats on its own. What a plain hash buys is the
- * lookup: the authorizer verifies by reading one item by key, not by scanning
- * every key and testing each.
+ * lookup: a presented key is verified by reading one item by key, not by
+ * scanning every key and testing each.
  */
 export function hashApiKeySecret(secret: string): string {
   return createHash('sha256').update(secret, 'utf8').digest('hex');

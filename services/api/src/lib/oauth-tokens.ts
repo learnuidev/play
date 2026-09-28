@@ -53,7 +53,7 @@ const CODE_PREFIX = 'play_ac_';
  * short enough that a token that leaked is worthless before the day is out. It
  * is also the window in which "I disconnected that app" and "the app's calls
  * stopped" are within an hour of each other — which is the same bargain the key
- * authorizer makes by caching nothing, and it is deliberately in the same
+ * resolution makes by caching nothing, and it is deliberately in the same
  * direction: revocation is instant and expiry is not the mechanism.
  */
 export const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
@@ -468,8 +468,8 @@ export async function spendRefreshToken(tokenId: string): Promise<boolean> {
 /**
  * The caller behind an access token, or nothing.
  *
- * The authentication path of `/v1`, and the same shape as the key authorizer's:
- * one lookup by hash, and its absence is the whole answer. An access token that
+ * The authentication path of `/v1`, and the same shape as a key's: one lookup by
+ * hash, and its absence is the whole answer. An access token that
  * belongs to a *grant* that has been disconnected is not found either, because
  * disconnecting deletes it — which is what makes "I disconnected that app" mean
  * the app stopped working rather than stopped being listed.

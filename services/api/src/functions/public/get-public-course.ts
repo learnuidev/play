@@ -18,7 +18,7 @@ import type { Content } from '../../types';
  * by *access* — but it is not readable here.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  requireScope(requireApiCaller(event), 'courses:read');
+  requireScope(await requireApiCaller(event), 'courses:read');
 
   const spaceId = pathParam(event, 'spaceId');
 

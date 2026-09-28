@@ -1259,12 +1259,12 @@ export const API_ERRORS: { status: string; meaning: string }[] = [
   {
     status: '401',
     meaning:
-      'A method that takes a session — everything that mints or revokes a credential — called without one. It is also what a `/v1` call gets when the credential it presented is an OAuth access token whose app has since been deleted, because a token with no client behind it is not an identity.',
+      'No credential, or one that does not authenticate: an unknown or revoked key, an expired or spent access token, a malformed one. A `/v1` route answers this itself — the credential is read from whichever header carries it — so the body is this API’s own shape rather than the gateway’s. A method that takes a *session* — everything that mints or revokes a credential — answers 401 the same way when called without one.',
   },
   {
     status: '403',
     meaning:
-      'A credential that does not authenticate — an unknown or revoked key, an expired or spent access token, a malformed one — or one that authenticates but is not allowed this: **missing a scope** the route needs (`This credential is missing the lessons:stream scope`), a key not made for the organization being asked about, or a caller who is not one of that organization’s admins. The scope refusal names the scope on purpose: a scope is not a secret, and an integration that has run out of permission needs to know which permission to ask its user for.',
+      'A credential that is valid and is not allowed *this*: **missing a scope** the route needs (`This credential is missing the lessons:stream scope`), a key not made for the organization being asked about, or a caller who is not one of that organization’s admins. The scope refusal names the scope on purpose: a scope is not a secret, and an integration that has run out of permission needs to know which permission to ask its user for.',
   },
   {
     status: '404',

@@ -35,39 +35,36 @@ custom:
     name: cognito-authorizer
     type: COGNITO_USER_POOLS
     arn: !GetAtt CognitoUserPool.Arn
-  # The authorizer behind `/v1`: the routes a caller reaches with a credential
-  # rather than with a sign-in.
+  # There is no API Gateway authorizer behind `/v1`, and that is deliberate.
   #
-  # Two credentials, one authorizer, and the reason they cannot be two is that
-  # API Gateway allows one authorizer per method: `/v1` is one set of routes and
-  # has to accept either an API key in `x-api-key` or an OAuth access token as
-  # `Authorization: Bearer …`.
+  # There was one — a `REQUEST` authorizer that resolved an API key or an OAuth
+  # access token — and it cannot work, because **API Gateway validates every
+  # mapping expression named as an `identitySource` on every request** and answers
+  # 401 itself unless all of them are present, non-null and non-empty. The API
+  # reference is explicit that this is unconditional, and that only the property
+  # is optional when caching is off:
   #
-  # `type: request` because the credential is a header we look up ourselves
-  # rather than a token API Gateway already knows how to validate.
+  # > These parameters will be used to derive the authorization caching key and
+  # > to perform runtime validation of the REQUEST authorizer by verifying all of
+  # > the identity-related request parameters are present, not null and
+  # > non-empty. Only when this is true does the authorizer invoke the authorizer
+  # > Lambda function, otherwise, it returns a 401 Unauthorized response without
+  # > calling the Lambda function.
   #
-  # Both headers are named as identity sources, which is documentation as much as
-  # configuration — and it is worth knowing what it does *not* do. API Gateway
-  # checks that every identity source is present only when authorization caching
-  # is on, and returns 401 itself when one is missing; with the cache off
-  # (`resultTtlInSeconds: 0`) the request goes straight to the function, headers
-  # and all, and the function decides. So a request carrying only one of the two
-  # headers is not refused by the gateway for lacking the other. The cache stays
-  # off because a revocation that takes up to an hour to take effect is not a
-  # revocation, and that is the same trade this service already made for keys.
+  # So an authorizer handed `Authorization, x-api-key` requires a caller to send
+  # *both* — which no real caller does: a key got a 401 for lacking
+  # `Authorization`, an access token got a 401 for lacking `x-api-key` — while an
+  # authorizer handed a single header locks out whoever uses the other one. There
+  # is no identity source meaning "either", no header both kinds of caller send,
+  # and no way to switch the validation off.
   #
-  # One consequence is worth stating because it is a change: a request with no
-  # credential at all now reaches the authorizer and is refused there with a Deny
-  # policy — a 403 — where a missing `x-api-key` used to be a 401 from API
-  # Gateway before the function ran.
-  apiCallerAuthorizer:
-    # The `name` is what the `AWS::ApiGateway::Authorizer` resource is called, and
-    # it stays as it was for the reason spelled out at the function below: it is
-    # a deployed logical id, and moving it moves the resource's whole stack.
-    name: api-key-authorizer
-    type: request
-    identitySource: method.request.header.Authorization, method.request.header.x-api-key
-    resultTtlInSeconds: 0
+  # The credential is therefore resolved *after* the gateway, by `lib/api-caller`,
+  # which is the one function every `/v1` handler calls before it does anything
+  # else — the same place the authorizer's logic lived, in the same process as the
+  # authorization it feeds. What changes is who refuses an unauthenticated
+  # request: the handler, in this API's own `{error:{code,message}}` shape, rather
+  # than the gateway in its bare `{"message":"Unauthorized"}`. One read per call,
+  # nothing cached, exactly as before.
   # Google sign-in (optional). The credentials live in SSM Parameter Store so
   # they stay out of the repo and out of shell history — write them with
   # scripts/set-google-oauth.sh. When they are missing, the Google identity
@@ -1462,39 +1459,18 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
-  # The authorizer itself. It has no HTTP event: API Gateway invokes it on behalf
-  # of the routes below, and it is never reachable as an endpoint of its own.
+  # The public API: `/v1`. Read-only, addressed by a credential, and the surface
+  # the docs page describes.
   #
-  # **The key stays `api-key-authorizer`, and that is not an oversight.** The
-  # handler behind it is `api-caller-authorizer.ts`, which is what it now is; the
-  # name below is the name of a *deployed* thing. Renaming it moves its nested
-  # stack to the end of the template — `serverless-plugin-split-stacks` migrates
-  # by logical id and keeps existing resources where they are — while the `/v1`
-  # methods that depend on the authorizer stay in the stacks they already
-  # occupy. The plugin then chains stacks `i -> i-5` for `stackConcurrency`, and
-  # a dependency pointing *forward* into a stack on that chain closes it into a
-  # circle: "Circular dependency between resources: [... 49 nested stacks ...]",
-  # at template validation, after eleven minutes of packaging.
+  # These routes carry **no `authorizer`**, like the two public catalog routes
+  # below, and for the reason written out under `custom:`: a request authorizer
+  # cannot accept a credential from one of two headers. They are not
+  # unauthenticated — each handler's first line resolves the caller and answers a
+  # 401 of its own — but the gateway is no longer what refuses a stranger.
   #
-  # The route-facing name is `custom.apiCallerAuthorizer`, which says what it is.
-  # This one is the physical name, and it is load-bearing.
-  api-key-authorizer:
-    handler: src/functions/auth/api-caller-authorizer.handler
-
-  # The public API: `/v1`. Read-only, addressed by a key, and the surface the
-  # docs page describes.
-  #
-  # These are the only routes in the service authorized by something other than
-  # a Cognito token, and they are deliberately few: a curated surface someone can
-  # integrate against and be held to, rather than every handler this service has
-  # opened to a second kind of caller.
-  # Named for the key it used to take rather than for what it does now, and kept
-  # that way on purpose: this function's API resources — `/v1/me` itself — are
-  # migrated back into *this* nested stack by logical id on every deploy, so
-  # renaming the key would leave them in an old stack pointing at a new one,
-  # which is the circular dependency described at `api-key-authorizer` below.
-  # The handler is `get-api-identity.ts`: the code says what it is, the deployed
-  # name is a name.
+  # They are deliberately few: a curated surface somebody can integrate against
+  # and be held to, rather than every handler this service has opened to a second
+  # kind of caller.
   get-api-key-identity:
     handler: src/functions/public/get-api-identity.handler
     events:
@@ -1504,7 +1480,6 @@ functions:
           path: v1/me
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-api-profile:
     handler: src/functions/public/get-api-profile.handler
@@ -1519,7 +1494,6 @@ functions:
           path: v1/me/profile
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   list-public-courses:
     handler: src/functions/public/list-public-courses.handler
@@ -1528,7 +1502,6 @@ functions:
           path: v1/courses
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-public-course:
     handler: src/functions/public/get-public-course.handler
@@ -1537,7 +1510,6 @@ functions:
           path: v1/courses/{spaceId}
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   list-organization-courses:
     handler: src/functions/public/list-organization-courses.handler
@@ -1549,7 +1521,6 @@ functions:
           path: v1/organizations/{orgId}/courses
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   # A lesson, to a key that may read it: the pieces a page needs to teach with —
   # the outline it sits in, the lesson itself, its video, its subtitles, and the
@@ -1567,7 +1538,6 @@ functions:
           path: v1/courses/{spaceId}/sections
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-lesson:
     handler: src/functions/public/get-lesson.handler
@@ -1576,7 +1546,6 @@ functions:
           path: v1/lessons/{contentId}
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-lesson-stream:
     handler: src/functions/public/get-lesson-stream.handler
@@ -1587,7 +1556,6 @@ functions:
           path: v1/lessons/{contentId}/stream
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   get-lesson-subtitles:
     handler: src/functions/public/get-lesson-subtitles.handler
@@ -1596,7 +1564,6 @@ functions:
           path: v1/lessons/{contentId}/subtitles
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   list-lesson-attachments:
     handler: src/functions/public/list-lesson-attachments.handler
@@ -1605,7 +1572,6 @@ functions:
           path: v1/lessons/{contentId}/attachments
           method: get
           cors: true
-          authorizer: ${self:custom.apiCallerAuthorizer}
 
   # OAuth: letting somebody else's app act as one of our people, with their
   # consent. Two audiences, and the difference between them is the authorizer.

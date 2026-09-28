@@ -13,7 +13,7 @@ const client = new SSMClient({});
  * variable and pushed the deploy over the limit. The key is also the one thing
  * in that environment that is a secret — an environment variable is readable in
  * the console and in `lambda get-function-configuration`, which meant every
- * function, including the authorizer and the key list, was carrying a copy of
+ * function, including the key list, was carrying a copy of
  * the distribution's signing key it would never use.
  *
  * So it is fetched from the parameter the deployment used to interpolate at

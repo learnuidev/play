@@ -82,13 +82,3 @@ export function requireScope(caller: ApiCaller, scope: ApiScope): void {
   throw new HttpError(403, `This credential is missing the ${scope} scope`);
 }
 
-/**
- * The scopes a credential holds, as it travels through API Gateway.
- *
- * The authorizer's context is a map of strings, so a scope list crosses that
- * boundary as the space-delimited form OAuth already uses for it — one string,
- * and the same spelling that appears in a consent URL and a token response.
- */
-export function scopesFromContext(raw: string | undefined): ApiScope[] {
-  return API_SCOPES.filter((scope) => (raw ?? '').split(' ').includes(scope));
-}

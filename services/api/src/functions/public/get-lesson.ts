@@ -21,7 +21,7 @@ import { handle, ok, pathParam } from '../../lib/http';
  * editor of their choice is not a string anybody has to trust.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiCaller(event);
+  const caller = await requireApiCaller(event);
   requireScope(caller, 'lessons:read');
 
   const content = await requireCallerContentAccess(pathParam(event, 'contentId'), caller);

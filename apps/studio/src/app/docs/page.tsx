@@ -201,7 +201,8 @@ export default function ApiDocsPage() {
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
                 Every call under <span className="font-mono">/v1</span> takes one of two credentials,
                 in one of two headers. Nothing else about the call changes: the same endpoints, the
-                same shapes, the same authorizer deciding who you are.
+                same shapes, and the same answer to who you are — read from whichever header carries
+                it.
               </p>
 
               <div className="mt-6 overflow-hidden rounded-3xl border border-border/60 bg-card text-card-foreground shadow-sm">
@@ -299,7 +300,7 @@ Authorization: Bearer play_at_3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c`}
                 <Fact
                   icon={<ZapIcon className="size-4" />}
                   title="Nothing is cached"
-                  body="The authorizer is invoked on every request, so revoking a key — or disconnecting an app — takes effect immediately rather than within the hour a caching authorizer would take."
+                  body="A credential is resolved against its own row on every request, so revoking a key — or disconnecting an app — takes effect on the next call rather than within the hour a caching authorizer would take."
                 />
               </div>
             </section>

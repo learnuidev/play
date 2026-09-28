@@ -30,7 +30,7 @@ import { listSpacesByOrganization } from '../../lib/spaces';
  *   who authorized it has.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiCaller(event);
+  const caller = await requireApiCaller(event);
   requireScope(caller, ORGANIZATION_SCOPE);
 
   const orgId = pathParam(event, 'orgId');

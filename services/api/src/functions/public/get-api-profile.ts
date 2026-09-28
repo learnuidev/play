@@ -41,7 +41,7 @@ const UNNAMED = 'Play member';
  * never been able to see.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const caller = requireApiCaller(event);
+  const caller = await requireApiCaller(event);
   requireScope(caller, 'profile:read');
 
   const profile = await getProfile(caller.userId);

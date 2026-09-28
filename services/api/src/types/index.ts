@@ -1067,8 +1067,8 @@ export interface ApiKeyRecord {
    */
   prefix: string;
   /**
-   * Hex SHA-256 of the whole secret. The lookup the authorizer does, and the
-   * only representation of the key this service holds.
+   * Hex SHA-256 of the whole secret. The lookup a presented key is resolved by,
+   * and the only representation of the key this service holds.
    */
   keyHash: string;
   /** Cognito `sub` of whoever created it. */
@@ -1119,7 +1119,7 @@ export interface OrganizationApiKey extends ApiKey {
 }
 
 /**
- * What a caller behind `/v1` is allowed to act as, read from the authorizer.
+ * What a caller behind `/v1` is allowed to act as, resolved from the request.
  *
  * Two kinds of credential reach `/v1`, and this is the one shape they are
  * resolved into. An API key is the older one: a credential a person made for a

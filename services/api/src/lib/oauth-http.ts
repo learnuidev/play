@@ -87,9 +87,9 @@ export function handleOAuth(
           err.status,
         );
       }
-      // A 4xx from the shared helpers — an unknown scope in `parseScopeList`, a
-      // malformed body — is a bad request, and saying so in the protocol's
-      // dialect is what lets a client library act on it.
+      // A 4xx from the shared helpers — a malformed body, a limit that is not a
+      // number — is a bad request, and saying so in the protocol's dialect is
+      // what lets a client library act on it.
       if (err instanceof HttpError && err.statusCode < 500) {
         return oauthResponse(
           { error: 'invalid_request', error_description: err.message },
