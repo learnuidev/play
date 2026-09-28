@@ -136,7 +136,7 @@ export default function OAuthAppPage() {
         <div className="grid gap-5">
           <div className="grid gap-2">
             <span className="text-sm font-medium">Client id</span>
-            <div className="flex items-center gap-2 rounded-xl border bg-muted/40 px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2 rounded-xl border bg-muted/40 px-3 py-2">
               <code className="min-w-0 flex-1 break-all font-mono text-xs">{app.clientId}</code>
               <CopyButton value={app.clientId} label="Copy" variant="secondary" />
             </div>
@@ -182,7 +182,7 @@ export default function OAuthAppPage() {
           {authorizeExample && (
             <div className="grid gap-2">
               <BlockLabel>Where to send people</BlockLabel>
-              <div className="flex items-start gap-2 rounded-xl border bg-muted/40 px-3 py-2">
+              <div className="flex min-w-0 items-start gap-2 rounded-xl border bg-muted/40 px-3 py-2">
                 <code className="min-w-0 flex-1 break-all font-mono text-xs">{authorizeExample}</code>
                 <CopyButton value={authorizeExample} label="Copy" variant="secondary" />
               </div>

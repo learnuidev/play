@@ -343,15 +343,14 @@ Authorization: Bearer play_at_3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c`}
                     screen: what your app is, what it is asking for, and who is signed in. Nobody
                     types a Play password into your app, because nobody signs in anywhere but here.
                   </p>
+                  {/* Written as a joined array rather than as one template
+                      literal across several lines: inside a template literal a
+                      backslash before a newline is a *line continuation*, so the
+                      newlines disappear and what looks like six lines here is
+                      one 380-character string in the DOM — a code block that
+                      cannot wrap, and a layout that cannot shrink. */}
                   <CodeBlock
                     label="The URL your client opens"
-                    // Written as a joined array rather than as one template
-                    // literal across several lines: inside a template literal a
-                    // backslash before a newline is a *line continuation*, so
-                    // the newlines disappear and what looks like six lines on
-                    // this page is one 380-character string in the DOM — which
-                    // is a code block that cannot wrap and a layout that cannot
-                    // shrink. `\n` says the same thing and stays a newline.
                     code={[
                       'https://<your-studio>/oauth/authorize?',
                       '  client_id=play_app_7c1d9e2f4a6b8c0d&',
@@ -543,11 +542,11 @@ function Step({
   title: string;
   children: React.ReactNode;
 }) {
+  // `min-w-0` on the section: a grid item does not shrink below its content's
+  // minimum width unless it is told to, and these steps carry code blocks — so a
+  // long command would otherwise set the width of the whole page rather than
+  // scrolling inside its own box.
   return (
-    {/* `min-w-0`: a grid item does not shrink below its content's minimum
-        width unless it is told to, and these steps carry code blocks — so a
-        long command would otherwise set the width of the whole page rather than
-        scrolling inside its own box. */}
     <section className="min-w-0 rounded-3xl border border-border/60 bg-card p-6 text-card-foreground shadow-sm">
       <div className="flex items-center gap-3">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted/70 text-xs font-medium">
