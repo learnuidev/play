@@ -121,7 +121,7 @@ redirect URI and scopes and the box ticked.
 | `/` | The flow end to end, the scopes asked for, and the identity Play returns — including the profile, which is the one permission that is about a person rather than a catalog |
 | `/auth/callback` | The second leg: reading `code` and `state`, checking the state, and spending the code with the verifier that never left the tab |
 | `/courses` | `GET /v1/courses` — and the fact that the answer depends on *who* authorized the app |
-| `/courses/{spaceId}` | The classroom. Published courses come from the catalog; a course nobody has listed still opens, through the route authorized by access rather than by publication. Mark complete, save, and comment from here — and the saved list at the foot of the page is read back from Play with `GET /v1/me/learning` |
+| `/courses/{spaceId}` | The classroom. Published courses come from the catalog; a course nobody has listed still opens, through the route authorized by access rather than by publication. Mark complete, save, read the discussion and reply from here, and the saved list at the foot of the page is read back from Play with `GET /v1/me/learning` |
 
 Every page ends with the list of endpoints it called, so the screen stops being
 magic and becomes five documented requests.
@@ -131,10 +131,10 @@ magic and becomes five documented requests.
 - **Nothing beyond what the person can read.** The token acts as them, so asking
   for somebody else's unpublished course is a 403 whether it is asked for here or
   anywhere else.
-- **No replies to comments, and no editing or deleting one.** The API posts a
-  top-level comment and nothing else. Posting is the permission; rewriting or
-  retracting under somebody's name is a larger one, and a comment can always be
-  withdrawn in Play by the person whose name is on it.
+- **No editing or deleting a comment.** The app can post, reply, and read the
+  whole discussion — top-level comments and their replies — but a posted comment
+  is withdrawn in Play, by the person whose name is on it. Posting is the
+  permission; rewriting or retracting under somebody's name is a larger one.
 - **No enrolment, and nothing that changes a course.** The three writes are the
   whole of it: somebody's own progress, their own favourites, and a comment.
 - **No loops or playlists.** Those are features of Play's own classroom, reached

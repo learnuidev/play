@@ -795,12 +795,79 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
 }`,
       },
       {
+        id: 'list-lesson-comments',
+        method: 'GET',
+        path: '/v1/lessons/{contentId}/comments',
+        summary: 'The discussion on a lesson.',
+        description:
+          'Every top-level comment with its replies, oldest first — what everybody said, not only what you said. Behind `lessons:read` and nothing else: anybody who may read a lesson may read what was said about it, the same rule Play’s own apps follow. `truncated` says when a discussion is longer than one read (500 comments), so a client can say "the most recent 500" rather than showing half a conversation as if it were all of it.',
+        auth: 'key',
+        scope: 'lessons:read',
+        responseStatus: '200 OK',
+        parameters: [
+          {
+            in: 'path',
+            name: 'contentId',
+            type: 'string',
+            required: true,
+            choices: 'lessons',
+            description: 'The lesson whose discussion is being read.',
+            example: '01JQ8Y5E2F4G6H8J0K2M4P6R8S',
+          },
+        ],
+        responseExample: `{
+  "threads": [
+    {
+      "comment": {
+        "commentId": "01JQ9C1D2E3F4G5H6J7K8M9P0Q",
+        "contentId": "01JQ8Y5E2F4G6H8J0K2M4P6R8S",
+        "authorId": "8f14e45f-ea6c-4f2b-9d3a-1c2b3a4d5e6f",
+        "authorName": "Dana Ruiz",
+        "body": "Worth watching the second half twice.",
+        "replyCount": 1,
+        "favouriteCount": 3,
+        "createdAt": 1772582400000,
+        "updatedAt": 1772582400000
+      },
+      "replies": [
+        {
+          "commentId": "01JQ9C2E3F4G5H6J7K8M9P0Q1R",
+          "contentId": "01JQ8Y5E2F4G6H8J0K2M4P6R8S",
+          "authorId": "2b3c4d5e-6f70-4a1b-8c9d-0e1f2a3b4c5d",
+          "authorName": "Sam Okafor",
+          "body": "Agreed — the rolling-shutter demo is at 6:10.",
+          "parentId": "01JQ9C1D2E3F4G5H6J7K8M9P0Q",
+          "replyToId": "01JQ9C1D2E3F4G5H6J7K8M9P0Q",
+          "replyCount": 0,
+          "favouriteCount": 0,
+          "createdAt": 1772668800000,
+          "updatedAt": 1772668800000
+        }
+      ]
+    }
+  ],
+  "truncated": false
+}`,
+        responseFields: [
+          { name: 'threads', type: 'array', description: 'Top-level comments, oldest first, each with its replies.' },
+          { name: 'threads[].comment.parentId', type: 'string?', description: 'Absent on a top-level comment.' },
+          { name: 'threads[].replies[]', type: 'array', description: 'The answers to it, in the order they were written. A reply never nests further — see below.' },
+          { name: 'threads[].replies[].replyToId', type: 'string?', description: 'The comment this reply answers, when that is not the thread’s root. Threads are two levels deep and this is what lets a screen say "replying to Sam" inside one.' },
+          { name: 'threads[].comment.replyCount', type: 'integer', description: 'How many replies the thread has. Zero on a reply itself.' },
+          { name: 'truncated', type: 'boolean', description: 'True when the lesson has more comments than one read returns.' },
+        ],
+        notes: [
+          '**Threads, not rows.** A reply always carries the thread’s *root* as `parentId`, however deep the conversation looks, so this response is already nested and a client never has to build the tree. That rule is the API’s, and it is why the answers arrive assembled.',
+          '**No per-caller hearts.** Unlike Play’s own discussion endpoint, these comments do not say whether *you* have favourited them. A heart is part of somebody’s learning record — what `learning:read` is for — and a route that hands out a conversation should not hand out a person’s saving habits with it. A field that always said `false` would be worse than absent.',
+        ],
+      },
+      {
         id: 'create-lesson-comment',
         method: 'POST',
         path: '/v1/lessons/{contentId}/comments',
         summary: 'Post a comment on a lesson.',
         description:
-          'The one write under `/v1` that puts somebody’s **name** on something: the comment appears in the lesson’s discussion under the name of the person who authorized the app, exactly as if they had typed it in Play. Nobody who can read a lesson needs any further permission to take part in its discussion, which is why `comments:write` is the whole gate.',
+          'The one write under `/v1` that puts somebody’s **name** on something: the comment appears in the lesson’s discussion under the name of the person who authorized the app, exactly as if they had typed it in Play — and with `parentId` it answers somebody else’s. Nobody who can read a lesson needs any further permission to take part in its discussion, which is why `comments:write` is the whole gate.',
         auth: 'oauth-write',
         scope: 'comments:write',
         responseStatus: '201 Created',
@@ -822,6 +889,12 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
             required: true,
             description: 'The comment. 1–2000 characters, trimmed.',
             example: 'This is the clearest explanation of a rolling shutter I have watched.',
+          },
+          {
+            name: 'parentId',
+            type: 'string',
+            description: 'The comment being answered. Omit for a top-level comment. It may be a top-level comment **or a reply** — the API works out where the new comment sits in the thread, so a client never sends the thread’s root itself.',
+            example: '01JQ9C1D2E3F4G5H6J7K8M9P0Q',
           },
         ],
         responseExample: `{
@@ -845,9 +918,9 @@ export const API_ENDPOINT_GROUPS: ApiEndpointGroup[] = [
           { name: 'comment.favourited', type: 'boolean', description: 'Always false on a new comment: nobody has hearted it yet.' },
         ],
         notes: [
-          '**Top-level comments only.** There is no way to reply to a comment through this API: threads are a shape Play’s own screen draws, and a client that can add one half of a conversation should not be able to aim it at somebody else’s answer.',
-          '**No editing and no deleting.** A posted comment can be removed in Play, by the person whose name is on it. Posting is the grant here; rewriting and retracting under somebody’s name is a larger one that nothing asked for.',
-          'The lesson’s comment count moves with it, so the discussion reads as one comment longer everywhere it is drawn.',
+          '**Replies are one id.** Send the comment being answered as `parentId` — top-level or a reply, either way — and the response’s `parentId` tells you the thread it landed in. A reply to a reply keeps the same thread root and records who it answers in `replyToId`, which is what keeps a discussion two levels deep instead of a tree nobody can draw.',
+          '**No editing and no deleting.** A posted comment can be removed in Play, by the person whose name is on it. Posting is the grant here; rewriting or retracting under somebody’s name is a larger one that nothing asked for.',
+          'The lesson’s comment count moves with it, and the thread’s reply count when this was a reply, so a discussion reads as one comment longer everywhere it is drawn.',
         ],
       },
       {
@@ -1480,8 +1553,8 @@ export const OAUTH_SCOPE_DOCS: ApiScopeDoc[] = [
   },
   {
     scope: 'comments:write',
-    title: 'Post comments as you',
-    reach: '`POST /v1/lessons/{contentId}/comments`. Your name goes on it. Editing and deleting stay in Play, where the person reading the discussion is the one who wrote it.',
+    title: 'Post comments and replies as you',
+    reach: '`POST /v1/lessons/{contentId}/comments`, with `parentId` to answer somebody. Your name goes on it. Editing and deleting stay in Play, where the person reading the discussion is the one who wrote it. Reading a discussion needs no scope beyond `lessons:read`.',
   },
 ];
 

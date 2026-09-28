@@ -64,9 +64,9 @@ export const OAUTH_SCOPE_COPY: Record<ApiScope, ScopeCopy> = {
       'Changes your own learning record: finishing a lesson, or adding one to your favourites. It cannot touch anybody else’s, and it cannot delete a lesson or a course.',
   },
   'comments:write': {
-    title: 'Post comments as you',
+    title: 'Post comments and replies as you',
     description:
-      'Anything it posts appears under your name, in the discussion on a lesson. Editing and deleting stay in Play, where you are the one reading them.',
+      'Anything it posts appears under your name, in the discussion on a lesson — including replies to other people. Editing and deleting stay in Play, where you are the one reading them.',
   },
 };
 

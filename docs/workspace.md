@@ -522,7 +522,10 @@ things under `/v1` change somebody's own record — marking a lesson complete,
 saving one to their favourites, and posting a comment under their name — and all
 three are reachable only with an OAuth token whose owner agreed to the scope:
 `learning:write` for the two toggles and `comments:write` for the one that speaks
-for a person. Reading that record (`learning:read`, on `GET /v1/me/learning`) is a
+for a person. `comments:write` covers replies as well as top-level comments, and
+reading a discussion is not part of it: `GET /v1/lessons/{contentId}/comments` is
+behind `lessons:read`, because anybody who may read a lesson may read what was
+said about it. Reading that record (`learning:read`, on `GET /v1/me/learning`) is a
 separate grant from changing it, because seeing what somebody has saved is not the
 same permission as changing it, and a consent screen that merged them would be
 offering more than its sentence said.

@@ -1,7 +1,8 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import type { ApiComment, Comment, CommentThread } from '../types';
+import type { ApiComment, ApiLessonComment, Comment, CommentThread } from '../types';
 import { documentClient as client, isConditionalCheckFailed } from './dynamodb';
 import { env } from './config';
+import { HttpError } from './http';
 
 export const COMMENTS_TABLE = env.commentsTableName;
 
@@ -195,18 +196,107 @@ export function toApiComment(comment: Comment, favourited: boolean): ApiComment 
  * had answers) is dropped rather than shown orphaned.
  */
 export function assembleThreads(comments: ApiComment[]): CommentThread[] {
-  const threads = new Map<string, CommentThread>();
+  return assemble<ApiComment>(comments, (comment) => comment as ApiComment);
+}
+
+/**
+ * The same grouping, for whatever shape a route hands its comments out in.
+ *
+ * Generic over the *output* and not over the input, because the rows are always
+ * comments — `ApiComment` is a `Comment` with a flag on it. What changes between
+ * routes is the shape they are handed out in, and the rule being applied is the
+ * one that matters: a reply carries the **thread's root** as its `parentId`,
+ * however deep the conversation looks, so one pass over the rows builds the whole
+ * discussion. A second copy of that loop in a second route is a second place for
+ * it to be got wrong.
+ */
+function assemble<T>(comments: Comment[], toWire: (comment: Comment) => T): CommentThreadGeneric<T>[] {
+  const threads = new Map<string, CommentThreadGeneric<T>>();
 
   for (const comment of comments) {
-    if (!comment.parentId) {
-      threads.set(comment.commentId, { comment, replies: [] });
-    }
+    if (!comment.parentId) threads.set(comment.commentId, { comment: toWire(comment), replies: [] });
   }
 
   for (const comment of comments) {
     if (!comment.parentId) continue;
-    threads.get(comment.parentId)?.replies.push(comment);
+    threads.get(comment.parentId)?.replies.push(toWire(comment));
   }
 
   return [...threads.values()];
+}
+
+/** One top-level comment and its replies, in whatever shape a route hands out. */
+export interface CommentThreadGeneric<T> {
+  comment: T;
+  replies: T[];
+}
+
+/**
+ * A comment as `/v1` hands it out.
+ *
+ * Deliberately *not* `ApiComment`: that shape carries whether the **caller** has
+ * hearted the comment, which is part of somebody's learning record — the thing
+ * `learning:read` is for — and not part of the discussion. A route that hands out
+ * a discussion should not quietly hand out a person's hearts with it, and a field
+ * that always says `false` would be worse than absent.
+ */
+export function toApiLessonComment(comment: Comment): ApiLessonComment {
+  return {
+    commentId: comment.commentId,
+    contentId: comment.contentId,
+    authorId: comment.authorId,
+    authorName: comment.authorName,
+    body: comment.body,
+    ...(comment.parentId ? { parentId: comment.parentId } : {}),
+    ...(comment.replyToId ? { replyToId: comment.replyToId } : {}),
+    replyCount: comment.replyCount,
+    favouriteCount: comment.favouriteCount,
+    createdAt: comment.createdAt,
+    updatedAt: comment.updatedAt,
+  };
+}
+
+/** The `/v1` shape of a discussion: threads, and whether it was cut short. */
+export function assembleLessonThreads(comments: Comment[]): CommentThreadGeneric<ApiLessonComment>[] {
+  return assemble(comments, toApiLessonComment);
+}
+
+/**
+ * Where a new comment sits in its thread.
+ *
+ * Threads are two levels: a reply to a reply keeps the same top-level parent and
+ * records who it answers separately. So whatever was answered, what is stored as
+ * `parentId` is the thread's root — which is what makes a content's whole
+ * discussion one query instead of a tree to walk.
+ *
+ * Exported because two routes create comments — Play's own, under a session, and
+ * `/v1`, under a scope — and the invariant above is exactly the kind of thing
+ * that must not have a second implementation.
+ */
+export async function resolveCommentThread(
+  contentId: string,
+  requests: { parentId?: unknown; replyToId?: unknown },
+): Promise<{ parentId?: string; replyToId?: string }> {
+  const requested =
+    typeof requests.parentId === 'string' && requests.parentId ? requests.parentId : undefined;
+  if (!requested) return {};
+
+  const parent = await getComment(contentId, requested);
+  if (!parent) throw new HttpError(404, 'The comment being replied to was not found');
+  if (parent.deletedAt) throw new HttpError(409, 'That comment has been deleted');
+
+  const rootId = parent.parentId ?? parent.commentId;
+
+  const answeredId =
+    typeof requests.replyToId === 'string' && requests.replyToId ? requests.replyToId : requested;
+  if (answeredId !== requested) {
+    const answered = await getComment(contentId, answeredId);
+    if (!answered) throw new HttpError(404, 'The comment being answered was not found');
+    if (answered.deletedAt) throw new HttpError(409, 'That comment has been deleted');
+    if ((answered.parentId ?? answered.commentId) !== rootId) {
+      throw new HttpError(400, 'A reply must answer a comment in the same thread');
+    }
+  }
+
+  return { parentId: rootId, replyToId: answeredId };
 }

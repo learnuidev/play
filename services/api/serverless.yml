@@ -1605,14 +1605,29 @@ functions:
           method: delete
           cors: true
 
+  # The key stays `create-lesson-comment` while the handler serves two methods,
+  # and the rule is the one written down under `custom:`: a function key is the
+  # name of a *deployed* thing, and `serverless-plugin-split-stacks` keeps a
+  # deployed nested stack where it is. Renaming the key here while the old name
+  # was mid-deploy left the service holding two nested stacks for one function —
+  # 501 resources, one over CloudFormation's ceiling, which is a deploy that
+  # does not run. The file is `lesson-comments.ts`, which is what the code is.
   create-lesson-comment:
-    handler: src/functions/public/create-lesson-comment.handler
+    handler: src/functions/public/lesson-comments.handler
     events:
       - http:
-          # A top-level comment, posted as the person who authorized the app.
-          # No replies: a thread is a shape Play's own screen draws, and an app
-          # that can add one half of a conversation should not be able to aim it
-          # at somebody else's answer.
+          # The discussion: every top-level comment with its replies, oldest
+          # first. Behind `lessons:read` — anybody who may read a lesson may read
+          # what was said about it — and assembled into threads here rather than
+          # handed out as rows, because the thread rule is this service's.
+          path: v1/lessons/{contentId}/comments
+          method: get
+          cors: true
+      - http:
+          # A comment, posted as the person who authorized the app. `parentId`
+          # makes it a reply, and the API works out where that sits in the
+          # thread. No editing and no deleting: posting is the permission, and
+          # rewriting what somebody said is a larger one.
           path: v1/lessons/{contentId}/comments
           method: post
           cors: true

@@ -1453,6 +1453,69 @@ export interface ApiLearningResponse {
   completed: ApiCompletion[];
 }
 
+/**
+ * A comment, as `/v1` hands it out.
+ *
+ * Deliberately not `ApiComment`, which is the shape Play's own apps read: that
+ * one carries whether the **caller** has hearted the comment, and a heart is part
+ * of somebody's learning record — the thing `learning:read` is for — rather than
+ * of the discussion. A route that hands out a discussion should not hand out a
+ * person's hearts with it, and a field that always said `false` would be worse
+ * than one that is absent.
+ */
+export interface ApiLessonComment {
+  commentId: string;
+  contentId: string;
+  /** Cognito `sub` of whoever wrote it — how a client recognises its own. */
+  authorId: string;
+  /** What they were called when they wrote it, read from their profile. */
+  authorName: string;
+  body: string;
+  /** The thread's root, on a reply. Absent on a top-level comment. */
+  parentId?: string;
+  /** The comment this one answers, when that is not the thread's root. */
+  replyToId?: string;
+  /** How many replies the thread has, on a top-level comment. */
+  replyCount: number;
+  favouriteCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A top-level comment and its replies, in the order they were written. */
+export interface ApiLessonThread {
+  comment: ApiLessonComment;
+  replies: ApiLessonComment[];
+}
+
+/**
+ * A lesson's discussion, as `/v1` hands it out.
+ *
+ * Threads rather than a flat list, because the two-level rule — a reply always
+ * carries the thread's root, however deep the conversation looks — is the
+ * server's invariant, and handing a client rows to nest itself invites it to get
+ * that wrong. Same shape as Play's own discussion endpoint, minus the per-caller
+ * hearts.
+ */
+export interface ApiLessonCommentsResponse {
+  threads: ApiLessonThread[];
+  /**
+   * True when the discussion is longer than what was read, so a client can say
+   * "showing the most recent N" rather than quietly showing half a conversation.
+   */
+  truncated: boolean;
+}
+
+/**
+ * The comment a `POST` just created.
+ *
+ * The same shape the listing hands out, so a client that appends it to its own
+ * thread list does not need a second definition of what a comment is.
+ */
+export interface ApiLessonCommentResponse {
+  comment: ApiLessonComment;
+}
+
 /** The answer to marking a lesson done, or taking it back off the list. */
 export interface ApiCompletionResponse {
   completed: boolean;
@@ -1473,10 +1536,6 @@ export interface ApiFavouriteResponse {
   favouriteCount: number;
 }
 
-/** What `POST /v1/lessons/{contentId}/comments` answers with. */
-export interface ApiCommentResponse {
-  comment: ApiComment;
-}
 
 /**
  * A lesson as `/v1` hands it out — the pieces somebody building the classroom

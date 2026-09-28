@@ -6,7 +6,7 @@ import { ArrowLeftIcon, EyeOffIcon, Loader2Icon, TriangleAlertIcon } from 'lucid
 import { Badge } from '@ui/components/ui/badge';
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
-import { ApiError, getCourse, getMyLearning, getSections } from '@/lib/api/v1';
+import { ApiError, getCourse, getIdentity, getMyLearning, getSections } from '@/lib/api/v1';
 import { useAsync } from '@/lib/use-async';
 import { Outline } from './outline';
 import { LessonPanel } from './lesson-panel';
@@ -44,6 +44,16 @@ export function Classroom({ spaceId }: { spaceId: string }) {
    * would be hiding the one sentence that explains why.
    */
   const learning = useAsync(() => getMyLearning(), [spaceId]);
+
+  /**
+   * Who the credential acts as.
+   *
+   * Read for one reason: the discussion marks somebody's **own** comments, and
+   * there is no "is this mine" flag on a comment — `authorId` is compared with
+   * the `userId` this answers with. It is also the cheapest possible check that
+   * the whole page is working, so the request note lists it.
+   */
+  const identity = useAsync(() => getIdentity(), [spaceId]);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [favourited, setFavourited] = useState<Set<string>>(new Set());
 
@@ -214,6 +224,7 @@ export function Classroom({ spaceId }: { spaceId: string }) {
                 completed: completed.has(currentId),
                 favourited: favourited.has(currentId),
               }}
+              {...(identity.data?.owner.userId ? { viewerId: identity.data.owner.userId } : {})}
               onStateChange={(next) => mark(currentId, next)}
             />
           ) : (
@@ -241,12 +252,15 @@ export function Classroom({ spaceId }: { spaceId: string }) {
           data?.listed
             ? `GET /v1/courses/${spaceId}`
             : `GET /v1/courses/${spaceId}/sections`,
+          'GET /v1/me',
+          'GET /v1/me/learning',
           ...(currentId
             ? [
                 `GET /v1/lessons/${currentId}`,
                 `GET /v1/lessons/${currentId}/stream`,
                 `GET /v1/lessons/${currentId}/subtitles`,
                 `GET /v1/lessons/${currentId}/attachments`,
+                `GET /v1/lessons/${currentId}/comments`,
               ]
             : []),
         ]}

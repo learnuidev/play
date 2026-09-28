@@ -1,9 +1,10 @@
 import type {
-  ApiCommentResponse,
   ApiCompletionResponse,
   ApiFavouriteResponse,
   ApiIdentityResponse,
   ApiLearningResponse,
+  ApiLessonCommentResponse,
+  ApiLessonCommentsResponse,
   ApiLesson,
   ApiLessonAttachmentsResponse,
   ApiLessonResponse,
@@ -198,20 +199,37 @@ export async function setLessonFavourite(
 }
 
 /**
- * Post a comment on a lesson, as the person who authorized this app.
+ * The discussion on a lesson: every top-level comment with its replies.
  *
- * The one call in this file that puts somebody's name on something. Top-level
- * comments only: the API has no way to reply, deliberately, and no way to edit
- * or delete — a comment posted here is removed in Play, by the person whose name
- * is on it.
+ * Read with `lessons:read` and nothing else — anybody who may read a lesson may
+ * read what was said about it. The threads arrive already assembled, because the
+ * two-level rule (a reply always carries the thread's *root*, however deep the
+ * conversation looks) is the API's invariant, and nesting rows by hand is how a
+ * client gets it wrong.
+ */
+export async function getLessonComments(contentId: string): Promise<ApiLessonCommentsResponse> {
+  return v1<ApiLessonCommentsResponse>(`/v1/lessons/${encodeURIComponent(contentId)}/comments`);
+}
+
+/**
+ * Post a comment on a lesson, as the person who authorized this app — or reply
+ * to one.
+ *
+ * The one call in this file that puts somebody's name on something, and the only
+ * write with no undo: the API has no edit and no delete, so a comment posted
+ * here is withdrawn in Play, by the person whose name is on it.
+ *
+ * `parentId` is the comment being answered — the thread's root comes back in the
+ * response, worked out by the API rather than by this app.
  */
 export async function commentOnLesson(
   contentId: string,
   body: string,
-): Promise<ApiCommentResponse> {
-  return v1<ApiCommentResponse>(`/v1/lessons/${encodeURIComponent(contentId)}/comments`, {
+  parentId?: string,
+): Promise<ApiLessonCommentResponse> {
+  return v1<ApiLessonCommentResponse>(`/v1/lessons/${encodeURIComponent(contentId)}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body }),
+    body: JSON.stringify(parentId ? { body, parentId } : { body }),
   });
 }

@@ -18,7 +18,6 @@ import {
 import { Badge } from '@ui/components/ui/badge';
 import { Button } from '@ui/components/ui/button';
 import { Separator } from '@ui/components/ui/separator';
-import { Textarea } from '@ui/components/ui/textarea';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@ui/components/ui/tabs';
 import { AnimatedTranscript } from '@learning/components/content/animated-transcript';
@@ -27,7 +26,6 @@ import { buildTranscriptLines } from '@learning/lib/transcript';
 import { parseVtt } from '@learning/lib/vtt';
 import {
   ApiError,
-  commentOnLesson,
   getAttachments,
   getLesson,
   getStream,
@@ -36,6 +34,7 @@ import {
   setLessonFavourite,
 } from '@/lib/api/v1';
 import { notesToText } from '@/lib/api/notes';
+import { Discussion } from './discussion';
 import { useAsync } from '@/lib/use-async';
 
 /**
@@ -64,12 +63,15 @@ export function LessonPanel({
   contentId,
   nextLesson,
   state,
+  viewerId,
   onStateChange,
 }: {
   contentId: string;
   nextLesson?: { contentId: string; title: string };
   /** What this person has done with this lesson, as `/v1/me/learning` said. */
   state: { completed: boolean; favourited: boolean };
+  /** The credential's own `userId`, so the discussion can mark their comments. */
+  viewerId?: string;
   /** Called after a write lands, so the outline's own marks stay in step. */
   onStateChange: (next: { completed?: boolean; favourited?: boolean }) => void;
 }) {
@@ -114,12 +116,10 @@ export function LessonPanel({
    * names a missing scope is the most useful sentence on this page, because it
    * says exactly which permission the app was not given.
    */
-  const [pending, setPending] = useState<null | 'completion' | 'favourite' | 'comment'>(null);
+  const [pending, setPending] = useState<null | 'completion' | 'favourite'>(null);
   const [error, setError] = useState<string | null>(null);
-  const [posted, setPosted] = useState<{ authorName: string; body: string } | null>(null);
-  const [draft, setDraft] = useState('');
 
-  async function run(which: 'completion' | 'favourite' | 'comment', work: () => Promise<void>) {
+  async function run(which: 'completion' | 'favourite', work: () => Promise<void>) {
     setPending(which);
     setError(null);
     try {
@@ -144,18 +144,6 @@ export function LessonPanel({
     void run('favourite', async () => {
       const answer = await setLessonFavourite(contentId, next);
       onStateChange({ favourited: answer.favourited });
-    });
-  }
-
-  function postComment(event: React.FormEvent) {
-    event.preventDefault();
-    const body = draft.trim();
-    if (!body) return;
-
-    void run('comment', async () => {
-      const answer = await commentOnLesson(contentId, body);
-      setPosted({ authorName: answer.comment.authorName, body: answer.comment.body });
-      setDraft('');
     });
   }
 
@@ -297,7 +285,7 @@ export function LessonPanel({
           </TabsTrigger>
           <TabsTrigger value="discussion">
             <MessageSquareIcon className="size-4" />
-            Comment
+            Discussion
           </TabsTrigger>
         </TabsList>
 
@@ -337,45 +325,9 @@ export function LessonPanel({
         </TabsContent>
 
         <TabsContent value="discussion" className="mt-5">
-          <form onSubmit={postComment} className="grid gap-2">
-            <label htmlFor="comment-body" className="text-sm font-medium">
-              Say something about this lesson
-            </label>
-            <Textarea
-              id="comment-body"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="What did you take from it?"
-              rows={3}
-              maxLength={2000}
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" size="sm" disabled={pending !== null || draft.trim().length === 0}>
-                {pending === 'comment' ? <Loader2Icon className="animate-spin" /> : <MessageSquareIcon />}
-                Post comment
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                Posted as you, with <span className="font-mono">comments:write</span> — your name goes
-                on it, and it appears in Play&rsquo;s own discussion.
-              </span>
-            </div>
-          </form>
-
-          {posted && (
-            <div className="mt-4 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3">
-              <p className="text-xs text-muted-foreground">Posted</p>
-              <p className="mt-1 text-sm font-medium">{posted.authorName}</p>
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{posted.body}</p>
-            </div>
-          )}
-
-          <p className="mt-4 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-            This app can post a top-level comment and nothing else: it cannot reply, edit or delete,
-            and it cannot read the thread back — Play&rsquo;s own lesson page is where the discussion
-            lives. That boundary is the API&rsquo;s, not this app&rsquo;s restraint: posting is the
-            permission, and rewriting or retracting under somebody&rsquo;s name is a larger one.
-          </p>
+          <Discussion contentId={contentId} {...(viewerId ? { viewerId } : {})} />
         </TabsContent>
+
       </Tabs>
 
       {nextLesson && (
