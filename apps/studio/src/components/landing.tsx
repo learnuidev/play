@@ -488,7 +488,7 @@ function DeveloperBand() {
             </h3>
 
             <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
-              Everything you publish is reachable over a read-only API — the catalog, the
+              Everything you publish is reachable over a public API — the catalog, the
               syllabus, and each lesson&rsquo;s video, transcript and files. Make a key, send
               one header, and build the classroom you actually wanted.
             </p>

@@ -54,7 +54,7 @@ export default function ApiKeysPage() {
     <div className="grid gap-6">
       <PageCard
         title="API keys"
-        description="Call the Play API from your own code. One header, no sign-in, read-only."
+        description="Call the Play API from your own code. One header, no sign-in, and read-only — a key reaches the catalog and nothing it can change."
         actions={
           keys.length > 0
             ? createDialog(

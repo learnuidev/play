@@ -10,12 +10,15 @@ import { HttpError } from './http';
  * worth of permission for an integration that usually wants a fraction of it,
  * and it is the reason keys were described as too blunt.
  *
- * A scope is that question asked in smaller pieces. Five of them exist, and each
+ * A scope is that question asked in smaller pieces. Eight of them exist, and each
  * one is a sentence somebody reads on a consent screen — which is the real
  * constraint on how many there are and how finely they are cut. `lessons:read`
  * and `lessons:stream` are separate scopes for exactly that reason: listing a
  * course and playing its video are different things to agree to, and the second
- * is the one that costs this service bandwidth.
+ * is the one that costs this service bandwidth. `learning:read` and
+ * `learning:write` are separate for the same kind of reason — seeing what
+ * somebody has saved is not changing it — and `comments:write` is alone because
+ * it is the only scope that puts somebody's *name* on something.
  *
  * This module is the catalogue and nothing else: which scopes exist, which of
  * them a route demands, and which of them a credential holds. Every `/v1`
