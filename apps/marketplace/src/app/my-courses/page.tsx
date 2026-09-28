@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { GraduationCapIcon } from 'lucide-react';
-import { useMyCourses } from '@play/api';
+import { useMyCourses, useNextLessons } from '@play/api';
 import { AuthGate, useIsSignedIn } from '@play/auth';
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
@@ -37,7 +37,20 @@ export default function MyCoursesPage() {
 function EnrolledCourses() {
   const signedIn = useIsSignedIn();
   const { data, isLoading } = useMyCourses(signedIn);
+  const { data: nextLessons } = useNextLessons(signedIn);
   const courses = data?.courses ?? [];
+
+  /**
+   * Where each course is up to, by course.
+   *
+   * A course the API has not answered for yet — and one with nothing published
+   * — is simply not in here, and its card opens the course page instead of a
+   * lesson. Nothing is guessed on the reader's behalf in the meantime: a link to
+   * the wrong lesson is worse than a link to the course.
+   */
+  const nextBySpace = new Map(
+    (nextLessons?.courses ?? []).map((course) => [course.spaceId, course.contentId]),
+  );
 
   if (isLoading) {
     return (
@@ -67,7 +80,12 @@ function EnrolledCourses() {
   return (
     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
       {courses.map((course) => (
-        <MyCourseCard key={course.space.spaceId} space={course.space} role={course.role} />
+        <MyCourseCard
+          key={course.space.spaceId}
+          space={course.space}
+          role={course.role}
+          nextContentId={nextBySpace.get(course.space.spaceId)}
+        />
       ))}
     </div>
   );

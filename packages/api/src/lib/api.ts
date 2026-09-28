@@ -44,6 +44,7 @@ import type {
   ListMyCoursesResponse,
   ListMyRewardsResponse,
   ListMySpaceInvitationsResponse,
+  ListNextLessonsResponse,
   ListOrganizationApiKeysResponse,
   ListOrgMembersResponse,
   ListOrganizationsResponse,
@@ -390,6 +391,9 @@ export const api = {
 
   /** Courses the caller is in, wherever they are. */
   listMyCourses: () => request<ListMyCoursesResponse>('/me/spaces'),
+
+  /** The lesson the caller is up to in each of those courses, in one read. */
+  listMyNextLessons: () => request<ListNextLessonsResponse>('/me/next-lessons'),
 
   /**
    * The marketplace catalog: courses their authors have listed, newest first.

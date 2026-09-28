@@ -699,6 +699,24 @@ export interface ListMyCoursesResponse {
 }
 
 /**
+ * Where a learner is up to in one of the courses they are in.
+ *
+ * `contentId` is the lesson they should open next: the first one in the course's
+ * own order they have not finished, or the first lesson again once they have
+ * finished them all. It is absent for a course with nothing published, which is
+ * the one case with no lesson to open at all — a card that would otherwise
+ * offer a link to nowhere can tell the two apart.
+ */
+export interface CourseNextLesson {
+  spaceId: string;
+  contentId?: string;
+}
+
+export interface ListNextLessonsResponse {
+  courses: CourseNextLesson[];
+}
+
+/**
  * A group of a course's members — a September intake, a team, a tutorial group.
  *
  * A member may be in several: a cohort is a label they wear, not a container they

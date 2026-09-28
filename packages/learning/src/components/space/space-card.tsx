@@ -27,6 +27,13 @@ export function spaceScheduleLabel(space: CourseSummary): string {
  * `/o/{orgId}/spaces/{spaceId}` — a course inside a community — and the
  * marketplace's `/courses/{spaceId}`, a course anybody may look at, and it is
  * the only thing the two listings do not share.
+ *
+ * The cover is the way into the course, and the only link the card draws itself.
+ * Wrapping the whole card in one link made the footer a lie: a caller's own
+ * action inside it — "continue learning", which opens a lesson rather than the
+ * course — was swallowed by the link around it, and an anchor inside an anchor
+ * is not something a browser will render. So the cover carries the course's URL
+ * and the footer is left to the caller to fill with whatever it is offering.
  */
 export function SpaceCard({
   href,
@@ -57,11 +64,15 @@ export function SpaceCard({
   const scheduled = space.type === 'SCHEDULED';
 
   return (
-    <Link
-      href={href}
-      className="group flex flex-col overflow-hidden rounded-2xl border bg-card transition-colors hover:border-ring/50"
-    >
-      <div className="relative aspect-video w-full overflow-hidden border-b">
+    <div className="group flex flex-col overflow-hidden rounded-2xl border bg-card transition-colors hover:border-ring/50">
+      <Link
+        href={href}
+        // The cover is a picture of the course rather than a caption for it, so
+        // it is named here: a card with no cover draws a letter, and a link
+        // called "I" is a link nobody can hear.
+        aria-label={space.title}
+        className="relative block aspect-video w-full overflow-hidden border-b"
+      >
         {cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -79,7 +90,7 @@ export function SpaceCard({
             </div>
           </div>
         )}
-      </div>
+      </Link>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-start gap-2">
@@ -101,6 +112,6 @@ export function SpaceCard({
 
         {footer}
       </div>
-    </Link>
+    </div>
   );
 }

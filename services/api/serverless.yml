@@ -1169,6 +1169,17 @@ functions:
           cors: true
           authorizer: ${self:custom.authorizer}
 
+  list-my-next-lessons:
+    handler: src/functions/learning/list-my-next-lessons.handler
+    events:
+      - http:
+          # The lesson the signed-in learner is up to in each of their courses,
+          # across every organization. One read for a page of course cards.
+          path: me/next-lessons
+          method: get
+          cors: true
+          authorizer: ${self:custom.authorizer}
+
   # Loops — named stretches of a lesson's video, for hearing a piece again.
   # Shared with the course; only the learner who made one may move or delete it,
   # which the key enforces rather than a check.
