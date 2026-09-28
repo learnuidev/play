@@ -1,0 +1,33 @@
+{
+  "name": "play-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Play Demo — somebody else's app: an OAuth client of the Play API, and a classroom built on it.",
+  "scripts": {
+    "dev": "next dev -p 4000",
+    "build": "next build",
+    "start": "next start -p 4000",
+    "typecheck": "tsc --noEmit",
+    "get-env": "node ../../scripts/get-env.mjs"
+  },
+  "dependencies": {
+    "@play/learning": "*",
+    "@play/types": "*",
+    "@play/ui": "*",
+    "lucide-react": "^1.31.0",
+    "next": "^14.2.15",
+    "next-themes": "^0.4.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^20.14.15",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^4.3.3",
+    "tw-animate-css": "^1.4.0",
+    "typescript": "^5.5.4"
+  }
+}

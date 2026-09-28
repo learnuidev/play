@@ -171,9 +171,29 @@ if (!optionalEnv.NEXT_PUBLIC_COGNITO_DOMAIN) {
   );
 }
 
-const content = `${Object.entries(env)
-  .map(([key, value]) => `${key}=${value}`)
-  .join("\n")}\n`;
+// Keys this script does not manage are carried over from the existing file.
+//
+// Not every value an app needs comes from the stack: the demo's client id is
+// minted by registering an OAuth app in the studio, and a script that rewrote
+// the file wholesale would delete it every time somebody refreshed their
+// environment. Anything already written by hand stays written.
+const MANAGED = new Set(Object.keys(env));
+const preserved = [];
+try {
+  for (const line of fs.readFileSync(outFile, "utf8").split("\n")) {
+    const match = /^\s*([A-Z0-9_]+)\s*=/.exec(line);
+    if (!match || MANAGED.has(match[1])) continue;
+    preserved.push(line.trimEnd());
+    MANAGED.add(match[1]);
+  }
+} catch {
+  // No file yet, or unreadable: there is nothing to preserve.
+}
+
+const content = `${[
+  ...preserved,
+  ...Object.entries(env).map(([key, value]) => `${key}=${value}`),
+].join("\n")}\n`;
 
 fs.writeFileSync(outFile, content);
 console.log(`\nWrote ${path.resolve(outFile)}:\n`);
