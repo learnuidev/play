@@ -10,7 +10,10 @@
  */
 
 /** Where the API lives. The same variable Play's own apps read, and the same default. */
-export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(
+  /\/+$/,
+  "",
+);
 
 /**
  * Where the consent screen is served from.
@@ -20,8 +23,8 @@ export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+
  * into this app. A deployment would point this at the deployed studio.
  */
 export const STUDIO_URL = (
-  process.env.NEXT_PUBLIC_PLAY_STUDIO_URL ?? 'http://localhost:3000'
-).replace(/\/+$/, '');
+  process.env.NEXT_PUBLIC_PLAY_STUDIO_URL ?? "http://localhost:3000"
+).replace(/\/+$/, "");
 
 /**
  * The client id this app was registered as.
@@ -30,7 +33,7 @@ export const STUDIO_URL = (
  * what to do instead of failing — because "you have not done the setup yet" is
  * the first thing everybody who clones this sees.
  */
-export const CLIENT_ID = process.env.NEXT_PUBLIC_PLAY_CLIENT_ID ?? '';
+export const CLIENT_ID = process.env.NEXT_PUBLIC_PLAY_CLIENT_ID ?? "";
 
 /**
  * What this app asks for.
@@ -46,10 +49,10 @@ export const CLIENT_ID = process.env.NEXT_PUBLIC_PLAY_CLIENT_ID ?? '';
  * dropping it, which is what the setup card says to paste into the studio.
  */
 export const SCOPES = [
-  'profile:read',
-  'courses:read',
-  'lessons:read',
-  'lessons:stream',
+  "profile:read",
+  "courses:read",
+  "lessons:read",
+  "lessons:stream",
 ] as const;
 
 /**
@@ -62,7 +65,8 @@ export const SCOPES = [
  * in the studio is the only thing that will work, so the two have to be able to
  * agree without editing a source file.
  */
-export const CALLBACK_PATH = process.env.NEXT_PUBLIC_PLAY_REDIRECT_PATH ?? '/auth/play/callback';
+export const CALLBACK_PATH =
+  process.env.NEXT_PUBLIC_PLAY_REDIRECT_PATH ?? "/auth/play/callback";
 
 /**
  * This app's redirect URI.
@@ -103,7 +107,7 @@ export function redirectUri(): string {
  * Whether a client can keep a secret cannot be changed after registration, so
  * the fix is a new app registered as a public one.
  */
-export const CLIENT_SECRET = process.env.NEXT_PUBLIC_PLAY_CLIENT_SECRET ?? '';
+export const CLIENT_SECRET = process.env.PLAY_CLIENT_SECRET ?? "";
 
 /** Whether this build is holding a secret it should not have. */
 export function isConfidential(): boolean {
@@ -124,12 +128,12 @@ export function isConfigured(): boolean {
  */
 export function authorizationUrl(state: string, codeChallenge: string): string {
   const url = new URL(`${STUDIO_URL}/oauth/authorize`);
-  url.searchParams.set('client_id', CLIENT_ID);
-  url.searchParams.set('redirect_uri', redirectUri());
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', SCOPES.join(' '));
-  url.searchParams.set('state', state);
-  url.searchParams.set('code_challenge', codeChallenge);
-  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("redirect_uri", redirectUri());
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", SCOPES.join(" "));
+  url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
   return url.toString();
 }
