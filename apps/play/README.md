@@ -45,13 +45,37 @@ already up, most of the plan reports *already satisfied*.
 | 9 | Every stack is complete, with its outputs | all four root stacks are settled and carry `ApiUrl`, the pool and its client |
 | 10 | The three apps point at it | every `.env.local` already reads this stage's `ApiUrl` |
 | 11 | The API answers | `GET /catalog/courses` returns 200 |
-| 12 | The pool's pre sign-up trigger points here | *(optional)* the pool already calls `play-<stage>-link-federated-user` |
+| 12 | The pool's pre sign-up trigger points here | the pool already calls `play-<stage>-link-federated-user` |
 
 Steps 5 and 8 have no check on purpose, and they are the two where running the
 tool *is* the check: `bundle.mjs` keeps esbuild's metafile and knows what is
 stale, and `cdk deploy` against an unchanged environment is a no-op. Both report
 "nothing to do" as a success, and the run draws that as a satisfied step rather
 than a tick for work that did not happen.
+
+### Two steps the console is careful about
+
+The bucket and the user pool are imported **and shared**, and each has something
+exactly one stage can own. Both are steps 7 and 12, and they are treated
+differently because their situations are different:
+
+- **The `uploads/` notification (step 7) must be handed over** — CDK's
+  conservative handler appends its own rule to a bucket it did not create, and
+  two rules for one event on an overlapping prefix is a deploy that fails with
+  *"Configuration is ambiguously defined"*. But handing it over is not
+  housekeeping: the bucket notifies **one** function, so the step takes video
+  processing away from whichever stage had it. It therefore says so in its
+  detail, names the function it is about to displace in its check, and names the
+  one it moved from in its note.
+- **The pre sign-up trigger (step 12) is reported, not moved.** It is the one
+  step with `manual: true`: its check still runs and still says whose the trigger
+  is, but the step stops there instead of applying. An optional step that applied
+  itself would, on a staging run, quietly take federated sign-up away from `dev`
+  — a change to a shared resource, made on behalf of somebody who pressed a
+  button labelled "deploy this environment". The command to move it is printed
+  in the transcript beside what the check found, for whoever decides it should
+  be.
+
 
 Step 12 is optional because the user pool is **imported and shared** — one pool,
 one pre sign-up trigger, and every stage deploys its own function. Repointing it

@@ -67,14 +67,53 @@ export async function awsJson<T>(
  * Who we are
  * ------------------------------------------------------------------ */
 
+/**
+ * What `sts get-caller-identity` actually prints.
+ *
+ * PascalCase, because that is the AWS wire format — and deliberately a private
+ * interface rather than `Identity` from `@/lib/types`, which is the camelCase
+ * shape the browser reads. Conflating the two is what broke a deploy, so they
+ * are two types here and the conversion below is a line of code rather than an
+ * act of faith.
+ */
+interface StsIdentity {
+  UserId?: string;
+  Account?: string;
+  Arn?: string;
+}
+
+/**
+ * The identity, converted at the boundary where the wire format is known.
+ *
+ * **`awsJson<T>` is an unchecked assertion** — it is `JSON.parse(text) as T`, and
+ * TypeScript cannot tell a wrong `T` from a right one. So the conversion from
+ * what the CLI prints to the shape the rest of this app expects has to be
+ * written and executed, not merely declared.
+ *
+ * It was not, and it cost a deploy. `Identity` declares `account`, `arn` and
+ * `userId`; the CLI answers with `Account`, `Arn` and `UserId`. So
+ * `identity.account` was `undefined`, the account check compared `undefined`
+ * against the config's account, and the plan refused to continue — correctly, on
+ * input that was wrong. The chrome rendered `undefined · us-east-1` for the same
+ * reason, which is the part that had been visible all along.
+ *
+ * `Account` and `Arn` are required *of the answer*: a value that is missing here
+ * becomes a stack in the wrong account rather than a failed call.
+ */
 export async function getIdentity(
   ctx: Partial<AwsContext> = {},
 ): Promise<Identity | null> {
-  const identity = await awsJson<Identity>(
+  const response = await awsJson<StsIdentity>(
     ["sts", "get-caller-identity"],
     { ...ctx, optional: true },
   );
-  return identity ?? null;
+  if (!response?.Account || !response.Arn) return null;
+
+  return {
+    account: response.Account,
+    arn: response.Arn,
+    userId: response.UserId ?? "",
+  };
 }
 
 export async function identityError(ctx: Partial<AwsContext> = {}): Promise<string> {

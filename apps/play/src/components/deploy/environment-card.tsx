@@ -91,7 +91,7 @@ export function EnvironmentCard({
         </div>
       ) : null}
 
-      <div className="mt-5 border-t border-border/40 pt-4">
+      <div className="mt-5 flex flex-col gap-2.5 border-t border-border/40 pt-4">
         <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
           <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
           <span>
@@ -101,7 +101,25 @@ export function EnvironmentCard({
             <span className="text-foreground/80">
               {healthy === 0 ? "four" : "environment's own"}
             </span>{" "}
-            API, media roles and pre sign-up trigger, and every stage points at the same data.
+            API, media roles and sign-up trigger, and every stage points at the same data.
+          </span>
+        </p>
+
+        {/* The two things that are genuinely shared-and-singleton. Both are stated
+            here rather than left to the checklist, because both are consequences
+            of pressing the button — not details of how it is pressed. */}
+        <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
+          <span className="mt-0.5 size-3.5 shrink-0 text-center font-mono leading-none" aria-hidden>
+            ·
+          </span>
+          <span>
+            Two of those can only have{" "}
+            <span className="text-foreground/80">one owner at a time</span>: the bucket notifies one
+            function for <span className="font-mono">uploads/</span>, and the pool's pre sign-up
+            trigger calls one function. Deploying a stage{" "}
+            <span className="text-foreground/80">takes video processing</span> from whichever stage
+            had it, and <span className="text-foreground/80">leaves the trigger alone</span> — the
+            checklist reports the second and names what the first costs.
           </span>
         </p>
       </div>

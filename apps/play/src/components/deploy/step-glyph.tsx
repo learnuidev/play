@@ -1,5 +1,6 @@
 import {
   CheckIcon,
+  InfoIcon,
   MinusIcon,
   TriangleAlertIcon,
   XIcon,
@@ -60,6 +61,16 @@ export function StepGlyph({ status, className }: { status: StepStatus; className
         </span>
       );
 
+    case "manual":
+      // An outlined amber ring rather than a filled one: the step is settled
+      // and nothing is wrong with it, and it is still the one asking for a
+      // person — which a tick would hide and a cross would overstate.
+      return (
+        <span className={cn(shell, "border-warn/60 text-warn border")}>
+          <InfoIcon className="size-3.5" strokeWidth={2.5} />
+        </span>
+      );
+
     case "halted":
       return (
         <span className={cn(shell, "border-border text-muted-foreground border")}>
@@ -85,6 +96,8 @@ export function stepStatusLabel(status: StepStatus, satisfiedLabel: string): str
       return "Failed";
     case "warned":
       return "Optional, skipped";
+    case "manual":
+      return "Your call";
     case "halted":
       return "Not reached";
     default:
@@ -103,6 +116,8 @@ export function stepTone(status: StepStatus) {
     case "failed":
       return "bad" as const;
     case "warned":
+      return "warn" as const;
+    case "manual":
       return "warn" as const;
     default:
       return "muted" as const;

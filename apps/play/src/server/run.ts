@@ -371,6 +371,15 @@ async function execute(run: InternalRun, plan: PlanStep[]): Promise<void> {
       if (checked?.satisfied) {
         step.status = "skipped";
         step.note = checked.note;
+      } else if (checked && planStep.manual) {
+        // Reported, not applied. A step that is somebody's decision stops here
+        // with what the check found and the command that would change it in the
+        // transcript — which is the difference between a console that informs
+        // and one that moves a shared resource behind the operator's back.
+        step.status = "manual";
+        step.note = checked.note;
+        appendLine(run, step, "note", `not ours to decide — ${checked.note}`);
+        if (planStep.manualHint) appendLine(run, step, "note", planStep.manualHint(context));
       } else {
         if (checked && !checked.satisfied) {
           step.note = checked.note;

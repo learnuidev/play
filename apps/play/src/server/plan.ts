@@ -90,6 +90,18 @@ export interface PlanStep {
   title: string;
   detail: string;
   optional?: boolean;
+  /**
+   * A step whose answer is somebody's decision, not the console's.
+   *
+   * Its check still runs and its note still reports what it found — but when the
+   * check is not satisfied the step stops there rather than applying. For the
+   * pre sign-up trigger that is the whole difference between a stage that
+   * quietly takes federated sign-up from the stage that had it, and one that
+   * says whose it currently is and leaves it alone.
+   */
+  manual?: boolean;
+  /** The line printed when a manual step lands on an answer that is not ours. */
+  manualHint?: (ctx: StepContext) => string;
   /** What a satisfied check is called. Defaults to "Already done". */
   satisfiedLabel?: string;
   /** Milliseconds before `apply` is killed. */
@@ -107,6 +119,8 @@ interface ExecOptions {
   timeoutMs?: number;
   /** Suppress the transcript, for a probe whose output is one number. */
   quiet?: boolean;
+  /** Replaces the transcript, for output a step has to read as it arrives. */
+  onLine?: (stream: LogStream, text: string) => void;
 }
 
 async function exec(
@@ -115,7 +129,7 @@ async function exec(
   args: string[],
   options: ExecOptions = {},
 ) {
-  if (!options.quiet) ctx.log("note", `$ ${display(command, args)}`);
+  if (!options.quiet && !options.onLine) ctx.log("note", `$ ${display(command, args)}`);
 
   return run(command, args, {
     cwd: options.cwd ?? ctx.root,
@@ -129,7 +143,7 @@ async function exec(
       AWS_DEFAULT_REGION: ctx.region,
       STAGE: ctx.stage,
     },
-    onLine: options.quiet ? undefined : ctx.log,
+    onLine: options.onLine ?? (options.quiet ? undefined : ctx.log),
     timeoutMs: options.timeoutMs,
     // Always owned, quiet or not: a process this console cannot kill is a
     // process that outlives it.
@@ -138,6 +152,31 @@ async function exec(
   }).catch((error: Error) => {
     throw new Error(`Could not start '${command}': ${error.message}`);
   });
+}
+
+/**
+ * `cdk`, from `infra/`.
+ *
+ * **`cdk` finds `cdk.json` — and therefore the app — in the current working
+ * directory and nowhere else.** It does not walk up, so running it from the
+ * repository root fails with:
+ *
+ *     --app is required either in command-line, in cdk.json or in ~/.cdk.json
+ *
+ * which names neither the directory it looked in nor the file it wanted. Every
+ * `cdk` invocation goes through here so that the directory is one decision made
+ * once rather than three that have to agree.
+ */
+async function cdk(
+  ctx: StepContext,
+  args: string[],
+  options: Omit<ExecOptions, "cwd"> = {},
+) {
+  const infra = repoPath("infra");
+  if (!fs.existsSync(path.join(infra, "cdk.json"))) {
+    throw new Error(`No cdk.json in ${infra} — that is the file that names the CDK app.`);
+  }
+  return exec(ctx, cdkBin(), args, { ...options, cwd: infra });
 }
 
 /** The last few lines of a failure, for a note that names what went wrong. */
@@ -159,6 +198,57 @@ function assertOk(
   if (result.code !== 0) {
     throw new Error(`${what} failed — ${failureNote(result)}`);
   }
+}
+
+/**
+ * CDK annotations — the one thing `synth` says that is worth reading.
+ *
+ * The resource-count warning and anything `planGroups` raises arrive as
+ * annotations on **stderr**, in the shape:
+ *
+ *     INFO Number of resources: 417 is approaching allowed maximum of 500 (Construct Annotations)
+ *        PlayApiStack-dev/ApiContentRoutes
+ *
+ * They are the difference between a synth that merely produced templates and
+ * one that validated the service, so the checklist quotes the first of them
+ * rather than reporting "no warnings" over the top of one. `docs/workspace.md`
+ * is where the Content group's count and what to do about it is written down.
+ */
+function annotations(stderr: string): string[] {
+  return stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^(?:INFO|WARNING|ERROR)\b/.test(line) && /Annotations?\)/i.test(line))
+    .map((line) =>
+      line
+        .replace(/\s*\((?:Construct )?Annotations?\)\s*$/i, "")
+        .replace(/^(?:INFO|WARNING|ERROR)\s+/i, ""),
+    );
+}
+
+/**
+ * The functions whose S3 rule the handover is about to take away.
+ *
+ * Read out of the script's own plan rather than re-derived here: the script
+ * decides which rules collide and which are ours, and a second implementation of
+ * that judgement is a second answer to "whose notification is this".
+ *
+ * ```
+ * Would be removed:
+ *   play-dev-process-video  [s3:ObjectCreated:* on uploads/]
+ * ```
+ */
+function displacedByPlan(stdout: string): string[] {
+  const start = stdout.indexOf("Would be removed:");
+  if (start === -1) return [];
+  const block = stdout.slice(start + "Would be removed:".length);
+  const end = block.indexOf("Would be kept:");
+  const body = end === -1 ? block : block.slice(0, end);
+
+  return body
+    .split("\n")
+    .map((line) => /^\s{2}([\w-]+)\s+\[/.exec(line)?.[1] ?? null)
+    .filter((name): name is string => name !== null);
 }
 
 /* ------------------------------------------------------------------ *
@@ -437,12 +527,9 @@ export function buildPlan(stage: string): PlanStep[] {
       const account = identity?.account ?? readConfig(ctx.stage)?.account;
       if (!account) throw new Error("The account could not be resolved, so bootstrap cannot target it.");
 
-      const result = await exec(
-        ctx,
-        cdkBin(),
-        ["bootstrap", `aws://${account}/${ctx.region}`],
-        { timeoutMs: 5 * 60_000 },
-      );
+      const result = await cdk(ctx, ["bootstrap", `aws://${account}/${ctx.region}`], {
+        timeoutMs: 5 * 60_000,
+      });
       assertOk(result, "cdk bootstrap", 5 * 60_000);
       return { note: `bootstrapped aws://${account}/${ctx.region}` };
     },
@@ -515,25 +602,23 @@ export function buildPlan(stage: string): PlanStep[] {
       "`cdk synth` builds all four stacks locally, resolves every route's path, and refuses if a path root is unclaimed or claimed twice — each API group builds its own slice of the gateway's resource tree, and two stacks creating `me` is two resources with one path part.",
     timeoutMs: 15 * 60_000,
     apply: async (ctx) => {
-      const result = await exec(
-        ctx,
-        cdkBin(),
-        ["synth", "--all", "--quiet", "--context", `stage=${ctx.stage}`],
-        { timeoutMs: 15 * 60_000 },
-      );
+      // No `--all`: `synth` is not one of the commands that takes it (it
+      // synthesizes the whole app unless it is given stack names), and passing
+      // it earns an "Unknown option(s)" complaint on every run that reads like
+      // a problem and is not one.
+      const result = await cdk(ctx, ["synth", "--quiet", "--context", `stage=${ctx.stage}`], {
+        timeoutMs: 15 * 60_000,
+      });
       assertOk(result, "cdk synth", 15 * 60_000);
 
-      const warn = /⚠|warning|past the|approaching/i.test(result.stderr);
+      const notes = annotations(result.stderr);
       return {
-        note: warn
-          ? "synthesized, with a warning — read the transcript"
-          : `synthesized with no warnings`,
+        note: notes.length > 0 ? `synthesized · ${notes[0]}` : "synthesized with no annotations",
       };
     },
   };
-
   /**
-   * The S3 handover, and why it cannot be folded into the deploy.
+   * The S3 handover — required, destructive to another stage, and unavoidable.
    *
    * `put-bucket-notification-configuration` replaces a bucket's whole
    * notification configuration, and CDK's handler is deliberately conservative
@@ -542,15 +627,26 @@ export function buildPlan(stage: string): PlanStep[] {
    * prefix are rejected outright, so the deploy fails with "Configuration is
    * ambiguously defined" — an error that names nothing anybody can act on.
    *
-   * Uploads are not processed between this running and the deploy that follows.
-   * That window is the reason it is a step rather than something a deploy does
-   * quietly before showing a diff.
+   * ## The part that is worth saying out loud
+   *
+   * The bucket is imported and shared, and **it can notify exactly one function
+   * for `uploads/`**. So handing it over is not tidying up a leftover: it takes
+   * video processing away from whichever stage held it. Deploying `staging`
+   * therefore stops `dev` processing uploads, and there is no arrangement in
+   * which both work — which is why this says so in its detail, names the
+   * function it is about to displace in its check, and names the one it moved
+   * from in its note. A step this consequential should not read as housekeeping.
+   *
+   * Uploads are also not processed *between* this running and the deploy that
+   * follows. That window is the reason it is a step rather than something a
+   * deploy does quietly before showing a diff — and the reason the note says
+   * what it does.
    */
   const handover: PlanStep = {
     id: "handover",
     title: "The videos bucket has one owner",
     detail:
-      "The bucket is imported, so CDK appends its `uploads/` notification rather than replacing what is there — and two rules for one event on an overlapping prefix is a deploy that fails with 'Configuration is ambiguously defined'. The handover script removes the leftover rules and nothing else, and it is idempotent.",
+      "The bucket is imported and can notify one function for `uploads/`, so two stages cannot both process uploads. Handing it over is what lets this stage's deploy add its own rule — and it **takes video processing away from whichever stage holds it**, until you hand it back. Uploads are not processed between this step and the deploy that follows.",
     satisfiedLabel: "One owner",
     timeoutMs: 5 * 60_000,
     check: async (ctx) => {
@@ -572,10 +668,16 @@ export function buildPlan(stage: string): PlanStep[] {
       if (/nothing to do/i.test(result.stdout)) {
         return {
           satisfied: true,
-          note: `the bucket's only uploads/ rule is this deployment's own`,
+          note: `the bucket's only uploads/ rule is play-${ctx.stage}-process-video`,
         };
       }
-      return { satisfied: false, note: "the bucket carries a leftover uploads/ rule" };
+      const displaced = displacedByPlan(result.stdout);
+      return {
+        satisfied: false,
+        note: displaced.length
+          ? `${displaced.join(", ")} holds the bucket's uploads/ notification — this deploy takes video processing from ${displaced.length === 1 ? "it" : "them"}`
+          : "the bucket carries an uploads/ rule that is not this deployment's",
+      };
     },
     apply: async (ctx) => {
       const result = await exec(
@@ -591,7 +693,13 @@ export function buildPlan(stage: string): PlanStep[] {
         { cwd: ctx.root, timeoutMs: 5 * 60_000 },
       );
       assertOk(result, "the S3 handover", 5 * 60_000);
-      return { note: "the leftover rules were removed; ours is the only one left" };
+
+      const removed = displacedByPlan(result.stdout);
+      return {
+        note: removed.length
+          ? `video processing moved off ${removed.join(", ")}; this stage's deploy adds its own rule`
+          : "the colliding rules were removed; this stage's deploy adds its own",
+      };
     },
   };
 
@@ -614,8 +722,8 @@ export function buildPlan(stage: string): PlanStep[] {
       /** `<stack>: 'changed' | 'unchanged'`, as CDK reports each one. */
       const perStack = new Map<string, "changed" | "unchanged">();
 
-      const result = await run(
-        cdkBin(),
+      const result = await cdk(
+        ctx,
         [
           "deploy",
           "--all",
@@ -627,14 +735,9 @@ export function buildPlan(stage: string): PlanStep[] {
           `stage=${ctx.stage}`,
         ],
         {
-          cwd: ctx.root,
-          env: {
-            AWS_PROFILE: ctx.profile,
-            AWS_REGION: ctx.region,
-            AWS_DEFAULT_REGION: ctx.region,
-          },
           timeoutMs: 60 * 60_000,
-          onSpawn: ctx.own,
+          // The transcript and a parser both, which is why `exec` takes the
+          // line handler rather than always writing to the transcript itself.
           onLine: (stream, text) => {
             ctx.log(stream, text);
             // ` ✅  PlayApiStack-dev (no changes)`. The variation selector is
@@ -652,9 +755,7 @@ export function buildPlan(stage: string): PlanStep[] {
             }
           },
         },
-      ).catch((error: Error) => {
-        throw new Error(`Could not start cdk: ${error.message}`);
-      });
+      );
 
       assertOk(result, "cdk deploy", 60 * 60_000);
 
@@ -868,22 +969,36 @@ export function buildPlan(stage: string): PlanStep[] {
   };
 
   /**
-   * The pre sign-up trigger — optional, and the only step that is.
+   * The pre sign-up trigger — the one step the console reports instead of doing.
    *
    * The pool is imported, so no deploy can set `LambdaConfig.PreSignUp`. Every
-   * stage deploys its own `link-federated-user`, and the pool can only call one
-   * of them: repointing it is a decision about *which* stage owns federated
-   * sign-up, not a step toward a working deploy. That is exactly why this is
-   * optional: on a stage that is not the one people sign up on, the answer is
-   * no, and the run should still succeed.
+   * stage deploys its own `link-federated-user`, and **the pool can only call
+   * one of them** — so repointing it is not a step toward a working deploy, it
+   * is a decision about which stage owns federated sign-up for everybody.
+   *
+   * That is why this is `manual: true` rather than merely optional. An optional
+   * step that applied itself would, on a staging run, quietly take sign-up away
+   * from dev: a change to a shared resource, made on behalf of somebody who
+   * pressed a button labelled "deploy this environment". The check still runs
+   * and still says whose the trigger is; the command to change it is printed
+   * beside that, for whoever decides it should be.
    */
   const trigger: PlanStep = {
     id: "trigger",
     title: "The pool's pre sign-up trigger points here",
     detail:
-      "The pool is imported, so nothing deployed can set `LambdaConfig.PreSignUp` — `adopt-cognito.mjs` calls `UpdateUserPool` instead, reading the pool first because that call replaces every setting it is not given. One pool, one trigger: repointing it takes federated sign-up away from whichever stage had it.",
+      "The pool is imported, so nothing deployed can set `LambdaConfig.PreSignUp` — `adopt-cognito.mjs` calls `UpdateUserPool` instead, reading the pool first because that call replaces every setting it is not given. One pool, one trigger: repointing it takes federated sign-up away from whichever stage had it, so this is reported rather than done.",
     optional: true,
+    manual: true,
     satisfiedLabel: "Already points here",
+    manualHint: (ctx) =>
+      [
+        "Left as it is. This stage's own trigger function is deployed and works; the pool can only call one, and which one is a decision rather than a step.",
+        "",
+        `To move it to this stage anyway:`,
+        "",
+        `  node infra/scripts/adopt-cognito.mjs --stage=${ctx.stage} --profile=${ctx.profile} --region=${ctx.region}`,
+      ].join("\n"),
     timeoutMs: 3 * 60_000,
     check: async (ctx) => {
       const loaded = readConfig(ctx.stage);

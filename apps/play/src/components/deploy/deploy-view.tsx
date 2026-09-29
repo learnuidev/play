@@ -15,6 +15,7 @@ import {
 import { Button, IconButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
+import { Prose } from "@/components/ui/prose";
 import { EnvironmentCard } from "@/components/deploy/environment-card";
 import { StepList } from "@/components/deploy/step-list";
 import { Transcript } from "@/components/deploy/transcript";
@@ -74,7 +75,13 @@ export function DeployView() {
   const selected = steps.find((step) => step.id === deploy.selected) ?? null;
   const lines = deploy.selected ? (deploy.lines.get(deploy.selected) ?? []) : [];
 
-  const done = steps.filter((step) => step.status === "passed" || step.status === "skipped").length;
+  // "Settled" rather than "done": a step the console reported instead of doing
+  // is finished too — nothing more will happen to it — so it belongs in the
+  // count. It carries its own caveat on its own row.
+  const settledSteps = steps.filter((step) =>
+    ["passed", "skipped", "warned", "manual"].includes(step.status),
+  ).length;
+  const done = settledSteps;
   const running = run?.status === "running";
   const settled = steps.length > 0 && done === steps.length;
 
@@ -184,12 +191,18 @@ export function DeployView() {
       </Card>
 
       {selected ? (
-        <Transcript
-          title={selected.title}
-          hint={selected.detail}
-          lines={lines}
-          droppedLines={selected.droppedLines}
-        />
+        <div className="flex flex-col gap-3">
+          <Prose
+            text={selected.detail}
+            className="text-muted-foreground max-w-3xl px-1 text-xs"
+          />
+          <Transcript
+            title={selected.title}
+            hint={`${selected.id} · step ${steps.findIndex((step) => step.id === selected.id) + 1} of ${steps.length}`}
+            lines={lines}
+            droppedLines={selected.droppedLines}
+          />
+        </div>
       ) : (
         <Card flush className="flex items-center gap-3 px-6 py-5">
           <TerminalIcon className="text-muted-foreground size-4" />

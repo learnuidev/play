@@ -4,6 +4,7 @@ import { CheckIcon, ChevronDownIcon, CopyIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { IconButton } from "@/components/ui/button";
+import { InlineProse } from "@/components/ui/prose";
 import { cn } from "@/lib/cn";
 import { clockTime } from "@/lib/format";
 import type { LogLine } from "@/lib/types";
@@ -100,7 +101,7 @@ export function Transcript({
         <div className="flex min-w-0 flex-col leading-tight">
           <span className="truncate text-sm font-medium">{title}</span>
           {hint ? (
-            <span className="text-muted-foreground truncate text-xs">{hint}</span>
+            <InlineProse text={hint} className="text-muted-foreground line-clamp-1 text-xs" />
           ) : null}
         </div>
 

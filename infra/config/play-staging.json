@@ -1,0 +1,75 @@
+{
+  "stage": "staging",
+  "account": "765302404291",
+  "region": "us-east-1",
+  "existing": {
+    "tables": {
+      "ApiKeysTable": "play-backend-dev-ApiKeysTable-WTF3ZJQ2WTII",
+      "CohortMembersTable": "play-backend-dev-CohortMembersTable-L94MSRC4G8QU",
+      "CohortsTable": "play-backend-dev-CohortsTable-1K9IMGB5FR4E",
+      "CommentsTable": "play-backend-dev-CommentsTable-1X5QBENOMCNNX",
+      "CompletionsTable": "play-backend-dev-CompletionsTable-1U64UT6EPKBOC",
+      "ContentFilesTable": "play-backend-dev-ContentFilesTable-1LBK30Q8BIAD2",
+      "ContentLoopsTable": "play-backend-dev-ContentLoopsTable-1DITIU8N3H5QT",
+      "ContentsTable": "play-backend-dev-ContentsTable-1Q0RTU3YV5FZG",
+      "FavouritesTable": "play-backend-dev-FavouritesTable-1FBOG9OMS3MSK",
+      "OAuthAppsTable": "play-backend-dev-OAuthAppsTable-18J4K4PVHJXRB",
+      "OAuthCodesTable": "play-backend-dev-OAuthCodesTable-1PKL7WBTYN124",
+      "OAuthGrantsTable": "play-backend-dev-OAuthGrantsTable-1M7YA78P3KWVB",
+      "OAuthTokensTable": "play-backend-dev-OAuthTokensTable-GMDUWJMAA8WD",
+      "OrgMembersTable": "play-backend-dev-OrgMembersTable-8V2OY8TFL0YB",
+      "OrganizationsTable": "play-backend-dev-OrganizationsTable-1L6WF13952N34",
+      "PlaylistTable": "play-backend-dev-PlaylistTable-1O9535UURBMLI",
+      "ProfilesTable": "play-backend-dev-ProfilesTable-XBAXJ9EO6628",
+      "QuestionBanksTable": "play-dev-question-banks-table",
+      "QuestionsTable": "play-dev-questions-table",
+      "QuizAttemptsTable": "play-dev-quiz-attempts-table",
+      "QuizQuestionsTable": "play-dev-quiz-questions-table",
+      "RewardGrantsTable": "play-backend-dev-RewardGrantsTable-23QZFUDSV4E4",
+      "SectionsTable": "play-backend-dev-SectionsTable-52MS6OFNVXIA",
+      "SpaceMembersTable": "play-backend-dev-SpaceMembersTable-Q0I5M5O7F31B",
+      "SpaceRewardsTable": "play-backend-dev-SpaceRewardsTable-16THCNW68T82R",
+      "SpacesTable": "play-backend-dev-SpacesTable-1BA7RD9KZDPZL",
+      "VideosTable": "play-backend-dev-VideosTable-1TT7VOZN07RDE"
+    },
+    "videosBucket": "play-backend-dev-videosbucket-12whmqpinnuy",
+    "cloudFrontLogsBucket": "play-backend-dev-cloudfrontlogsbucket-wwuq5zyyqhkb",
+    "cloudFrontDistributionId": "EU6XI9ND1DSRV",
+    "cloudFrontDomain": "dn7co9p61v6k8.cloudfront.net",
+    "cloudFrontPublicKeyId": "KTEQNJNTIR9TD",
+    "userPoolId": "us-east-1_D7mJYJiqy",
+    "userPoolClientId": "1j0lniedu2vmlelautok8bhurb",
+    "userPoolDomain": "play-dev-765302404291",
+    "googleSignInEnabled": true
+  },
+  "mail": {
+    "fromAddress": "learnuidev@gmail.com",
+    "appBaseUrl": "http://localhost:3000",
+    "marketplaceBaseUrl": "http://localhost:3001"
+  },
+  "auth": {
+    "googleClientId": "344458249806-01hlrb8la6r4mhltjevqbuslcosf0au8.apps.googleusercontent.com",
+    "callbackUrls": [
+      "http://localhost:3000",
+      "http://localhost:3000/auth/callback",
+      "http://localhost:3001",
+      "http://localhost:3001/auth/callback",
+      "https://lets-play.xyz",
+      "https://lets-play.xyz/auth/callback",
+      "https://studio.lets-play.xyz",
+      "https://studio.lets-play.xyz/auth/callback"
+    ],
+    "logoutUrls": [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://lets-play.xyz",
+      "https://studio.lets-play.xyz"
+    ]
+  },
+  "cloudFrontPrivateKeyParam": "/play/cloudfront/private-key",
+  "ownership": {
+    "tables": false,
+    "media": false,
+    "auth": false
+  }
+}

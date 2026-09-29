@@ -26,6 +26,15 @@ export type StepStatus =
   | "skipped"
   /** Optional, attempted, did not work. The run carries on. */
   | "warned"
+  /**
+   * Reported, and deliberately not done.
+   *
+   * A step whose right answer depends on something the console cannot know —
+   * which stage owns the shared user pool's pre sign-up trigger, for instance —
+   * ends here rather than being applied on somebody's behalf. It is finished, it
+   * did not fail, and it is the one state that is asking for a person.
+   */
+  | "manual"
   | "failed"
   /** Never reached: an earlier step stopped the run. */
   | "halted";
