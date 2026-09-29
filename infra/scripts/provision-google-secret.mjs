@@ -33,14 +33,21 @@
  *
  * ## Usage
  *
- *   node infra/scripts/provision-google-secret.mjs [options]
+ *   node infra/scripts/provision-google-secret.mjs --stage=<name> [options]
  *
+ *   --stage=<name>       Environment to provision  (required)
  *   --profile=<name>     AWS profile to use     (default: $AWS_PROFILE, else default)
  *   --region=<name>      AWS region             (default: $AWS_REGION, else us-east-1)
  *   --ssm-param=<name>   Source parameter       (default: /play/auth/google-client-secret)
- *   --secret-name=<name> Destination secret     (default: play/auth/google-client-secret)
+ *   --secret-name=<name> Destination secret     (default: play/<stage>/google-client-secret)
  *   --plan               Report what would change, write nothing
  *   --help               This text
+ *
+ * This is the command-line equivalent of the console's Settings view, which is
+ * the way to do it by hand: **Settings → the environment → Google client
+ * secret**. It exists for the case where the secret is already in SSM — seeding
+ * a new environment from the one `dev` uses — so nobody has to copy a credential
+ * through a clipboard.
  */
 import { execFileSync } from 'node:child_process';
 
@@ -67,9 +74,21 @@ if (args.includes('--help') || args.includes('-h')) {
 
 const profile = value('profile', process.env.AWS_PROFILE ?? '');
 const region = value('region', process.env.AWS_REGION ?? 'us-east-1');
+const stage = value('stage', '');
 const ssmParam = value('ssm-param', '/play/auth/google-client-secret');
-const secretName = value('secret-name', 'play/auth/google-client-secret');
 const plan = args.includes('--plan');
+
+if (!stage) {
+  console.error(
+    'Which environment? Pass --stage=<name>.\n\n' +
+      '  node infra/scripts/provision-google-secret.mjs --stage=staging\n\n' +
+      'The secret name is derived from it (play/<stage>/google-client-secret), so one\n' +
+      'environment cannot overwrite another\u2019s.',
+  );
+  process.exit(1);
+}
+
+const secretName = value('secret-name', `play/${stage}/google-client-secret`);
 
 const base = ['--region', region, ...(profile ? ['--profile', profile] : [])];
 

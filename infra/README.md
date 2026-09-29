@@ -99,7 +99,7 @@ a Lambda's environment, and the failure surfaces as a 500 at the first request.
 | `scripts/retain-legacy-resources.mjs` | Marks the old stack's 35 stateful resources `DeletionPolicy: Retain` and updates the stack. Runs once, **before** the teardown |
 | `scripts/teardown-legacy-stack.sh` | Removes the old Serverless stack **without deleting the data it owns**. Refuses unless the retention above is in place |
 | `scripts/handover-s3-notifications.mjs` | Removes the legacy stack's S3 notification rule so the bucket's configuration has one owner. Runs once, before the first deploy |
-| `scripts/provision-google-secret.mjs` | Mirrors the Google client secret from SSM into Secrets Manager. Needed before a stack that **creates** a user pool deploys — CloudFormation refuses an SSM Secure reference in `UserPoolIdentityProvider`. Idempotent |
+| `scripts/provision-google-secret.mjs` | Copies the Google client secret from SSM into Secrets Manager at `play/<stage>/google-client-secret`. Needed before a stack that **creates** a user pool deploys — CloudFormation refuses an SSM Secure reference in `UserPoolIdentityProvider`. Idempotent. The console's Settings view is the way to do this by hand |
 
 ## Destroying a stage, and the log groups it leaves behind
 

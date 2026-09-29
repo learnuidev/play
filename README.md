@@ -841,10 +841,23 @@ the user pool, and prints the exact values to paste into the Google client. The
 pool is **imported** by `infra`, so this is an API call rather than a deploy —
 there is no stack that owns it to change it.
 
+> **A pool this repository *creates*** — a new environment, whose `ownership.auth`
+> is `true` — is a different story. Its provider is built at deploy time from
+> `auth.googleClientId` and a client secret in Secrets Manager, both written by
+> the console's **Settings** view ([apps/play/README.md](apps/play/README.md)).
+> This script does not apply to it: there is no pre-existing pool to call.
+> CloudFormation refuses an SSM Secure reference in the identity provider, which
+> is why the secret is a Secrets Manager secret at
+> `play/<stage>/google-client-secret`.
+
 | Google client field           | Value                                         |
 | ----------------------------- | --------------------------------------------- |
 | Authorized JavaScript origins | `https://<cognito-domain>`                    |
 | Authorized redirect URIs      | `https://<cognito-domain>/oauth2/idpresponse` |
+
+For a pool this repository creates, the console's Settings view prints both of
+these with the right `<cognito-domain>` filled in — it is the
+`play-<stage>-<account>.auth.<region>.amazoncognito.com` the deploy just made.
 
 Parameters written (secret stored as `SecureString`):
 

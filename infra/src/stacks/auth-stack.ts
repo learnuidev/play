@@ -14,7 +14,7 @@ import type { Construct } from 'constructs';
 
 import { bundle } from '../bundling';
 import type { PlayConfig } from '../config';
-import { GOOGLE_CLIENT_SECRET_NAME, importedResources } from '../config';
+import { importedResources, ownsEverything } from '../config';
 import { FUNCTIONS } from '../generated/service';
 
 export interface PlayAuthStackProps extends StackProps {
@@ -190,13 +190,21 @@ export class PlayAuthStack extends Stack {
       role,
       timeout: Duration.seconds(spec.timeout),
       memorySize: spec.memorySize,
-      logGroup: new logs.LogGroup(this, 'LinkFederatedUserLogGroup', {
-        logGroupName: `/aws/lambda/play-${config.stage}-${spec.key}`,
-        // Kept when the stack goes, like every other log group here: the logs
-        // outlive the infrastructure that produced them, and a stack delete is
-        // not a reason to lose the record of what happened.
-        removalPolicy: RemovalPolicy.RETAIN,
-      }),
+      // Declared for a migrated stage, omitted for a new environment — see
+      // `createFunction` in `api-stack.ts` for why. The short version: a named,
+      // retained log group survives a stack delete, so the retry after a failed
+      // deploy fails early validation on a group it is trying to re-create.
+      ...(ownsEverything(config)
+        ? {}
+        : {
+            logGroup: new logs.LogGroup(this, 'LinkFederatedUserLogGroup', {
+              logGroupName: `/aws/lambda/play-${config.stage}-${spec.key}`,
+              // Kept when the stack goes, like every other log group here: the logs
+              // outlive the infrastructure that produced them, and a stack delete is
+              // not a reason to lose the record of what happened.
+              removalPolicy: RemovalPolicy.RETAIN,
+            }),
+          }),
     });
   }
 
@@ -236,6 +244,8 @@ export class PlayAuthStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    let googleProvider: cognito.UserPoolIdentityProviderGoogle | undefined;
+
     if (this.googleSignInEnabled) {
       // The client secret, as a CloudFormation dynamic reference so it is never
       // in the synthesized template, in `cdk.out`, or in this process — the
@@ -249,13 +259,13 @@ export class PlayAuthStack extends Stack {
       //   [AWS::Cognito::UserPoolIdentityProvider/Properties/ProviderDetails/client_secret]
       //
       // — and refuses it in `AWS::SecretsManager::Secret`'s `SecretString` as
-      // well, so the value cannot be moved across declaratively either.
-      // `infra/scripts/provision-google-secret.mjs` does the copy, and the plan
-      // runs it before this stack deploys.
-      new cognito.UserPoolIdentityProviderGoogle(this, 'GoogleIdentityProvider', {
+      // well, so the value cannot be moved across declaratively either. The
+      // console's Settings view writes the secret; the plan's step 8 checks it is
+      // there before this stack deploys.
+      googleProvider = new cognito.UserPoolIdentityProviderGoogle(this, 'GoogleIdentityProvider', {
         userPool,
         clientId: config.auth.googleClientId,
-        clientSecretValue: SecretValue.secretsManager(GOOGLE_CLIENT_SECRET_NAME),
+        clientSecretValue: SecretValue.secretsManager(config.googleClientSecretName),
         scopes: ['email', 'profile', 'openid'],
         attributeMapping: {
           email: cognito.ProviderAttribute.GOOGLE_EMAIL,
@@ -304,6 +314,21 @@ export class PlayAuthStack extends Stack {
         ? [cognito.UserPoolClientIdentityProvider.COGNITO, cognito.UserPoolClientIdentityProvider.GOOGLE]
         : [cognito.UserPoolClientIdentityProvider.COGNITO],
     });
+
+    // **The dependency CDK cannot infer**, and the reason a first deploy of a new
+    // environment fails without it.
+    //
+    // `supportedIdentityProviders` names its providers as *strings*, so the
+    // client construct holds no reference to the provider construct — and
+    // CloudFormation is therefore free to create the client first, at which point
+    // Cognito rejects it:
+    //
+    //   The provider Google does not exist for User Pool us-east-1_XXXXXXXXX.
+    //
+    // The failure is a rollback of the whole auth stack, and the pool it leaves
+    // behind is retained, so the retry has to deal with that too. One line fixes
+    // it, and it is not obvious from either side.
+    if (googleProvider) client.node.addDependency(googleProvider);
 
     return { userPool, clientId: client.userPoolClientId, domain: domain.domainName };
   }

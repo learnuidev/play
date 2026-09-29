@@ -53,8 +53,19 @@ says so before anything is deployed.
 | `existing.googleSignInEnabled` | Whether that pool has a Google identity provider |
 | `mail.*` | The invitation sender and the two app base URLs. **Deploy-time, not runtime** |
 | `auth.googleClientId`, `auth.callbackUrls`, `auth.logoutUrls` | The Google client id, and the origins Cognito accepts. On a migrated stage the live pool's values are read from Cognito by `set-auth-urls.mjs` instead |
+| `googleClientSecretName` | The Secrets Manager secret a **created** pool reads the client secret from. Defaults to `play/<stage>/google-client-secret`, which is per-stage so two environments cannot overwrite each other |
 | `cloudFrontPrivateKeyParam` | The *name* of the signing key parameter. Never the key |
 | `cloudFrontPublicKeyParam` | The *name* of that key's public half. Defaults to `/play/cloudfront/public-key` |
+
+`auth` and `mail` are the two blocks a **person** writes rather than a script
+discovers, which is why they have a screen: the console's **Settings** view, one
+per environment. Everything else here is either a physical name read out of AWS
+or a resource count.
+
+**The Google client secret is not in this file**, and must not be. It is a
+credential, this file is committed, and CloudFormation refuses the SSM Secure
+reference that would let it be read in place — it lives in Secrets Manager and
+the console writes it there. `apps/play/README.md` says why.
 
 `existing` is validated **field by field, against `ownership`**: a name is
 required exactly when the corresponding group is imported. So a stage that

@@ -1,13 +1,15 @@
 # `apps/play` — the console
 
-A local control room for the backend. It does two things, and they are the two
-things that otherwise live in a shell history nobody can read:
+A local control room for the backend. It does three things, and they are the
+three things that otherwise live in a shell history nobody can read:
 
 - **deploys the backend to an environment**, as a checklist of every step a
   successful deployment needs, with a check mark for each one that is already
   satisfied;
 - **starts the frontends locally against an environment** — the studio, the
-  marketplace and the demo — without rewriting a single `.env.local`.
+  marketplace and the demo — without rewriting a single `.env.local`;
+- **holds the settings a deploy cannot discover** — the Google client id, its
+  secret and the callback URLs an environment's user pool is built from.
 
 ```bash
 npm run play            # from the repository root
@@ -179,6 +181,75 @@ Each dev server is spawned **detached**, in its own process group, because
 `next dev` starts a compiler and workers underneath itself and killing only the
 process the console holds leaves the rest holding the port. Stop kills the group.
 
+## Settings: what a deploy cannot discover
+
+A new environment creates its own user pool, and a pool is built with a Google
+identity provider — which needs a client id, a client secret and a list of
+callback URLs. There is nowhere to look those up. They are the one input a deploy
+cannot derive, which is why they have a screen: **Settings**, per environment.
+
+| Field | Lands in |
+| --- | --- |
+| Google client id, callback URLs, logout URLs | `auth` in `infra/config/play-<stage>.json` |
+| From address, the two app base URLs | `mail` in the same file |
+| **Google client secret** | **Secrets Manager**, at `play/<stage>/google-client-secret` |
+
+Everything is editable at any time, not only during a first deploy. What a change
+does afterwards depends on the pool:
+
+- An environment that **creates** its pool applies what is saved on the next
+  deploy — the callback URLs are read from the config by the auth stack.
+- `dev` **imports** its pool, so nothing saved here reaches Cognito. The live pool
+  is changed by `services/api/scripts/set-auth-urls.mjs`, and these values are the
+  record of what it should be.
+
+**The secret never touches the repository.** It is write-only in both directions:
+sent to Secrets Manager on save, never read back, and the page shows only whether
+one is stored. That is not fastidiousness — the config file is committed, and a
+credential in it would be a credential in the history of every clone.
+
+Secrets Manager rather than SSM because CloudFormation refuses an SSM Secure
+reference in `AWS::Cognito::UserPoolIdentityProvider`; step 8 above has the
+error message and the reasoning. The name is **per stage**, so two environments
+cannot overwrite each other's credential.
+
+Saving is validated before anything is written or sent: a client id that does not
+end in `.apps.googleusercontent.com`, a callback URL that is neither https nor
+localhost, a malformed email — all caught and reported together, rather than
+surfacing as a Cognito rejection in the middle of an auth-stack rollback.
+
+### The other half of the conversation
+
+A federated sign-in involves Google, Cognito and the app, and **Google has to be
+told two things it cannot derive** — so the page prints them, ready to copy, in a
+"What Google has to be told" card. It is the **first** card on the page, because
+it is first in the workflow: you register the OAuth client in Google, Google asks
+for these two, and only then does it hand back the client id and secret that the
+next card wants.
+
+| Google client field | Value |
+| --- | --- |
+| Authorized JavaScript origins | `https://<cognito-domain>` |
+| Authorized redirect URIs | `https://<cognito-domain>/oauth2/idpresponse` |
+
+where `<cognito-domain>` is `play-<stage>-<account>.auth.<region>.amazoncognito.com`
+for an environment that creates its pool, and whatever `dev`'s pool was given
+years ago for the imported one. These are read off the deployed auth stack when
+there is one, because that is the only place the domain is authoritative.
+
+**Two lists, and both are needed.** These two say where *Google* may send a
+person; `callbackUrls` says where *Cognito* may send them afterwards. Google
+returns to Cognito, Cognito returns to the app. Missing either one fails
+sign-in — and the first fails as a `redirect_uri_mismatch` page that names
+nothing in this repository.
+
+They are shown rather than editable: the origin and the `/oauth2/idpresponse`
+path belong to Cognito, and the domain is fixed when the pool is created.
+
+The deploy page raises the same thing earlier: an environment that needs
+credentials and has none gets a callout above the checklist pointing here, so the
+first thing you read is a sentence rather than a failed step.
+
 ## Where things are
 
 ```
@@ -187,6 +258,7 @@ src/server/
   exec.ts          running a process and turning its output into lines
   aws.ts           the AWS CLI as a function or two — every call is a read
   environments.ts  infra/config/play-<stage>.json, and the stack outputs an app needs
+  settings.ts      what a person supplies: the config file, and the secret
   plan.ts          THE PLAN: the thirteen steps, their checks and their work
   run.ts           one run at a time, its transcript, and its event stream
   services.ts      the three dev servers, and cleaning up after them
@@ -200,12 +272,16 @@ src/app/api/
   services         the three frontends                    (GET)
   services/[app]   start or stop one                      (POST / DELETE)
   services/events  all three on one stream                (SSE)
+  environments/[stage]/settings
+                   read or write one environment's        (GET / PUT)
+                   credentials and mail settings
 
 src/components/
   console/         the frame: the rail, the environment picker, the theme
   deploy/          the checklist, the step rows, the transcript, the result
   apps/            the three cards
-  ui/              button, card, chip — the whole design system, such as it is
+  settings/        the credentials form, and the hook that loads it
+  ui/              button, card, chip, field — the design system, such as it is
 ```
 
 ## What it will not do

@@ -91,6 +91,8 @@ export interface PlayConfig {
   cloudFrontPrivateKeyParam: string;
   /** The *name* of the parameter holding that key's public half. */
   cloudFrontPublicKeyParam: string;
+  /** The Secrets Manager secret a created pool reads the Google client secret from. */
+  googleClientSecretName: string;
   ownership: Ownership;
 }
 
@@ -131,10 +133,14 @@ export const DEFAULT_CLOUDFRONT_PUBLIC_KEY_PARAM = '/play/cloudfront/public-key'
  * `SecretString` too, so the value cannot even be moved across declaratively.
  * A `secretsmanager` reference *is* accepted there.
  *
- * `infra/scripts/provision-google-secret.mjs` copies the SSM parameter into
- * this secret, and the parameter stays the source of truth.
+ * **Per stage**, unlike the CloudFront signing key: this is a credential an
+ * environment is configured with rather than shared state, and the console's
+ * Settings view writes one per environment. The name is derived from the stage
+ * so two environments cannot overwrite each other's.
  */
-export const GOOGLE_CLIENT_SECRET_NAME = 'play/auth/google-client-secret';
+export function googleClientSecretName(stage: string): string {
+  return `play/${stage}/google-client-secret`;
+}
 
 /** Where `import-state.mjs` writes, and where this reads. */
 export function configPath(stage: string): string {
@@ -185,6 +191,8 @@ export function loadConfig(stage: string): PlayConfig {
     ownership: ownershipOf(parsed),
     cloudFrontPublicKeyParam:
       parsed.cloudFrontPublicKeyParam ?? DEFAULT_CLOUDFRONT_PUBLIC_KEY_PARAM,
+    googleClientSecretName:
+      parsed.googleClientSecretName ?? googleClientSecretName(parsed.stage),
   };
 
   const problems = validate(config);

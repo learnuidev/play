@@ -13,7 +13,7 @@
     "marketplaceBaseUrl": "http://localhost:3001"
   },
   "auth": {
-    "googleClientId": "344458249806-01hlrb8la6r4mhltjevqbuslcosf0au8.apps.googleusercontent.com",
+    "googleClientId": "853099901332-1f8kgnlcme078tutet9k7pc3njf2177m.apps.googleusercontent.com",
     "callbackUrls": [
       "http://localhost:3000",
       "http://localhost:3000/auth/callback",

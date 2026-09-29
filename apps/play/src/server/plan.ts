@@ -20,6 +20,7 @@ import {
   type StageConfig,
 } from "./environments";
 import { cdkBin, repoPath } from "./repo";
+import { googleClientSecretName, googleSecretStatus } from "./settings";
 import { display, lastMeaningfulLines, run, type PipedChild } from "./exec";
 
 /**
@@ -765,52 +766,51 @@ export function buildPlan(stage: string): PlanStep[] {
    */
   const providerSecret: PlanStep = {
     id: "secret",
-    title: "The Google client secret can be read at deploy",
+    title: "This environment's Google credentials are set",
     detail:
-      "`AWS::Cognito::UserPoolIdentityProvider` **cannot take an SSM Secure string** — CloudFormation rejects `{{resolve:ssm-secure:…}}` in `ProviderDetails.client_secret`, and rejects it in a Secrets Manager secret's own `SecretString` as well, so the value cannot be moved declaratively. `provision-google-secret.mjs` mirrors the parameter into Secrets Manager and the stack reads it from there. Only matters when this environment **creates** its pool; an imported pool already has its provider attached.",
-    satisfiedLabel: "In Secrets Manager",
-    timeoutMs: 2 * 60_000,
+      "A pool this stage **creates** is built with a Google identity provider, and CloudFormation refuses an SSM Secure reference in it (`ProviderDetails.client_secret`), so the client secret has to be in **Secrets Manager** before the auth stack deploys. The console's **Settings** view writes it — along with the client id and the callback URLs. An imported pool already has its provider attached, and a stage with no client id is created without one.",
+    satisfiedLabel: "Credentials set",
+    timeoutMs: 60_000,
     check: async (ctx) => {
-      if (!ownershipOf(readConfig(ctx.stage)).auth) {
+      const loaded = readConfig(ctx.stage);
+      if (!ownershipOf(loaded).auth) {
         return {
           satisfied: true,
           note: "this environment's pool is imported — its Google provider is already attached",
         };
       }
-
-      const result = await exec(
-        ctx,
-        "node",
-        [
-          "infra/scripts/provision-google-secret.mjs",
-          `--profile=${ctx.profile}`,
-          `--region=${ctx.region}`,
-          "--plan",
-        ],
-        { cwd: ctx.root, timeoutMs: 60_000 },
-      );
-      if (result.code !== 0) return { satisfied: false, note: failureNote(result) };
-      if (/Secret exists:\s+no/i.test(result.stdout)) {
+      if (!loaded?.auth?.googleClientId) {
         return {
-          satisfied: false,
-          note: "not in Secrets Manager yet — the deploy would fail on the Google provider",
+          satisfied: true,
+          note: "no Google client id, so the pool is created without a provider",
         };
       }
-      return { satisfied: true, note: "play/auth/google-client-secret is readable as a dynamic reference" };
+
+      const name = googleClientSecretName(ctx.stage);
+      const found = await googleSecretStatus(ctx.stage, {
+        profile: ctx.profile,
+        region: ctx.region,
+      });
+      return found
+        ? { satisfied: true, note: `${name} holds this environment's client secret` }
+        : {
+            satisfied: false,
+            note: `no secret at ${name} — set the Google client id and secret in Settings`,
+          };
     },
     apply: async (ctx) => {
-      const result = await exec(
-        ctx,
-        "node",
-        [
-          "infra/scripts/provision-google-secret.mjs",
-          `--profile=${ctx.profile}`,
-          `--region=${ctx.region}`,
-        ],
-        { cwd: ctx.root, timeoutMs: 2 * 60_000 },
+      // Not something this step can do *for* you, and that is the point: the
+      // secret is a credential somebody supplies, not one to be copied out of
+      // another environment's parameter. Halting here with a sentence beats
+      // letting the deploy fail inside Cognito with a provider that has no
+      // secret.
+      throw new Error(
+        `There is no Google client secret for '${ctx.stage}' at ${googleClientSecretName(ctx.stage)}.\n\n` +
+          `Open Settings, pick '${ctx.stage}', and save the Google client id and secret. The auth ` +
+          "stack cannot create the identity provider without them.\n\n" +
+          "To remove Google sign-in from this environment instead, clear the client id in Settings " +
+          "and the pool will be created without a provider.",
       );
-      assertOk(result, "provision-google-secret.mjs", 2 * 60_000);
-      return { note: "the Google client secret is in Secrets Manager" };
     },
   };
 

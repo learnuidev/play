@@ -9,6 +9,7 @@ import {
   PlusIcon,
   RocketIcon,
   ServerIcon,
+  SlidersHorizontalIcon,
   SunIcon,
   TerminalIcon,
 } from "lucide-react";
@@ -38,6 +39,12 @@ import type { EnvironmentView } from "@/lib/types";
 const NAV = [
   { href: "/", label: "Deploy", icon: RocketIcon, hint: "the backend, to an environment" },
   { href: "/apps", label: "Frontends", icon: ServerIcon, hint: "the three apps, locally" },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: SlidersHorizontalIcon,
+    hint: "what the environment is configured with",
+  },
 ] as const;
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {

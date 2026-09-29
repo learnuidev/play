@@ -17,6 +17,7 @@ import type { Construct } from 'constructs';
 
 import { bundle } from '../bundling';
 import type { PlayConfig } from '../config';
+import { ownsEverything } from '../config';
 import { TABLES } from '../generated/service';
 import { pascal } from '../naming';
 import { INFRA_ROOT } from '../paths';
@@ -469,6 +470,34 @@ export class PlayApiStack extends Stack {
     const { code, handler } = bundle(spec.entry);
     const name = `play-${config.stage}-${spec.key}`;
 
+    // **A migrated stage declares its log group; a new environment does not.**
+    //
+    // The declared one is named and `RETAIN`ed, so it survives a stack delete —
+    // which is the point, because the logs outlive the infrastructure that
+    // produced them. The cost lands on the *retry*: CloudFormation refuses to
+    // create a log group whose name already exists, so a deploy that failed
+    // halfway wedges every attempt after it with
+    //
+    //   Resource of type 'AWS::Logs::LogGroup' with identifier
+    //   '/aws/lambda/play-<stage>-<function>' already exists.
+    //
+    // and the same happens when a stage is destroyed and rebuilt under the same
+    // name. That is precisely when somebody wants a retry to work.
+    //
+    // Omitting the group loses nothing for a new environment: Lambda creates
+    // `/aws/lambda/<function>` on the first invocation, and because
+    // CloudFormation never learns about it, that group outlives the stack for
+    // free — the same retention, without a resource that can collide.
+    //
+    // `dev` keeps the managed one. It already exists, and leaving it alone is
+    // what makes this change a no-op there.
+    const logGroup = ownsEverything(config)
+      ? undefined
+      : new logs.LogGroup(this, `${pascal(spec.key)}LogGroup`, {
+          logGroupName: `/aws/lambda/${name}`,
+          removalPolicy: RemovalPolicy.RETAIN,
+        });
+
     return new lambda.Function(this, `${pascal(spec.key)}Function`, {
       functionName: name,
       description: spec.description ?? `${spec.key} - see src/generated/service.ts`,
@@ -479,10 +508,7 @@ export class PlayApiStack extends Stack {
       timeout: Duration.seconds(spec.timeout),
       memorySize: spec.memorySize,
       environment: { ...environment, ...spec.environment },
-      logGroup: new logs.LogGroup(this, `${pascal(spec.key)}LogGroup`, {
-        logGroupName: `/aws/lambda/${name}`,
-        removalPolicy: RemovalPolicy.RETAIN,
-      }),
+      ...(logGroup ? { logGroup } : {}),
     });
   }
 

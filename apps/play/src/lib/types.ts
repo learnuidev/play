@@ -181,6 +181,69 @@ export interface ConsoleState {
 }
 
 /* ------------------------------------------------------------------ *
+ * The settings a person supplies
+ * ------------------------------------------------------------------ */
+
+/**
+ * The half of a federated sign-in that lives in the Google Cloud console.
+ *
+ * These are not inputs — they are *outputs*, read off the deployment, and the
+ * Settings view shows them so nobody has to derive a Cognito domain by hand and
+ * get `redirect_uri_mismatch` for it.
+ */
+export interface GoogleOAuthValues {
+  cognitoDomain: string | null;
+  /** Authorized JavaScript origins. */
+  javaScriptOrigin: string | null;
+  /** Authorized redirect URIs — Cognito's `/oauth2/idpresponse`. */
+  redirectUri: string | null;
+}
+
+/**
+ * What an environment is configured with, rather than what it is discovered to
+ * be. The secret's *value* is never part of this — only whether one is stored.
+ */
+export interface EnvironmentSettings {
+  stage: string;
+  configPath: string;
+  ownership: { tables: boolean; media: boolean; auth: boolean };
+  /** True when this environment creates its pool, so a provider and secret are needed. */
+  needsGoogleSecret: boolean;
+  googleClientSecretName: string;
+  googleClientSecretSet: boolean;
+  auth: {
+    googleClientId: string;
+    callbackUrls: string[];
+    logoutUrls: string[];
+  };
+  mail: {
+    fromAddress: string;
+    appBaseUrl: string;
+    marketplaceBaseUrl: string;
+  };
+  /** What to paste into the Google Cloud console. */
+  oauth: GoogleOAuthValues;
+}
+
+export interface EnvironmentSettingsInput {
+  auth: {
+    googleClientId: string;
+    callbackUrls: string[];
+    logoutUrls: string[];
+  };
+  mail: {
+    fromAddress: string;
+    appBaseUrl: string;
+    marketplaceBaseUrl: string;
+  };
+  /**
+   * Write-only. Empty or absent leaves whatever is stored alone, so saving the
+   * form without retyping the secret does not clear it.
+   */
+  googleClientSecret?: string;
+}
+
+/* ------------------------------------------------------------------ *
  * What crosses the wire
  * ------------------------------------------------------------------ */
 

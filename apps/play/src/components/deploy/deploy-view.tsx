@@ -6,7 +6,6 @@ import {
   ArrowRightIcon,
   CheckIcon,
   CircleStopIcon,
-  CopyIcon,
   TerminalIcon,
   TriangleAlertIcon,
   XIcon,
@@ -15,11 +14,13 @@ import {
 import { Button, IconButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
+import { CopyRow } from "@/components/ui/copy-row";
 import { Prose } from "@/components/ui/prose";
 import { EnvironmentCard } from "@/components/deploy/environment-card";
 import { StepList } from "@/components/deploy/step-list";
 import { Transcript } from "@/components/deploy/transcript";
 import { useDeploy } from "@/components/deploy/use-deploy";
+import { useSettings } from "@/components/settings/use-settings";
 import { useShell } from "@/components/console/state";
 import { cn } from "@/lib/cn";
 import { duration, relative } from "@/lib/format";
@@ -75,6 +76,13 @@ export function DeployView() {
   const selected = steps.find((step) => step.id === deploy.selected) ?? null;
   const lines = deploy.selected ? (deploy.lines.get(deploy.selected) ?? []) : [];
 
+  // Read rather than guessed from `ownsEverything`: the question is not whether
+  // this environment creates a pool, it is whether one could be built right now.
+  const { settings } = useSettings(stage);
+  const credentialsNeeded = Boolean(
+    settings?.needsGoogleSecret && !settings.googleClientSecretSet,
+  );
+
   // "Settled" rather than "done": a step the console reported instead of doing
   // is finished too — nothing more will happen to it — so it belongs in the
   // count. It carries its own caveat on its own row.
@@ -117,6 +125,32 @@ export function DeployView() {
             bucket, distribution and user pool, imported from nowhere and shared with nobody.
           </span>
         </p>
+      ) : null}
+
+      {/* A new environment creates its own user pool, and a pool needs a Google
+          OAuth client that nothing can discover. Raising it here rather than at
+          step 8 is the difference between reading one sentence and reading a
+          failed deploy. */}
+      {credentialsNeeded ? (
+        <div className="border-warn/40 bg-warn/10 flex flex-wrap items-start gap-2.5 rounded-3xl border px-5 py-4 text-xs leading-relaxed">
+          <TriangleAlertIcon className="text-warn mt-0.5 size-3.5 shrink-0" />
+          <span className="flex-1">
+            <span className="text-foreground/90 font-medium">
+              {stage} has no Google credentials yet.
+            </span>{" "}
+            <span className="text-muted-foreground">
+              It creates its own user pool, so the client id, the secret and the callback URLs have
+              to come from somewhere — they are the one thing a deploy cannot discover. Step 8 stops
+              on this rather than failing inside Cognito.
+            </span>
+          </span>
+          <Link
+            href="/settings"
+            className="text-foreground/90 hover:text-foreground shrink-0 font-medium underline underline-offset-4"
+          >
+            Open Settings
+          </Link>
+        </div>
       ) : null}
 
       {deploy.error ? (
@@ -295,32 +329,6 @@ function ResultCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["ru
         </div>
       ) : null}
     </Card>
-  );
-}
-
-function CopyRow({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      // Refused; the value is selectable.
-    }
-  };
-
-  return (
-    <div className="flex items-center gap-3">
-      <span className="text-muted-foreground w-20 shrink-0 text-xs">{label}</span>
-      <code className="min-w-0 flex-1 truncate font-mono text-xs" title={value}>
-        {value}
-      </code>
-      <IconButton onClick={copy} title={`Copy ${label}`} aria-label={`Copy ${label}`}>
-        {copied ? <CheckIcon className="text-ok size-3.5" /> : <CopyIcon className="size-3.5" />}
-      </IconButton>
-    </div>
   );
 }
 

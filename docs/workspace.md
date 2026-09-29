@@ -53,7 +53,9 @@ and the configuration on the other side of it, is [deploy.md](deploy.md).
 ### The console is not one of the apps
 
 `apps/play` is the fourth Next.js app and the only one that is not a surface. It
-deploys the backend and starts the other three; it renders no product screen, it
+deploys the backend, starts the other three, and holds the settings a deploy
+cannot discover — a new environment's Google client id, secret and callback
+URLs. It renders no product screen, it
 imports no `@play/*` package, and it is not deployed anywhere. Its README is the
 document for it; what matters here is the boundary.
 
