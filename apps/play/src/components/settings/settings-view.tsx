@@ -36,7 +36,7 @@ import { useSettings } from "./use-settings";
  *   are the record of what it should be.
  */
 
-export function SettingsView() {
+export function SettingsView({ embedded = false }: { embedded?: boolean } = {}) {
   const { stage } = useShell();
   const { settings, loading, saving, error, saved, dismissError, save } = useSettings(stage);
 
@@ -44,20 +44,22 @@ export function SettingsView() {
   // round trip; `key` on the form below resets it when the stage changes.
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground mt-1.5 text-sm">
-            What <span className="font-mono">{stage}</span> is configured with — the values that
-            cannot be discovered from AWS.
-          </p>
-        </div>
-        {settings?.needsGoogleSecret ? (
-          <Chip tone={settings.googleClientSecretSet ? "ok" : "warn"}>
-            {settings.googleClientSecretSet ? "Google credentials set" : "Google credentials needed"}
-          </Chip>
-        ) : null}
-      </header>
+      {embedded ? null : (
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+            <p className="text-muted-foreground mt-1.5 text-sm">
+              What <span className="font-mono">{stage}</span> is configured with — the values that
+              cannot be discovered from AWS.
+            </p>
+          </div>
+          {settings?.needsGoogleSecret ? (
+            <Chip tone={settings.googleClientSecretSet ? "ok" : "warn"}>
+              {settings.googleClientSecretSet ? "Google credentials set" : "Google credentials needed"}
+            </Chip>
+          ) : null}
+        </header>
+      )}
 
       {error ? (
         <div className="border-destructive/35 bg-destructive/10 text-destructive flex items-start gap-3 rounded-3xl border px-5 py-4 text-sm">

@@ -1,11 +1,12 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { DeployView } from "@/components/deploy/deploy-view";
-
-export const metadata: Metadata = {
-  title: "Deploy · Play Console",
-};
-
-export default function DeployPage() {
-  return <DeployView />;
+/**
+ * The root is the Backends page.
+ *
+ * A backend in an environment is the subject of this console — the frontends and
+ * the integrations are both downstream of it — so `/` goes there rather than to
+ * a landing page that would only be a menu.
+ */
+export default function RootPage() {
+  redirect("/backends");
 }

@@ -145,6 +145,13 @@ function alive(pid: number): boolean {
  * away. What cannot be recovered is its output — the pipes died with the process
  * that held them — so the card says so and offers the one thing that still
  * works, which is stopping it.
+ *
+ * It is also why the store is not the same thing as ownership. Next evaluates
+ * this module in the compiler workers it forks (`jest-worker/processChild.js`),
+ * and those workers come and go while the console is serving; one of them will
+ * find the state file and adopt whatever the console running beside it has
+ * started. Reading about a process is not holding it — see `cleanup` — and a
+ * service this process holds the child of is not an earlier session's at all.
  */
 function reattach(): void {
   if (!fs.existsSync(STATE_FILE)) return;
@@ -159,6 +166,10 @@ function reattach(): void {
   for (const entry of entries) {
     if (!entry?.pid || !alive(entry.pid)) continue;
     const service = serviceOf(entry.app);
+    // Already ours. A hot reload re-evaluates this module inside the process
+    // that started them, and re-adopting a service we are still holding would
+    // put a note about a dead console on a card that is very much alive.
+    if (service.child) continue;
     service.view = {
       ...service.view,
       status: "running",
@@ -530,6 +541,16 @@ export async function occupiedPorts(): Promise<number[]> {
  * nobody can free and running against an environment nobody chose. These
  * handlers are the whole of the cleanup: `exit` is synchronous, which `kill` is,
  * so the last thing the console does is take its children with it.
+ *
+ * **Its children.** The store also holds services `reattach` found in the state
+ * file, and those are not this process's to kill — which is not a nicety. Next
+ * forks a compiler worker per compilation, that worker evaluates this module,
+ * adopts what the state file lists, and exits moments later: a cleanup that
+ * killed everything it had *read about* therefore took down the dev servers of
+ * the console it was forked by. Start a second frontend and the first one died
+ * with the worker that noticed it. The live child handle is what says a service
+ * was started here, and it is the whole of the difference: a process is only
+ * ever ours to kill if we are the one holding its pipes.
  */
 export function installCleanup(): void {
   if (store.cleanupInstalled) return;
@@ -538,7 +559,7 @@ export function installCleanup(): void {
   const cleanup = () => {
     for (const app of APPS) {
       const service = store.services.get(app.key);
-      if (service) killService(service, "SIGKILL");
+      if (service?.child) killService(service, "SIGKILL");
     }
   };
 

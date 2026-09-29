@@ -1,15 +1,13 @@
 # `apps/play` — the console
 
-A local control room for the backend. It does three things, and they are the
-three things that otherwise live in a shell history nobody can read:
+A local control room for the backend. It answers three questions, and they are
+the three that otherwise live in a shell history nobody can read:
 
-- **deploys the backend to an environment**, as a checklist of every step a
-  successful deployment needs, with a check mark for each one that is already
-  satisfied;
-- **starts the frontends locally against an environment** — the studio, the
-  marketplace and the demo — without rewriting a single `.env.local`;
-- **holds the settings a deploy cannot discover** — the Google client id, its
-  secret and the callback URLs an environment's user pool is built from.
+- **Backends** — what a deploy reads and produces, what has been deployed, and
+  what this environment is saying;
+- **Frontends** — the three apps, what each one is handed, and where they run;
+- **Integrations** — the AWS account the console acts as, and the Vercel account
+  the two deployed apps live on.
 
 ```bash
 npm run play            # from the repository root
@@ -18,6 +16,79 @@ open http://localhost:3002
 
 It is not deployed anywhere, and it is not a Play product surface. It runs on
 your machine, with your AWS profile, and its subject is this checkout.
+
+## The shape of it
+
+The unit is **a backend, in an environment** — the whole console is about that
+one sentence, so everything is downstream of it:
+
+```
+Frontends        /frontends        all three, what is up, and Start
+                 /frontends/<app>  one of them — Env variables · Deployments · Logs
+                                   ×  an environment
+
+Backends         play              Env variables · Deployments · Logs
+                                   ×  an environment
+
+Integrations     AWS      who the console acts as, and what is deployed
+                 Vercel   where the two deployed apps run, read-only
+```
+
+Which one, and against what, are **two dropdowns at the top of the page they
+belong to**, in the same place, because they are the same shape of question. On
+the frontends list the first of them *opens* a frontend rather than selecting one
+in place: the frontend is a route, so one app's output is linkable, the back
+button returns to the list, and the list keeps saying what all three are doing
+while you read about one of them. The environment dropdown is the same control on
+every page, and it writes the state the whole console reads, so moving between
+pages keeps the environment you were looking at.
+
+Starting a frontend is **above the tabs**, beside the environment it would be
+started against: it is the page's subject rather than one of its three views.
+
+The environment is deliberately not in the rail. A list there would be a second
+place to select the same thing, which is a second answer to one question — and
+the rail is left with the three parts of the problem instead of a menu.
+
+### Env variables — inputs, and outputs
+
+The one tab that is not the same on both pages, because the two directions are
+opposite:
+
+- **A backend's inputs** are what a *person* supplies, because nothing can
+  discover them: the Google OAuth client, its secret, the origins Cognito will
+  accept, the address invitations come from. They are written by the form on that
+  tab and read by a deploy.
+- **A backend's outputs** are what the *deploy* produces — the API URL, the pool,
+  its app client, the Hosted UI domain, the distribution.
+- **A frontend's variables** are those same outputs with different names. A
+  frontend has none of its own; the table's job is to show the copy each one is,
+  and where it came from.
+
+Calling all of it "environment variables" would hide the only thing worth knowing
+about any of it: which direction the value travels, and who reads it.
+
+### Deployments
+
+For a backend, this tab *is* the deploy page — the thirteen-step checklist, the
+transcript, the button — plus what CloudFormation has actually done, read from
+the stacks rather than remembered by this process. A history kept on
+`globalThis` would begin when you opened the page.
+
+For a frontend it is where the app is running: locally from here, and on Vercel
+if that project is connected.
+
+### Logs
+
+For a backend: CloudWatch, **one function at a time**, event-driven ones first.
+`FilterLogEvents` takes a single log group and a new environment has 158 of them,
+so fanning out per request would be 158 API calls to draw a screen. The
+event-driven ones come first because they never answer a request and therefore
+have nowhere else to say anything.
+
+For a frontend: the `next dev` output, straight from the process the console
+started — including one started before the page was opened, because the server
+keeps the buffer.
 
 ## Why it is a step at all
 
@@ -275,13 +346,25 @@ src/app/api/
   environments/[stage]/settings
                    read or write one environment's        (GET / PUT)
                    credentials and mail settings
+  backends/[stage]/env
+                   inputs and outputs                      (GET)
+  backends/[stage]/deployments
+                   CloudFormation's own history            (GET)
+  backends/[stage]/logs
+                   the stage's functions, or one's logs    (GET)
+  frontends/[app]/env
+                   what one app is handed, for one stage   (GET)
+  vercel           projects, deployments and env vars     (GET / PUT)
 
 src/components/
   console/         the frame: the rail, the environment picker, the theme
+  backends/        the three tabs for a backend
+  frontends/       the list, one app's page, and the environment picker both use
+  integrations/    AWS and Vercel
   deploy/          the checklist, the step rows, the transcript, the result
-  apps/            the three cards
+  apps/            the service hook the frontend pages are built on
   settings/        the credentials form, and the hook that loads it
-  ui/              button, card, chip, field — the design system, such as it is
+  ui/              button, card, chip, field, tabs, picker — the design system
 ```
 
 ## What it will not do
@@ -296,9 +379,12 @@ src/components/
   `describe` or a `list`. The writes are the ones in the table above, and the
   transcript shows the `cdk` and `aws` invocations they amount to.
 - **Survive its own dev server restarting.** The run and the service registry
-  live on `globalThis`, so a hot reload keeps them; restarting the console
-  process forgets the services it started, and the exit handlers stop them
-  rather than orphaning them.
+  live on `globalThis`, so a hot reload keeps them. Restarting the console
+  process stops the dev servers it started, rather than orphaning them; one that
+  outlived its console another way — a `SIGKILL`, a crash — is adopted from the
+  state file the console keeps about itself in the OS temporary directory, so it
+  is shown rather than forgotten, and it is not killed by a console that did not
+  start it.
 
 ## Reading the transcript
 

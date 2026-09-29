@@ -40,7 +40,7 @@ import type { RunStatus, StepView } from "@/lib/types";
  * deployment needs, and a checklist you only see after the fact is a log.
  */
 
-export function DeployView() {
+export function DeployView({ embedded = false }: { embedded?: boolean } = {}) {
   const { stage, environment, state, unknown } = useShell();
   const deploy = useDeploy();
   const [preview, setPreview] = useState<StepView[] | null>(null);
@@ -95,13 +95,15 @@ export function DeployView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Deploy</h1>
-        <p className="text-muted-foreground text-sm">
-          Every step a stage needs, and a check mark for each one that is already satisfied.
-          Running it again is safe — that is what the check marks are.
-        </p>
-      </header>
+      {embedded ? null : (
+        <header className="flex flex-col gap-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Deploy</h1>
+          <p className="text-muted-foreground text-sm">
+            Every step a stage needs, and a check mark for each one that is already satisfied.
+            Running it again is safe — that is what the check marks are.
+          </p>
+        </header>
+      )}
 
       <EnvironmentCard
         stage={stage}

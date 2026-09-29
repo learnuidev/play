@@ -244,6 +244,133 @@ export interface EnvironmentSettingsInput {
 }
 
 /* ------------------------------------------------------------------ *
+ * Backends: what a deploy reads and produces, and what it did
+ * ------------------------------------------------------------------ */
+
+export interface BackendFunctionView {
+  /** The deployed Lambda name: `play-<stage>-<key>`. */
+  name: string;
+  key: string;
+  logGroup: string;
+  runtime: string | null;
+  modified: string | null;
+  /** Never answers a request, so nowhere else to say anything. */
+  eventDriven: boolean;
+}
+
+export interface LogEventView {
+  at: number;
+  stream: string;
+  message: string;
+}
+
+export interface BackendLogs {
+  function: string;
+  logGroup: string;
+  events: LogEventView[];
+  /** Why the list is empty, when it is — "nothing ran" beats a blank panel. */
+  note: string | null;
+}
+
+/**
+ * One row of an environment's variables.
+ *
+ * The same shape for a **backend's inputs** (what a deploy reads: the Google
+ * client, the callback URLs, the mail sender), its **outputs** (what it
+ * produces: the API URL, the pool, its client and domain), and a **frontend's**
+ * variables, because they are all "a name, a value, and where it comes from" —
+ * and the interesting part of every one of them is that last clause.
+ */
+export interface EnvRow {
+  key: string;
+  /** Null when the value is a secret, or when there is nothing to show yet. */
+  value: string | null;
+  /** Where it comes from, in the environment's own words. */
+  source: string;
+  /** A credential: reported as set or not, never echoed. */
+  secret?: boolean;
+  /** Written by the Settings form rather than by a deploy. */
+  editable?: boolean;
+  /** Which surface reads it — how a value here reaches a browser. */
+  usedBy?: string[];
+}
+
+export interface BackendEnvView {
+  stage: string;
+  inputs: EnvRow[];
+  outputs: EnvRow[];
+}
+
+export interface FrontendEnvView {
+  app: AppKey;
+  stage: string;
+  rows: EnvRow[];
+  /** The app is running locally against *this* stage right now. */
+  running: boolean;
+}
+
+/** A CloudFormation stack event: what actually happened, and when. */
+export interface DeploymentEventView {
+  at: number;
+  stack: string;
+  status: string;
+  reason: string | null;
+  resource: string | null;
+}
+
+export interface DeploymentHistoryView {
+  stage: string;
+  events: DeploymentEventView[];
+  note: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Integrations
+ * ------------------------------------------------------------------ */
+
+export interface VercelDeploymentView {
+  id: string;
+  url: string | null;
+  state: string;
+  target: string | null;
+  createdAt: number | null;
+  branch: string | null;
+  commitMessage: string | null;
+  commitSha: string | null;
+}
+
+export interface VercelEnvVar {
+  key: string;
+  /** Null for a sensitive variable — Vercel does not return those. */
+  value: string | null;
+  targets: string[];
+}
+
+export interface VercelProjectView {
+  app: AppKey;
+  /** The project name `docs/deploy.md` suggests. */
+  name: string;
+  /** What Vercel says the project builds, when it has been found. */
+  rootDirectory: string | null;
+  /** The custom domain the project serves, if it has been added. */
+  domain: string;
+  /** False when the account has no project by that name — reported, not guessed. */
+  found: boolean;
+  id: string | null;
+  prodUrl: string | null;
+  deployments: VercelDeploymentView[];
+  env: VercelEnvVar[];
+  error: string | null;
+}
+
+export interface VercelOverview {
+  connected: boolean;
+  tokenSource: "environment" | "file" | null;
+  projects: VercelProjectView[];
+  error: string | null;
+}
+
+/* ------------------------------------------------------------------ *
  * What crosses the wire
  * ------------------------------------------------------------------ */
 

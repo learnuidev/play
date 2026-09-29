@@ -5,20 +5,19 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   CloudIcon,
+  GlobeIcon,
   MoonIcon,
   PlusIcon,
   RocketIcon,
   ServerIcon,
-  SlidersHorizontalIcon,
   SunIcon,
   TerminalIcon,
 } from "lucide-react";
 
-import { Chip, Dot, type Tone } from "@/components/ui/chip";
+import { Chip, Dot } from "@/components/ui/chip";
 import { Button, IconButton } from "@/components/ui/button";
 import { useNameStage, useShell, useTheme } from "@/components/console/state";
 import { cn } from "@/lib/cn";
-import type { EnvironmentView } from "@/lib/types";
 
 /**
  * The frame: a rail on the left, and the page beside it.
@@ -36,15 +35,39 @@ import type { EnvironmentView } from "@/lib/types";
  * console exists rather than a shell script and a `tail -f`.
  */
 
+/**
+ * The rail, in three parts.
+ *
+ * The console has one subject — a backend, in an environment — and two things
+ * that hang off it: the frontends that consume it, and the services it is
+ * deployed through. So the rail is those three, in that order, rather than a
+ * list of pages: *what you are deploying*, *what reads it*, and *where it
+ * lives*.
+ *
+ * The environment is deliberately **not** in the rail. It is a dropdown on the
+ * page it applies to, beside the other dropdown that answers the same shape of
+ * question — which backend, which environment — and it writes the same state
+ * the whole console reads, so moving between pages keeps the environment you
+ * were looking at.
+ */
 const NAV = [
-  { href: "/", label: "Deploy", icon: RocketIcon, hint: "the backend, to an environment" },
-  { href: "/apps", label: "Frontends", icon: ServerIcon, hint: "the three apps, locally" },
   {
-    href: "/settings",
-    label: "Settings",
-    icon: SlidersHorizontalIcon,
-    hint: "what the environment is configured with",
+    href: "/backends",
+    label: "Backends",
+    icon: CloudIcon,
+    hint: "the API, per environment",
   },
+  {
+    href: "/frontends",
+    label: "Frontends",
+    icon: ServerIcon,
+    hint: "the three apps, and what they read",
+  },
+] as const;
+
+const INTEGRATIONS = [
+  { href: "/integrations/aws", label: "AWS", icon: RocketIcon, hint: "who we act as" },
+  { href: "/integrations/vercel", label: "Vercel", icon: GlobeIcon, hint: "where the apps run" },
 ] as const;
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
@@ -112,20 +135,24 @@ function Rail() {
         {NAV.map((item) => (
           <NavItem key={item.href} {...item} />
         ))}
+
+        <p className="text-muted-foreground mt-5 px-3 text-xs font-medium tracking-wide uppercase">
+          Integrations
+        </p>
+        {INTEGRATIONS.map((item) => (
+          <NavItem key={item.href} {...item} compact />
+        ))}
       </nav>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <p className="text-muted-foreground px-2 text-xs font-medium">Environments</p>
-        <div className="flex min-h-0 flex-col gap-1 overflow-y-auto">
-          {loading && !state ? <RailSkeleton /> : null}
-          {state?.environments.map((environment) => (
-            <EnvironmentRow
-              key={environment.stage}
-              environment={environment}
-              active={environment.stage === stage}
-            />
-          ))}
-        </div>
+      {/*
+        The environments are *not* listed here. Which environment you are
+        looking at is a dropdown on the page it applies to, sitting beside the
+        other dropdown that answers the same shape of question — and a list here
+        would be a second place to select the same thing, which is a second
+        answer to one question. What is left is the one action that has nowhere
+        else to live: naming a stage that does not exist yet.
+      */}
+      <div className="flex min-h-0 flex-1 flex-col justify-end gap-2">
         <NewEnvironment />
       </div>
 
@@ -155,11 +182,14 @@ function NavItem({
   label,
   icon: Icon,
   hint,
+  compact = false,
 }: {
   href: string;
   label: string;
   icon: typeof RocketIcon;
   hint: string;
+  /** Integrations sit inside a group, so they are one line rather than two. */
+  compact?: boolean;
 }) {
   const pathname = usePathname();
   const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -168,65 +198,22 @@ function NavItem({
     <Link
       href={href}
       className={cn(
-        "group flex items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors",
+        "group flex items-center gap-3 rounded-2xl px-3 transition-colors",
+        compact ? "py-2" : "py-2.5",
         active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60",
       )}
     >
       <Icon className="size-4 shrink-0" />
-      <span className="flex min-w-0 flex-col">
+      <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-sm font-medium">{label}</span>
-        <span className="truncate text-xs text-muted-foreground">{hint}</span>
+        {compact ? null : (
+          <span className="text-muted-foreground truncate text-xs">{hint}</span>
+        )}
       </span>
+      {compact ? (
+        <span className="text-muted-foreground shrink-0 truncate text-xs">{hint}</span>
+      ) : null}
     </Link>
-  );
-}
-
-function RailSkeleton() {
-  return (
-    <div className="flex flex-col gap-1" aria-hidden>
-      {[0, 1].map((key) => (
-        <div key={key} className="bg-muted/40 h-14 animate-pulse rounded-2xl" />
-      ))}
-    </div>
-  );
-}
-
-/** The state of an environment, in one dot and one line. */
-function environmentTone(environment: EnvironmentView): { tone: Tone; label: string } {
-  if (environment.deployed) return { tone: "ok", label: "deployed" };
-  if (environment.partial) return { tone: "warn", label: "partly deployed" };
-  if (!environment.hasConfig) return { tone: "muted", label: "no config yet" };
-  return { tone: "muted", label: "not deployed" };
-}
-
-function EnvironmentRow({
-  environment,
-  active,
-}: {
-  environment: EnvironmentView;
-  active: boolean;
-}) {
-  const { setStage } = useShell();
-  const { tone, label } = environmentTone(environment);
-  const ready = environment.stacks.filter((stack) => stack.healthy).length;
-
-  return (
-    <button
-      type="button"
-      onClick={() => setStage(environment.stage)}
-      className={cn(
-        "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors",
-        active ? "bg-accent" : "hover:bg-accent/60",
-      )}
-    >
-      <Dot tone={tone} pulse={tone === "warn"} className="mt-0.5" />
-      <span className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="truncate font-mono text-sm font-medium">{environment.stage}</span>
-        <span className="text-muted-foreground truncate text-xs">
-          {ready} of 4 stacks · {label}
-        </span>
-      </span>
-    </button>
   );
 }
 
