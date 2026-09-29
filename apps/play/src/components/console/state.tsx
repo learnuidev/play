@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -184,24 +185,48 @@ const THEME_KEY = "play-console:theme";
  * A console is a room with a transcript in it, and a terminal is not the thing
  * to read in daylight — so `dark` is what a first visit gets and what the
  * document carries before React runs. The toggle is here because somebody
- * reading a stack trace at noon deserves a choice, and it is four lines of
- * state rather than a provider stack.
+ * reading a stack trace at noon deserves a choice, and it is a subscription
+ * rather than a provider stack.
+ *
+ * The choice is not kept in React. It already lives in two places React does
+ * not own — the class the head script puts on `<html>` before the first paint,
+ * and the `localStorage` entry behind it — so React reads the document and is
+ * told when it changes. A `useState` copy is what made light mode fail to
+ * survive a reload: with one effect reading the stored value and another
+ * writing the state, the write ran during the mount commit, before the read had
+ * been applied, and the default was stored over the choice.
  */
+const themeListeners = new Set<() => void>();
+
+function subscribeTheme(onChange: () => void): () => void {
+  themeListeners.add(onChange);
+  return () => {
+    themeListeners.delete(onChange);
+  };
+}
+
+/** The document is the record here, not a mirror of one. */
+function themeSnapshot(): Theme {
+  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
+/** What the server renders, and so what hydration must agree with. */
+function themeOnServer(): Theme {
+  return "dark";
+}
+
+/** The one place the choice is written: `<html>`, its storage, its readers. */
+function applyTheme(next: Theme): void {
+  document.documentElement.classList.toggle("dark", next === "dark");
+  window.localStorage.setItem(THEME_KEY, next);
+  for (const listener of themeListeners) listener();
+}
+
 export function useTheme(): { theme: Theme; toggle: () => void } {
-  const [theme, setTheme] = useState<Theme>("dark");
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(THEME_KEY);
-    if (stored === "light" || stored === "dark") setTheme(stored);
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-    window.localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+  const theme = useSyncExternalStore(subscribeTheme, themeSnapshot, themeOnServer);
 
   return {
     theme,
-    toggle: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
+    toggle: () => applyTheme(theme === "dark" ? "light" : "dark"),
   };
 }
