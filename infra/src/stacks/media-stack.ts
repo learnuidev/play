@@ -64,15 +64,21 @@ export interface PlayMediaStackProps extends StackProps {
  * name (`CLOUDFRONT_KEY_PAIR_ID_PARAM`) — the same move as the private half, and
  * for the same kind of reason.
  *
- * **One consequence is worth knowing before the deploy that first does this.** A
- * stage deployed with an earlier version of this stack still *imports* the old
- * export, and this stack's update removes it — so the API stack goes first, once:
+ * **The first deploy that does this is two deploys**, because dropping a
+ * cross-stack reference is the one change `cdk deploy --all` cannot land in a
+ * single pass: it deploys the stack that provides an export before the stack that
+ * reads it, so this stack goes first, refuses to drop the export, and the stack
+ * whose new template stops reading it never gets its turn. The console's deploy
+ * step knows that and does it — it finds the readers with `list-imports`,
+ * deploys them on their own, and deploys everything again
+ * (`apps/play/src/server/plan.ts`). A person deploying by hand has to do the
+ * same, in the same order, with `--exclusively` on the first one:
  *
- *   cdk deploy PlayApiStack-<stage>   # drops the import; reads the id by name
- *   cdk deploy PlayMediaStack-<stage> # creates the new key, moves the group, deletes the old
+ *   cdk deploy PlayApiStack-<stage>   --exclusively  # drops the import
+ *   cdk deploy --all                                 # then everything
  *
- * After that pair of deploys the API stack holds no reference to the key at all,
- * and a rotation is the media stack alone.
+ * After that pair the API stack holds no reference to the key at all, and every
+ * rotation afterwards is this stack's deploy alone.
  */
 export class PlayMediaStack extends Stack {
   public readonly videosBucket: s3.IBucket;

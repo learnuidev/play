@@ -269,6 +269,36 @@ This only applies when the stack **creates** the pool — an imported pool alrea
 has its Google provider attached and no deploy touches it — which is why the
 step is a check mark on `dev` and real work on a new environment.
 
+### Step 10, and the export CloudFormation will not delete
+
+A cross-stack reference in this app is a CloudFormation **export**, and
+CloudFormation refuses to delete an export that another stack still imports:
+
+> Delete canceled. Cannot delete export
+> PlayMediaStack-test:ExportsOutputRefVideoPublicKeyE69C3160FF6036AB as it is in
+> use by PlayApiStack-test, … (and 2 more).
+
+`cdk deploy --all` deploys the stack that *provides* an export before the stacks
+that read it, so the change that **stops** exporting something cannot land in a
+single pass: the provider runs first, is refused, and the readers — whose new
+templates no longer import it — never get their turn. A person would have to
+deploy the readers on their own (`cdk deploy PlayApiStack-<stage> --exclusively`)
+and then everything, and then check that they got the order right. That is
+exactly the sort of thing a Deploy button should not need to be told.
+
+So the step does it. On a non-zero exit it reads the export's name out of the
+failure (`refusedExportName`), asks CloudFormation who still imports it
+(`list-imports`, because that sentence truncates at "(and 2 more)"), deploys those
+root stacks on their own, and deploys everything again. What the transcript shows
+is one red stack, a sentence saying what is being done about it, and a step that
+ends satisfied.
+
+Two deploys is not a retry: the first one genuinely cannot succeed. It is the one
+transition `--all` cannot express, it happens when a resource is replaced by one
+with a different logical id, and that is precisely how a CloudFront signing key is
+rotated — so the change that made that rotation possible is the change that first
+needed this.
+
 ### Step 8, and the two buckets a stage may not be able to create
 
 A stage that creates its own media gets **names CloudFormation makes up** unless

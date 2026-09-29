@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { LogStream } from "@/lib/types";
 import {
+  awsJson,
   bucketAccess,
   describeStack,
   describeStacks,
@@ -205,6 +206,45 @@ function assertOk(
   if (result.code !== 0) {
     throw new Error(`${what} failed — ${failureNote(result)}`);
   }
+}
+
+/**
+ * The export CloudFormation refused to delete, when that is what failed.
+ *
+ * A cross-stack reference is a CloudFormation *export*, and CloudFormation will
+ * not delete one that another stack still imports — so a change that stops
+ * exporting something, which is what replacing a resource with a differently
+ * named one does, fails on the stack that owns it with one of these two
+ * sentences. Both name the export, which is what `exportReaders` needs.
+ */
+function refusedExportName(output: string): string | undefined {
+  const patterns = [
+    /Cannot delete export (\S+) as it is in use by/i,
+    /Export (\S+) cannot be deleted as it is in use by/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(output);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+/**
+ * The stacks of this stage that still import an export.
+ *
+ * Asked of CloudFormation rather than parsed out of the failure, because that
+ * sentence truncates: past a couple of readers it says "(and 2 more)", and
+ * `list-imports` answers with every one of them. Filtered to this stage's four
+ * root stacks, because the rest of the answer is the nested stacks those roots
+ * create — and deploying a root deploys the nested stacks inside it.
+ */
+async function exportReaders(exportName: string, ctx: StepContext): Promise<string[]> {
+  const answer = await awsJson<{ Imports?: string[] }>(
+    ["cloudformation", "list-imports", "--export-name", exportName],
+    { profile: ctx.profile, region: ctx.region, optional: true },
+  );
+  const deployable = new Set(rootStackNames(ctx.stage));
+  return (answer?.Imports ?? []).filter((name) => deployable.has(name));
 }
 
 /**
@@ -874,6 +914,23 @@ export function buildPlan(stage: string): PlanStep[] {
    * Running it again against an environment that is up is a no-op at
    * CloudFormation's level — which is the property that matters, and the note
    * says which of the two happened.
+   *
+   * ## Why this can be two deploys, and why that is not a retry
+   *
+   * An export that a stack still imports cannot be deleted, and `cdk deploy
+   * --all` deploys the stack that *provides* an export before the stack that
+   * reads it. So the one change that cannot land in a single pass is the change
+   * that **removes a cross-stack reference**: the provider runs first, refuses to
+   * drop the export, and the reader — whose new template no longer reads it —
+   * never gets its turn. That is a real change rather than a transient failure:
+   * making a CloudFront signing key rotatable is exactly this, because a key's id
+   * stops crossing stacks.
+   *
+   * Reported to a person, it is a sentence in a terminal about export names and
+   * `--exclusively`. Here it is the deploy doing what that sentence asks —
+   * `refusedExportName` finds the export, `exportReaders` finds who still imports
+   * it, those stacks deploy on their own first, and then everything deploys. What
+   * the person sees is a deploy that worked.
    */
   const deploy: PlanStep = {
     id: "deploy",
@@ -885,40 +942,71 @@ export function buildPlan(stage: string): PlanStep[] {
       /** `<stack>: 'changed' | 'unchanged'`, as CDK reports each one. */
       const perStack = new Map<string, "changed" | "unchanged">();
 
-      const result = await cdk(
-        ctx,
-        [
-          "deploy",
-          "--all",
-          "--require-approval",
-          "never",
-          "--progress",
-          "events",
-          "--context",
-          `stage=${ctx.stage}`,
-        ],
-        {
-          timeoutMs: 60 * 60_000,
-          // The transcript and a parser both, which is why `exec` takes the
-          // line handler rather than always writing to the transcript itself.
-          onLine: (stream, text) => {
-            ctx.log(stream, text);
-            // ` ✅  PlayApiStack-dev (no changes)`. The variation selector is
-            // optional in the pattern because whether an emoji carries U+FE0F
-            // depends on how it was typed, and a regex that assumes one silently
-            // stops matching when somebody's terminal or CDK version differs.
-            const match = /^\s*(?:✅|❌|✨|✔|ℹ)\uFE0F?\s+(Play\S+)\s*(\(no changes\))?/.exec(
-              text.replace(/^\s+/, " "),
-            );
-            if (match) {
-              perStack.set(match[1], match[2] ? "unchanged" : "changed");
-              const changed = [...perStack.values()].filter((v) => v === "changed").length;
-              const same = [...perStack.values()].filter((v) => v === "unchanged").length;
-              ctx.progress(`${changed} changed · ${same} already in place`);
-            }
-          },
-        },
-      );
+      // The transcript and a parser both, which is why `exec` takes the line
+      // handler rather than always writing to the transcript itself.
+      const onLine = (stream: LogStream, text: string) => {
+        ctx.log(stream, text);
+        // ` ✅  PlayApiStack-dev (no changes)`. The variation selector is
+        // optional in the pattern because whether an emoji carries U+FE0F
+        // depends on how it was typed, and a regex that assumes one silently
+        // stops matching when somebody's terminal or CDK version differs.
+        const match = /^\s*(?:✅|❌|✨|✔|ℹ)\uFE0F?\s+(Play\S+)\s*(\(no changes\))?/.exec(
+          text.replace(/^\s+/, " "),
+        );
+        if (match) {
+          perStack.set(match[1], match[2] ? "unchanged" : "changed");
+          const changed = [...perStack.values()].filter((v) => v === "changed").length;
+          const same = [...perStack.values()].filter((v) => v === "unchanged").length;
+          ctx.progress(`${changed} changed · ${same} already in place`);
+        }
+      };
+
+      const options = { timeoutMs: 60 * 60_000, onLine };
+      const args = (...extra: string[]) => [
+        "deploy",
+        ...extra,
+        "--require-approval",
+        "never",
+        "--progress",
+        "events",
+        "--context",
+        `stage=${ctx.stage}`,
+      ];
+
+      let result = await cdk(ctx, args("--all"), options);
+
+      // Bounded rather than `if`: a deploy can be removing more than one
+      // cross-stack reference — rolling a stage from an older shape of the app
+      // can drop two — and each one is found, unblocked and retried the same way.
+      // An export is unblocked once: if the same one is refused again, the
+      // readers' own deploy did not drop the import, and repeating it would only
+      // spend another ten minutes arriving at the same sentence.
+      const unblocked = new Set<string>();
+
+      for (let recovered = 0; recovered < 3 && result.code !== 0 && !result.timedOut; recovered++) {
+        const refused = refusedExportName(`${result.stdout}\n${result.stderr}`);
+        if (!refused || unblocked.has(refused)) break;
+        unblocked.add(refused);
+
+        const readers = await exportReaders(refused, ctx);
+        if (readers.length === 0) break;
+
+        ctx.log(
+          "out",
+          `\nCloudFormation will not delete the export ${refused} while ${readers.join(", ")}\n` +
+            `still import${readers.length === 1 ? "s" : ""} it, and CDK deploys the stack that provides an export\n` +
+            "before the stacks that read it. Deploying the readers on their own first, so their\n" +
+            "templates stop importing it, then deploying everything.\n\n",
+        );
+
+        // `--exclusively`, or CDK would drag the providing stack in ahead of
+        // these and hit the same wall: `cdk deploy <stack>` deploys that stack's
+        // dependencies with it unless it is told not to.
+        const first = await cdk(ctx, args(...readers, "--exclusively"), options);
+        assertOk(first, `cdk deploy ${readers.join(" ")}`, 60 * 60_000);
+
+        result = await cdk(ctx, args("--all"), options);
+      }
 
       assertOk(result, "cdk deploy", 60 * 60_000);
 

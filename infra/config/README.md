@@ -91,7 +91,9 @@ name — CloudFormation then reports it as the generic `Invalid request provided
 AWS::CloudFront::PublicKey` — so the version is what turns the rotation into a
 *new* key: the stack creates it, moves the key group to it, deletes the old one,
 and rewrites `cloudFrontPublicKeyIdParam`. The distribution and the API stack
-both carry on untouched.
+carry on untouched — and a stage that is *still* importing that id across stacks
+is why the first deploy of this shape is two passes rather than one, which
+`PlayMediaStack` and the console's deploy step both explain.
 
 **The Google client secret is not in this file**, and must not be. It is a
 credential, this file is committed, and CloudFormation refuses the SSM Secure
