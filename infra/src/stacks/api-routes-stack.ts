@@ -10,6 +10,15 @@ import type { PlayConfig } from '../config';
 import { pascal } from '../naming';
 import type { GroupPlan } from './api-groups';
 
+// Deployed strings here are ASCII, and that is a rule rather than a preference.
+// An em-dash in a Lambda description — which is how the rest of this repository
+// writes, in comments — comes back from CloudFormation's `GetTemplate` as `?`,
+// so `cdk diff` reports every one of them as drift on every run and a deploy
+// flips them back and forth forever. The resource itself gets the right
+// character; it is the template read-back that does not round-trip it. A plain
+// hyphen costs nothing and keeps `cdk diff` meaning "something actually
+// changed".
+
 /**
  * The headers a browser may send on a cross-origin call to this API.
  *
@@ -188,7 +197,7 @@ export class ApiRoutesStack extends NestedStack {
       // recoverable — the function keys in `src/generated/service.ts` are what
       // it was built from.
       functionName: name,
-      description: spec.description ?? `${spec.key} — see src/generated/service.ts`,
+      description: spec.description ?? `${spec.key} - see src/generated/service.ts`,
       runtime: lambda.Runtime.NODEJS_22_X,
       code,
       handler,

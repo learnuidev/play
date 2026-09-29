@@ -83,8 +83,9 @@ a Lambda's environment, and the failure surfaces as a 500 at the first request.
 | `scripts/import-state.mjs` | Reads the existing resources out of AWS into `config/play-<stage>.json`. Read-only |
 | `scripts/generate-from-serverless.mjs` | The one-shot transcription that produced `src/generated/service.ts`. Kept as the record of how |
 | `scripts/adopt-cognito.mjs` | Points the imported user pool's pre sign-up trigger at the CDK function. Runs once, during the cutover |
-| `scripts/handover-s3-notifications.mjs` | Removes the legacy stack's S3 notification rule so the bucket's configuration has one owner. Runs once, **before the first deploy** |
-| `scripts/teardown-legacy-stack.sh` | Removes the old Serverless stack **without deleting the data it owns** |
+| `scripts/retain-legacy-resources.mjs` | Marks the old stack's 35 stateful resources `DeletionPolicy: Retain` and updates the stack. Runs once, **before** the teardown |
+| `scripts/teardown-legacy-stack.sh` | Removes the old Serverless stack **without deleting the data it owns**. Refuses unless the retention above is in place |
+| `scripts/handover-s3-notifications.mjs` | Removes the legacy stack's S3 notification rule so the bucket's configuration has one owner. Runs once, before the first deploy |
 
 ## Bundling, and why it is not `NodejsFunction`
 

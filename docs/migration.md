@@ -110,14 +110,27 @@ because the alternative is checking it in production.
 | Lambda environment | All 35 variables, identical values — the imported ones as literal strings instead of `Ref`s, which resolve to the same names |
 | IAM | The same actions per table. The media role, the session policy and the SSM parameter grant are unchanged |
 
-What could not be checked without deploying is the part that always could not:
-whether the handlers answer the same way, which is why the cutover below runs the
-two APIs side by side rather than swapping them.
+Then, deployed, against the **running** APIs:
+
+| Check | Result |
+| --- | --- |
+| Every method on both APIs, called | **220 of 220 returned the same status code** |
+| Every CORS preflight | **87 of 87 identical** — same code, same `Allow-Methods`, same headers |
+| Public catalog response | byte-identical JSON |
+| S3 → Lambda | a probe upload fired `play-dev-process-video`, which logged the expected skip and exited clean |
+| The same 220 methods again, after the legacy stack was deleted | unchanged |
+
+What could not be checked, and still cannot be without credentials, is an
+*authenticated* call — signing in, and playing a lesson through a signed URL. The
+authorizer's configuration was compared resource-for-resource, and it rejects
+what it should; that it *accepts* is the one thing a person has to confirm.
 
 ## The cutover
 
-The old stack is still there and still serving. Nothing below has been done —
-these are the steps, in this order.
+This has been run for `dev`. The steps are here in the order they have to happen
+for a stage that has not been migrated — and they are the order they were
+**discovered** to need, which is not the order they were written in. Three of
+them exist because the obvious approach does not work; each says so.
 
 ### 1. Bootstrap, once per account and region
 
@@ -230,25 +243,65 @@ disappears in step 7, at which point **sign-up stops working**. The failure does
 not look like a deleted stack, which is why the teardown script refuses to run
 until this has been done.
 
-### 7. Remove the old stack
+### 7. Mark the stateful resources `Retain`, then remove the old stack
 
 ```bash
-infra/scripts/teardown-legacy-stack.sh --plan     # what would go, and what would stay
+node infra/scripts/retain-legacy-resources.mjs --plan   # the 35 resources
+node infra/scripts/retain-legacy-resources.mjs          # applies DeletionPolicy: Retain
+
+infra/scripts/teardown-legacy-stack.sh --plan           # what would go, what would stay
 infra/scripts/teardown-legacy-stack.sh
 ```
 
-`--retain-resources`, not a plain delete. It names 35 resources to leave in
-place — 23 tables, the buckets, the bucket policy, the CloudFront pieces, the
-pool and its client, and the S3 notification marker — so the stack goes and
-everything that holds data stays, unmanaged, exactly where the CDK stacks already
-reference it. What is deleted is what the migration replaced: the REST API, the
-134 functions, the 65 nested stacks, the execution role and the deployment
-bucket.
+**Two commands, not one, and the first is not optional.** There is no flag that
+makes `delete-stack` keep resources:
 
-The script checks the CDK stacks exist, checks the pool's trigger has been
-repointed, prints the retained list, and offers `--plan`. It then verifies
-afterwards that the tables are still `ACTIVE`, the pool is still `Enabled`, and
-the bucket still has its notification.
+> When you delete a stack, specify which resources to retain only when the stack
+> is in the DELETE_FAILED state.
+
+`--retain-resources` is the retry path for a deletion that *already failed* — you
+run it again and skip whatever blocked it. Against a healthy stack CloudFormation
+rejects the call outright, before deleting anything, which is a good way to find
+this out and a bad way to rely on it.
+
+What works is `DeletionPolicy: Retain`, a *template* attribute: CloudFormation
+leaves the resource in place and stops managing it. So the retain script takes
+the stack's own template, adds the policy to the 35 resources that hold state —
+23 tables, the buckets, the bucket policy, the CloudFront pieces, the pool and
+its client, and the S3 notification marker — and updates the stack with it.
+
+Nothing is modified by that update: a deletion policy is not a resource property,
+so the marked resources do not even appear in the change set. What does appear is
+one entry per nested stack, and one per `AWS::Lambda::Permission` flagged
+`Conditional` because its `FunctionName` is an `Fn::GetAtt` of a function whose
+ARN cannot be resolved while the change set is computed. The script refuses only
+on a `True` replacement, and prints the count so the reasoning is visible.
+
+The template is staged in S3 rather than passed inline: at 543 KB it is ten times
+over the 51,200-byte `--template-body` limit, and the CLI reports that as
+`HTTP content length exceeded 251904 bytes` wrapped in an XML parse error — which
+reads as a broken installation rather than as a template that is too big. It is
+why Serverless uploaded this template too, and the bucket it left behind is where
+ours goes.
+
+The teardown then checks the CDK stacks exist, checks the pool's trigger has been
+repointed, **checks that every stateful resource is marked `Retain` and refuses
+to run otherwise**, empties the one bucket that is about to be deleted rather
+than retained (S3 will not delete a non-empty bucket, and that is a
+`DELETE_FAILED` on a stack that has already deleted everything else), prints the
+retained list, and verifies afterwards that the tables are still `ACTIVE`, the
+pool still exists, and the bucket still has its notification.
+
+### If the deletion fails
+
+It will not roll back — CloudFormation stops in `DELETE_FAILED` with most of the
+stack already gone and the blocking resource(s) still there. The script prints
+which ones and why. Clear whatever it was and run it again; the retained
+resources were never at risk, because the deletion policies were in place before
+the first attempt.
+
+The one this deployment hit: Serverless's deployment bucket, with 1.2 GB of
+zipped handlers in it. `aws s3 rm --recursive` and a second run finished it.
 
 ### 8. Optional, and worth it
 

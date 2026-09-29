@@ -213,7 +213,7 @@ export class PlayApiStack extends Stack {
           authorizerId: authorizer.ref,
           role,
           environment,
-          description: `${plan.group.id} routes — ${plan.group.description}`,
+          description: `${plan.group.id} routes - ${plan.group.description}`,
         }),
     );
 
@@ -434,7 +434,7 @@ export class PlayApiStack extends Stack {
 
     return new lambda.Function(this, `${pascal(spec.key)}Function`, {
       functionName: name,
-      description: spec.description ?? `${spec.key} — see src/generated/service.ts`,
+      description: spec.description ?? `${spec.key} - see src/generated/service.ts`,
       runtime: lambda.Runtime.NODEJS_22_X,
       code,
       handler,

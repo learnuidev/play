@@ -8,17 +8,28 @@
 # stack the ordinary way would take the product with it: 23 tables of courses,
 # lessons, memberships and credentials, and a user pool holding every account.
 #
-# `--retain-resources` is the way out. It names resources CloudFormation should
-# leave in place when the stack goes: they are removed from the stack's
-# management without being deleted, so the tables keep their data, the pool keeps
-# its accounts, and the CDK stacks that already reference them by name carry on.
-# Nothing about those resources changes. What changes is who is responsible for
-# them, and afterwards the answer is "nobody, until phase E of
-# docs/migration.md" — which is the state the CDK app is written to describe.
+# ## How the resources are kept
 #
-# What is *not* retained is the API, the functions, the methods and the
-# deployment bucket. Those are stateless, they are what the migration replaced,
-# and keeping them would be keeping the old API up.
+# `DeletionPolicy: Retain`, applied to the stack's template by
+# `infra/scripts/retain-legacy-resources.mjs`. `Retain` means CloudFormation
+# leaves the resource in place when the stack goes and simply stops managing it,
+# which is exactly the state the CDK app is written for: it references all of
+# these by name and never creates them.
+#
+# This script **checks that the policy is in place and refuses to run without
+# it.** That check is the whole safety story, because the two obvious ways to get
+# this wrong are both silent:
+#
+#   - `aws cloudformation delete-stack --retain-resources …` looks like the
+#     answer and is not. It is only valid for a stack already in `DELETE_FAILED`
+#     — it is the retry path for a deletion that failed, not a way to say "keep
+#     these". Against a healthy stack CloudFormation rejects the call outright.
+#   - A plain `delete-stack` on a stack with no deletion policies deletes
+#     everything, and reports success.
+#
+# Run the retain script first:
+#
+#   node infra/scripts/retain-legacy-resources.mjs
 #
 # ## Before running this
 #
@@ -27,10 +38,11 @@
 #      trigger is a Lambda in this stack; deleting it without repointing the
 #      trigger stops sign-up working, and nothing about that failure looks like
 #      a deleted stack.
-#   3. You have read the retained-resource list below. It is the last chance to.
+#   3. The apps have been used against the new API — signing in, and playing a
+#      lesson. This is the last step that cannot be undone, and the old API is
+#      the only rollback there is.
 #
-# The script checks (1) and (2) and refuses if either is missing. `--plan` shows
-# (3) without doing anything.
+# The script checks (1) and (2) and refuses if either is missing. (3) is yours.
 #
 # Usage:
 #   ./infra/scripts/teardown-legacy-stack.sh [options]
@@ -73,49 +85,9 @@ done
 
 LEGACY_STACK="${LEGACY_STACK:-play-backend-$STAGE}"
 CONFIG="$ROOT/infra/config/play-$STAGE.json"
+RETAIN="$ROOT/infra/scripts/retain-legacy-resources.mjs"
 
 aws_() { aws "$@" --profile "$PROFILE" --region "$REGION"; }
-
-# Resource types this script retains, and why each one is on the list.
-#
-# By *type* rather than by name: the names are exactly the thing a regenerated
-# table changes, and a name quietly missing from a hardcoded list would be a
-# table deleted by the script whose whole job is not to delete tables.
-#
-#   DynamoDB tables          every course, lesson, membership, comment, credential
-#   S3 buckets               every uploaded and processed video, and the CDN logs
-#   S3 bucket policy         CloudFront's permission to read the videos — declared
-#                            in PlayMediaStack, and lost with the stack otherwise
-#   CloudFront pieces        the distribution, its key group and its public key: a
-#                            new distribution is a new domain in every player
-#   Cognito pieces           every account, including the federated ones
-#   Custom::S3               the bucket's notification configuration, which
-#                            PlayApiStack set. Deleting it wipes that
-#                            configuration, after which uploads stop being
-#                            processed — silently, because nothing errors
-RETAINED_TYPES=(
-  "AWS::DynamoDB::Table"
-  "AWS::S3::Bucket"
-  "AWS::S3::BucketPolicy"
-  "AWS::CloudFront::Distribution"
-  "AWS::CloudFront::KeyGroup"
-  "AWS::CloudFront::PublicKey"
-  "AWS::CloudFront::OriginAccessControl"
-  "AWS::Cognito::UserPool"
-  "AWS::Cognito::UserPoolClient"
-  "AWS::Cognito::UserPoolDomain"
-  "AWS::Cognito::UserPoolIdentityProvider"
-  "Custom::S3"
-)
-
-# The one exception to the list above, and the only resource here whose deletion
-# is wanted: Serverless's own deployment bucket, which holds the zipped handlers
-# of a stack that is being removed. It carries no product data, and retaining it
-# would leave a bucket of dead artifacts that nothing will ever empty.
-RETAINED_EXCEPTIONS=(
-  "ServerlessDeploymentBucket"
-  "ServerlessDeploymentBucketPolicy"
-)
 
 echo "Legacy stack: $LEGACY_STACK (profile: $PROFILE, region: $REGION)"
 
@@ -162,43 +134,50 @@ EOF
 fi
 echo "Pre sign-up trigger points at the CDK function."
 
-# --- what to retain -----------------------------------------------------------
+# The check that matters. Without DeletionPolicy: Retain on the resources that
+# hold state, the command below deletes the product.
+if ! node "$RETAIN" --check --stage="$STAGE" --profile="$PROFILE" --region="$REGION"; then
+  cat >&2 <<EOF
 
-# `list-stack-resources` rather than `describe-stack-resources`, which silently
-# truncates at 100 resources on a stack this size and returns no NextToken.
-# `--retain-resources` accepts only resources in the *root* stack, and every
-# resource on the list above is one: the nested stacks hold functions and methods
-# and nothing else.
-RETAIN=()
-for type in "${RETAINED_TYPES[@]}"; do
-  while IFS= read -r id; do
-    [[ -z "$id" ]] && continue
-    for excluded in "${RETAINED_EXCEPTIONS[@]}"; do
-      [[ "$id" == "$excluded" ]] && continue 2
-    done
-    RETAIN+=("$id")
-  done < <(aws_ cloudformation list-stack-resources --stack-name "$LEGACY_STACK" \
-    --query "StackResourceSummaries[?ResourceType=='$type'].LogicalResourceId" \
-    --output text | tr '\t' '\n' | sort)
-done
+Refusing: the stateful resources in $LEGACY_STACK are not marked Retain, so
+deleting this stack would delete them — 23 tables of courses, lessons,
+memberships and credentials, and a user pool holding every account.
+
+Look at it, apply it, then come back:
+
+  node infra/scripts/retain-legacy-resources.mjs --stage=$STAGE --plan
+  node infra/scripts/retain-legacy-resources.mjs --stage=$STAGE
+EOF
+  exit 1
+fi
+
+# --- what stays, and what goes ------------------------------------------------
 
 # Counted by listing rather than with a `length` query: the CLI paginates this
-# call at 100 resources and applies the query to each page, so `length` answers
-# "100, 100, 100, 100, 100" for a stack of 500 and any arithmetic on it is wrong.
+# call at 100 resources and applies the query to each page, so a `length` answer
+# for a stack of 500 comes back as five separate hundreds.
 TOTAL="$(aws_ cloudformation list-stack-resources --stack-name "$LEGACY_STACK" \
   --query 'StackResourceSummaries[].LogicalResourceId' --output text \
   | tr '\t' '\n' | grep -c . || true)"
 
-if [[ ${#RETAIN[@]} -eq 0 ]]; then
-  echo "Refusing: found no resources to retain, which cannot be right for this stack." >&2
-  echo "Check that '$LEGACY_STACK' is the legacy Serverless stack." >&2
-  exit 1
-fi
+TEMPLATE_FILE="$(mktemp)"
+trap 'rm -f "$TEMPLATE_FILE"' EXIT
+aws_ cloudformation get-template --stack-name "$LEGACY_STACK" --output json > "$TEMPLATE_FILE"
+
+RETAINED_LIST="$(node -e '
+  const fs = require("node:fs");
+  const template = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  for (const [id, resource] of Object.entries(template.TemplateBody.Resources ?? {})) {
+    if (resource.DeletionPolicy === "Retain") console.log(id);
+  }
+' "$TEMPLATE_FILE")"
+
+RETAINED="$(printf '%s\n' "$RETAINED_LIST" | grep -c . || true)"
 
 echo
 echo "$LEGACY_STACK holds $TOTAL root-stack resources."
-echo "${#RETAIN[@]} of them are retained — left in place, unmanaged by CloudFormation:"
-for id in "${RETAIN[@]}"; do echo "  retain  $id"; done
+echo "$RETAINED of them are marked Retain — left in place, unmanaged by CloudFormation:"
+printf '%s\n' "$RETAINED_LIST" | sed 's/^/  retain  /'
 
 if [[ "$PLAN" == true ]]; then
   echo
@@ -210,7 +189,8 @@ if [[ "$ASSUME_YES" != true ]]; then
   cat <<EOF
 
 Everything else is deleted: the REST API, the 134 functions, the methods, the
-execution role and the 65 nested stacks that hold the newer of those functions.
+execution role, the 65 nested stacks that hold the newer of those functions, and
+Serverless's deployment bucket.
 
 Type the stack name to continue:
 EOF
@@ -221,16 +201,104 @@ EOF
   fi
 fi
 
+# --- empty the buckets that are about to be deleted ---------------------------
+#
+# S3 refuses to delete a bucket that has anything in it. Serverless's own
+# deployment bucket is the one bucket this stack deletes rather than retains —
+# it holds the zipped handlers of the very stack being removed — and it has 1.2 GB
+# in it. Without this, `delete-stack` runs, deletes everything else, and fails on
+# that one resource with `DELETE_FAILED`, which needs a second pass to clear.
+#
+# Only buckets *without* the retention policy are touched. Emptying a retained
+# one would be the data loss this whole script exists to prevent.
+
+EMPTY_BUCKETS="$(node -e '
+  const fs = require("node:fs");
+  const template = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  for (const [id, resource] of Object.entries(template.TemplateBody.Resources ?? {})) {
+    if (resource.Type === "AWS::S3::Bucket" && resource.DeletionPolicy !== "Retain") {
+      console.log(id);
+    }
+  }
+' "$TEMPLATE_FILE")"
+
+for logical in $EMPTY_BUCKETS; do
+  name="$(node -e '
+    const fs = require("node:fs");
+    const template = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const resource = template.TemplateBody.Resources[process.argv[2]] ?? {};
+    process.stdout.write(String(resource.Properties?.BucketName ?? ""));
+  ' "$TEMPLATE_FILE" "$logical")"
+
+  if [[ -z "$name" ]]; then
+    # The name is generated, so read it from the stack's outputs instead — which
+    # is where this deployment has always recorded it.
+    name="$(aws_ cloudformation describe-stacks --stack-name "$LEGACY_STACK" \
+      --query "Stacks[0].Outputs[?OutputKey=='ServerlessDeploymentBucketName'].OutputValue" \
+      --output text)"
+  fi
+
+  [[ -z "$name" || "$name" == "None" ]] && continue
+
+  objects="$(aws_ s3 ls "s3://$name" --recursive 2>/dev/null | wc -l | tr -d ' ')"
+  echo
+  echo "Emptying $logical ($name): $objects object(s), about to be deleted with the stack"
+
+  if [[ "$objects" != "0" ]]; then
+    aws_ s3 rm "s3://$name" --recursive --only-show-errors
+  fi
+
+  # A versioned bucket keeps its objects after `rm`, and refuses to be deleted
+  # just the same.
+  versions="$(aws_ s3api list-object-versions --bucket "$name" --output json 2>/dev/null \
+    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);process.stdout.write(String((j.Versions??[]).length+(j.DeleteMarkers??[]).length))}catch{process.stdout.write("0")}})' 2>/dev/null || echo 0)"
+
+  if [[ "$versions" != "0" ]]; then
+    echo "  (versioned: removing $versions version(s) too)"
+    aws_ s3api delete-objects --bucket "$name" --delete "$(aws_ s3api list-object-versions \
+      --bucket "$name" --query '{Objects: [].{Key:Key,VersionId:VersionId}}' --output json \
+      | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const j=JSON.parse(d);process.stdout.write(JSON.stringify({Objects:(j.Objects??[]).filter(o=>o.Key)}))})')" >/dev/null 2>&1 || true
+  fi
+done
+
+# --- delete -------------------------------------------------------------------
+#
+# A plain delete. The deletion policies are what keep the stateful resources, and
+# there is no flag here that could accidentally change that.
+
 echo
 echo "Deleting $LEGACY_STACK..."
-aws_ cloudformation delete-stack --stack-name "$LEGACY_STACK" --retain-resources "${RETAIN[@]}"
-aws_ cloudformation wait stack-delete-complete --stack-name "$LEGACY_STACK"
+aws_ cloudformation delete-stack --stack-name "$LEGACY_STACK"
+
+if ! aws_ cloudformation wait stack-delete-complete --stack-name "$LEGACY_STACK" 2>/dev/null; then
+  # A deletion that fails does not roll back — the stack stops in DELETE_FAILED
+  # with most of itself already gone and one or two resources still there. The
+  # reason is recorded per resource, so print it rather than the waiter's message
+  # about a terminal state.
+  cat >&2 <<EOF
+
+Deletion did not finish. $LEGACY_STACK is in DELETE_FAILED, which is a stack
+that has mostly been deleted and is waiting for the resource(s) that blocked it:
+
+EOF
+  aws_ cloudformation list-stack-resources --stack-name "$LEGACY_STACK" \
+    --query "StackResourceSummaries[?ResourceStatus=='DELETE_FAILED'].[LogicalResourceId,ResourceType,ResourceStatusReason]" \
+    --output text 2>/dev/null | sed 's/^/  /' >&2
+
+  cat >&2 <<EOF
+
+Everything retained is untouched — the deletion policies were in place before
+this ran, so nothing that holds state was at risk. Clear whatever blocked it and
+run this script again: it will finish the deletion.
+EOF
+  exit 1
+fi
 
 # --- verify -------------------------------------------------------------------
 #
-# The tables are the ones that matter, so they are the ones checked by name:
-# the physical names are in the config file, which is the same list the CDK app
-# imports from. Everything else is checked by whether AWS still answers for it.
+# Against AWS, not against the plan. The tables are checked by name, from the
+# config file the CDK app imports them by; everything else by whether AWS still
+# answers for it.
 
 echo
 echo "Verifying what was meant to survive:"
@@ -265,8 +333,8 @@ check "VideosBucket" aws_ s3api get-bucket-location --bucket "$BUCKET"
 check "CognitoUserPool" aws_ cognito-idp describe-user-pool --user-pool-id "$POOL"
 check "VideoDistribution" aws_ cloudfront get-distribution --id "$DIST"
 
-# The notification configuration is the one that fails quietly: put back by
-# PlayApiStack, and wiped if the retained marker did not do its job.
+# The S3 notification is the one that fails quietly: set by PlayApiStack, and
+# wiped if the retained marker did not do its job.
 NOTIFICATIONS="$(aws_ s3api get-bucket-notification-configuration --bucket "$BUCKET" \
   --query 'length(LambdaFunctionConfigurations)' --output text 2>/dev/null || echo 0)"
 printf '  %-30s %s\n' "S3 notifications" "$NOTIFICATIONS (expect 1)"

@@ -20,13 +20,14 @@ Use custom styls like these: text-[15px]
   are **imported** by `infra`, so a deploy neither changes nor deletes them — and
   some operations are API calls rather than deploys. [docs/migration.md](docs/migration.md)
   says which, and why.
-- The user pool has not been cut over yet: its pre sign-up trigger still points
-  at the old Serverless stack's function. Do not let anyone delete that stack
-  before `node infra/scripts/adopt-cognito.mjs` has run.
-- The videos bucket's S3 notification still belongs to the old stack. The first
-  `cdk deploy` of `PlayApiStack` fails until
-  `node infra/scripts/handover-s3-notifications.mjs` has been run once — two
-  rules for the same event and prefix are rejected by S3.
+- The migration is done for `dev`: the legacy `play-backend-dev` stack is gone,
+  the user pool's pre sign-up trigger and the bucket's S3 notification both point
+  at the CDK functions, and both apps are pointed at the new API URL. What
+  remains is phase E of [docs/migration.md](docs/migration.md) — owning the data
+  — and point-in-time recovery on the tables.
+- `infra/src/generated/service.ts` is the backend now. It is generated, and the
+  script that generated it cannot run any more because the YAML it read is gone.
+  Add a route by editing that file.
 
 ## Where things live
 

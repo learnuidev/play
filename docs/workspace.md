@@ -422,6 +422,7 @@ each one has a script:
 | Google sign-in enabled or rotated | `services/api/scripts/set-google-oauth.sh` |
 | The pool's pre sign-up trigger | `node infra/scripts/adopt-cognito.mjs` |
 | Rotating the CloudFront signing key | `services/api/scripts/generate-cloudfront-keypair.sh`, which ends with the two commands that apply it |
+| Marking the old stack's stateful resources `Retain` | `node infra/scripts/retain-legacy-resources.mjs` — must run first |
 | Removing the old Serverless stack | `infra/scripts/teardown-legacy-stack.sh` |
 | Handing the bucket's S3 notification over | `node infra/scripts/handover-s3-notifications.mjs` — once, before the first deploy |
 

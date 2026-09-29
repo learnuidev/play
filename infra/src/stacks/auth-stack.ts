@@ -119,7 +119,7 @@ export class PlayAuthStack extends Stack {
       value: String(this.googleSignInEnabled),
     });
     new CfnOutput(this, 'LinkFederatedUserFunctionArn', {
-      description: 'Pre sign-up trigger — the pool has to be pointed at this (scripts/adopt-cognito.sh)',
+      description: 'Pre sign-up trigger - the pool has to be pointed at this (scripts/adopt-cognito.sh)',
       value: this.linkFederatedUserFunction.functionArn,
     });
   }
