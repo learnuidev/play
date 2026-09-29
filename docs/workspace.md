@@ -8,7 +8,8 @@ play/
 ├── apps/
 │   ├── studio/           Play Studio — the creator's app (Next.js, port 3000)
 │   ├── marketplace/      Play Marketplace — the learner's app (Next.js, port 3001)
-│   └── demo/             Play Demo — somebody else's app (Next.js, port 4000)
+│   ├── demo/             Play Demo — somebody else's app (Next.js, port 4000)
+│   └── play/             Play Console — the control room (Next.js, port 3002)
 ├── packages/
 │   ├── types/            @play/types     — the shapes the API and both apps agree on
 │   ├── api/              @play/api       — the API client + React Query hooks
@@ -27,6 +28,7 @@ play/
 ```bash
 npm install                       # once, at the root: one lockfile, hoisted node_modules
 
+npm run play                      # the console, at http://localhost:3002
 npm run dev:studio                # http://localhost:3000
 npm run dev:marketplace           # http://localhost:3001
 npm run dev:demo                  # http://localhost:4000
@@ -47,6 +49,30 @@ npm run deploy:api                # just the API, which is the one that changes
 The two apps are deployed to Vercel as two projects built from this one
 repository; the backend keeps deploying from here to AWS, as above. That setup,
 and the configuration on the other side of it, is [deploy.md](deploy.md).
+
+### The console is not one of the apps
+
+`apps/play` is the fourth Next.js app and the only one that is not a surface. It
+deploys the backend and starts the other three; it renders no product screen, it
+imports no `@play/*` package, and it is not deployed anywhere. Its README is the
+document for it; what matters here is the boundary.
+
+It is deliberately outside the package graph rather than sharing `@play/ui`. The
+studio and the marketplace draw with those primitives because they are the same
+product seen from two sides; a control room that inherited them would tie an
+internal tool to a design meant to move as the product moves, and would pull
+Radix and Amplify into an app whose whole job is to run `aws` and `cdk`.
+
+Because it is outside, it is also outside the vocabulary's *rules* only in form:
+it follows the type scale, the radii, the hairline edges and the sentence case,
+and adds one thing the product apps do not have — an accent. Mint is a step that
+is satisfied, amber one that is running, rose one that failed. In the product a
+colour is decoration; in a console it is the answer.
+
+The one thing it shares is the truth about the deployment. It reads
+`infra/config/play-<stage>.json`, `scripts/api-config.env` and the stack outputs
+— the same three sources `get-env.mjs` and the CDK app read — rather than keeping
+a second copy of any of them.
 
 ### The third app is not part of the product
 

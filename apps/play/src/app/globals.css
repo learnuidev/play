@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+/*
+ * The console's theme tokens.
+ *
+ * They are the same values the studio and the marketplace carry — one product,
+ * one palette — with two differences that are the console's own:
+ *
+ * - it is dark to begin with, because it is a room with a transcript in it and
+ *   a terminal is not the thing to read in daylight;
+ * - there is an accent. The two product apps are near-monochrome on purpose;
+ *   here a colour has a job to do — mint means a step is satisfied, amber that
+ *   one is running, rose that one failed — so the tokens are tinted rather than
+ *   grey, and the tint is what carries the state.
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* Named outright rather than taken from `--font-sans`, which the product apps
+     leave undefined: a transcript is a column of tabular monospace, and a
+     self-referential variable is a font stack that resolves to nothing. */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-ok: var(--ok);
+  --color-ok-foreground: var(--ok-foreground);
+  --color-run: var(--run);
+  --color-run-foreground: var(--run-foreground);
+  --color-warn: var(--warn);
+  --color-warn-foreground: var(--warn-foreground);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.19 0.012 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.012 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.012 260);
+  --primary: oklch(0.24 0.02 262);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.96 0.004 255);
+  --secondary-foreground: oklch(0.24 0.02 262);
+  --muted: oklch(0.965 0.004 255);
+  --muted-foreground: oklch(0.53 0.015 258);
+  --accent: oklch(0.955 0.008 255);
+  --accent-foreground: oklch(0.24 0.02 262);
+  --destructive: oklch(0.58 0.21 18);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.9 0.006 255);
+  --input: oklch(0.9 0.006 255);
+  --ring: oklch(0.62 0.03 258);
+
+  --ok: oklch(0.62 0.13 158);
+  --ok-foreground: oklch(0.985 0 0);
+  --run: oklch(0.66 0.14 68);
+  --run-foreground: oklch(0.2 0.02 68);
+  --warn: oklch(0.66 0.14 68);
+  --warn-foreground: oklch(0.2 0.02 68);
+}
+
+.dark {
+  --background: oklch(0.145 0.008 264);
+  --foreground: oklch(0.965 0.003 260);
+  --card: oklch(0.185 0.009 264);
+  --card-foreground: oklch(0.965 0.003 260);
+  --popover: oklch(0.2 0.009 264);
+  --popover-foreground: oklch(0.965 0.003 260);
+  --primary: oklch(0.94 0.01 260);
+  --primary-foreground: oklch(0.185 0.009 264);
+  --secondary: oklch(0.25 0.01 264);
+  --secondary-foreground: oklch(0.965 0.003 260);
+  --muted: oklch(0.24 0.009 264);
+  --muted-foreground: oklch(0.66 0.012 260);
+  --accent: oklch(0.27 0.012 264);
+  --accent-foreground: oklch(0.965 0.003 260);
+  --destructive: oklch(0.68 0.19 18);
+  --destructive-foreground: oklch(0.16 0.02 18);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.55 0.02 260);
+
+  --ok: oklch(0.78 0.15 162);
+  --ok-foreground: oklch(0.18 0.03 162);
+  --run: oklch(0.8 0.14 78);
+  --run-foreground: oklch(0.2 0.03 78);
+  --warn: oklch(0.8 0.14 78);
+  --warn-foreground: oklch(0.2 0.03 78);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply font-sans antialiased;
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::selection {
+    @apply bg-run/30;
+  }
+}
+
+@layer components {
+  /*
+   * The canvas the whole console is drawn on.
+   *
+   * A hairline grid that fades out before the fold: it reads as a work surface
+   * rather than as a page, and it costs one repeating-linear-gradient on a
+   * fixed layer. `color-mix` keeps it correct in both themes without a second
+   * pair of tokens.
+   */
+  .cp-canvas {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--foreground) 4%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--foreground) 4%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 44px 44px;
+    mask-image: radial-gradient(120% 80% at 50% 0%, black 30%, transparent 78%);
+  }
+
+  /* The one column the transcript scrolls in. Tabular figures keep a timestamp
+     from shifting the line it belongs to. */
+  .cp-transcript {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * A running step breathes rather than spins.
+   *
+   * `animate-pulse` on a whole row makes the text flicker, which is the one
+   * thing a transcript must not do. A single low-opacity sheen moving across
+   * the row leaves every glyph at full contrast and still says "working".
+   */
+  .cp-sheen {
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      color-mix(in oklab, var(--run) 16%, transparent) 50%,
+      transparent 80%
+    );
+    background-size: 220% 100%;
+    animation: cp-sheen 2.4s linear infinite;
+  }
+
+  @keyframes cp-sheen {
+    from {
+      background-position: 180% 0;
+    }
+    to {
+      background-position: -80% 0;
+    }
+  }
+
+  /* The ring around a step that is being worked on, drawn as a conic sweep so
+     it can be a border rather than a second element. */
+  .cp-sweep {
+    animation: cp-sweep 1.1s linear infinite;
+  }
+
+  @keyframes cp-sweep {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .cp-hairline {
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--foreground) 12%, transparent),
+      transparent
+    );
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cp-sheen,
+    .cp-sweep {
+      animation: none;
+    }
+  }
+}

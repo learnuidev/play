@@ -42,3 +42,9 @@ For the demo app specifically, [apps/demo/README.md](apps/demo/README.md) is the
 document — and note that it may not import `@play/auth` or `@play/api`, because
 the day it does it stops being a demonstration of what an outsider can build.
 
+`apps/play` is the fourth app and the only one that is not a surface: the console
+that deploys the backend to an environment and starts the other three against it.
+`npm run play` starts it at http://localhost:3002, and it imports no `@play/*`
+package on purpose — [apps/play/README.md](apps/play/README.md) says why, and its
+`src/server/plan.ts` is the checklist of everything a deployment needs.
+
