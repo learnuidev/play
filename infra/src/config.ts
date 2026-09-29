@@ -113,6 +113,47 @@ export interface PlayConfig {
   cloudFrontPrivateKeyParam: string;
   /** The *name* of the parameter holding that key's public half. */
   cloudFrontPublicKeyParam: string;
+  /**
+   * The *name* of the parameter holding the key's **CloudFront id** — the
+   * `Key-Pair-Id` every signed URL carries.
+   *
+   * A parameter of its own rather than a line inside the public one, because the
+   * two are written by different things at different times: the public half is
+   * written *before* a deploy by `ensure-cloudfront-key.mjs`, and the id is
+   * assigned by CloudFront to the key `PlayMediaStack` creates *during* one. A
+   * stage that imports its distribution has the id already, as
+   * `existing.cloudFrontPublicKeyId`, and the stack republishes it here — so the
+   * handlers read one parameter name on every stage.
+   *
+   * Why the handlers read it at all, rather than being handed it in their
+   * environment: a CloudFront public key is immutable, so rotating one is a
+   * deploy that creates a **new** key with a new id. Passed across stacks, that
+   * id is a CloudFormation export, a renamed export cannot be deleted while a
+   * consumer still imports it, and the rotate-one-key deploy turns into a
+   * two-stack dance. Read from here, a rotation is the stack that owns the key.
+   */
+  cloudFrontPublicKeyIdParam: string;
+  /**
+   * Which generation of this environment's CloudFront public key is current.
+   *
+   * CloudFront keys are **immutable**: `UpdatePublicKey` rejects a change to a
+   * key's material or its name — "You cannot modify encoded material and name of
+   * a public key once created" — and CloudFormation's resource schema for
+   * `AWS::CloudFront::PublicKey` declares no `createOnlyProperties`, so it sends
+   * exactly that update and the deploy fails with the generic "Invalid request
+   * provided: AWS::CloudFront::PublicKey". Which is the failure this field
+   * exists to route around: new material can only ever be a new *resource*, and
+   * this string is part of the construct id and of the `Name` CloudFront sees,
+   * so changing it is what makes the deploy create one.
+   *
+   * So rotating a key is: put the new pair at the parameters above (a name that
+   * is new, or a deliberate `put-parameter` — `ensure-cloudfront-key.mjs` writes
+   * an absent parameter and never overwrites one that is there), bump this, and
+   * deploy. CloudFormation creates the new key, moves the key group to it, and
+   * deletes the old one; the distribution never changes, because it trusts the
+   * group rather than the key.
+   */
+  cloudFrontKeyVersion: string;
   /** The Secrets Manager secret a created pool reads the Google client secret from. */
   googleClientSecretName: string;
   ownership: Ownership;
@@ -167,6 +208,34 @@ export function defaultCloudFrontPrivateKeyParam(stage: string): string {
 export function defaultCloudFrontPublicKeyParam(stage: string): string {
   return `/play/${stage}/cloudfront/public-key`;
 }
+
+/**
+ * Where the id of the key that public half belongs to is published.
+ *
+ * Per stage like the other two, and for the same reason: the id names the key a
+ * distribution trusts, and two environments whose handlers read the same id are
+ * two environments signing with each other's keys. A migrated stage is the
+ * exception in exactly the way it is for the pair — its config names the id in
+ * `existing.cloudFrontPublicKeyId` — but the parameter it is republished to is
+ * still this stage's own.
+ */
+export function defaultCloudFrontPublicKeyIdParam(stage: string): string {
+  return `/play/${stage}/cloudfront/public-key-id`;
+}
+
+/** What a version has to look like to be a name and a construct id. */
+const KEY_VERSION = /^[A-Za-z0-9][A-Za-z0-9-]{0,15}$/;
+
+/**
+ * The generation a stage that has never rotated anything is on.
+ *
+ * `1` rather than absent, because the value is not a count of rotations — it is
+ * a name, and a name that is sometimes missing is a name two halves of this app
+ * would disagree about. A config written before this field existed deploys as
+ * `1`, and the key it already has is *not* the key a stacked deploy would
+ * create: that is deliberate. See the field's own note in `PlayConfig`.
+ */
+export const DEFAULT_CLOUD_FRONT_KEY_VERSION = '1';
 
 /**
  * Where a **created** user pool reads the Google client secret from.
@@ -238,6 +307,9 @@ export function loadConfig(stage: string): PlayConfig {
       parsed.cloudFrontPrivateKeyParam ?? defaultCloudFrontPrivateKeyParam(parsed.stage),
     cloudFrontPublicKeyParam:
       parsed.cloudFrontPublicKeyParam ?? defaultCloudFrontPublicKeyParam(parsed.stage),
+    cloudFrontPublicKeyIdParam:
+      parsed.cloudFrontPublicKeyIdParam ?? defaultCloudFrontPublicKeyIdParam(parsed.stage),
+    cloudFrontKeyVersion: parsed.cloudFrontKeyVersion ?? DEFAULT_CLOUD_FRONT_KEY_VERSION,
     googleClientSecretName:
       parsed.googleClientSecretName ?? googleClientSecretName(parsed.stage),
   };
@@ -267,6 +339,16 @@ function validate(config: PlayConfig): string[] {
 
   for (const field of ['stage', 'account', 'region'] as const) {
     if (!config[field]) problems.push(`${field} is empty`);
+  }
+
+  // It ends up inside a CloudFront key's name and inside a construct id, and a
+  // version that is neither is a version that fails this deploy or the next one
+  // — with CloudFront's own unhelpful sentence as the error.
+  if (config.cloudFrontKeyVersion && !KEY_VERSION.test(config.cloudFrontKeyVersion)) {
+    problems.push(
+      `cloudFrontKeyVersion ${JSON.stringify(config.cloudFrontKeyVersion)} must be letters, ` +
+        'digits and dashes, because it is part of the public key\'s name',
+    );
   }
 
   const ownership = ownershipOf(config);

@@ -86,20 +86,32 @@ The key pair is in SSM. Two things apply it, and neither is a deploy.
 
     npm run deploy:api --workspace play-infra
 
-  The **public** key is a CloudFront resource, and PlayMediaStack imports it
-  rather than managing it. Applying a new one is an API call against the
-  distribution's key group:
+  The **public** key is a CloudFront resource, and CloudFront will not change one:
+  \`update-public-key\` answers "you cannot modify encoded material and name of a
+  public key once created", so a rotation creates a *new* public key and moves the
+  key group the distribution trusts to it. On a stage whose media the stacks
+  create, none of that is typed by hand — the key is a resource in PlayMediaStack,
+  so the rotation is three edits and a deploy:
 
-    aws cloudfront get-public-key --id <public key id> \
-      --profile $PROFILE --region $REGION --query 'ETag' --output text
-    aws cloudfront update-public-key --id <public key id> --if-match <etag> \
-      --public-key-config 'Name=play-videos-public-key-$STAGE,CallerReference=play-videos-public-key-$STAGE,EncodedKey=<base64>' \
-      --profile $PROFILE --region $REGION
+    - write the new pair at new parameter names (or with put-parameter)
+    - bump cloudFrontKeyVersion in infra/config/play-\$STAGE.json
+    - npm run deploy:media --workspace play-infra  (or cdk deploy PlayMediaStack-\$STAGE)
 
-  The public key id and the distribution id are in infra/config/play-$STAGE.json.
+  That deploy creates the new key, moves the key group to it, deletes the old key,
+  and rewrites the id parameter the handlers read — so the API stack does not have
+  to be deployed at all. CloudFront refuses a key group that a distribution still
+  trusts, so the group is updated in place rather than replaced: nothing about the
+  distribution changes, and no URL changes with it.
 
-Until both are done, the browser's signed URLs will not validate — which looks
-like a player that loads and never starts.
+  A stage that **imports** its distribution — dev — is the exception, because its
+  key group belongs to the legacy stack rather than to PlayMediaStack. There the
+  rotation is the API calls above by hand, against the key group id in
+  \`aws cloudfront get-distribution-config\`: create-public-key, then
+  update-key-group with the new key in its items.
+
+Until the public half is in place and the old containers are gone, the browser's
+signed URLs will not validate — which looks like a player that loads and never
+starts.
 EOF
 echo
 echo "WARNING: treat cloudfront_private*.pem as a secret. Do not commit it."

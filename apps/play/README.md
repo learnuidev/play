@@ -216,6 +216,16 @@ there is a check mark, a missing public half is derived from the private one, a
 missing private half beside an existing public one is **refused**, and both
 missing generates a 2048-bit RSA pair.
 
+There is a **third parameter**, and this tab is not what writes it:
+`cloudFrontPublicKeyIdParam` holds the *id* CloudFront assigns to the key the
+media stack creates — the `Key-Pair-Id` every signed URL carries — and the media
+stack publishes it during a deploy. The handlers read it by name, which is the
+whole reason a key can be rotated by deploying one stack: a CloudFront key is
+immutable, so a new key is a new id, and an id that crossed stacks as a
+CloudFormation export could not change without the API stack being redeployed
+around it. A stage that imports its distribution publishes the id it already
+names in `existing.cloudFrontPublicKeyId`.
+
 **One pair per environment**, named after the stage: `/play/<stage>/cloudfront/*`.
 The pair signs one distribution's URLs, and one environment's handlers should not
 be able to mint URLs for another's — so the default a new environment is written

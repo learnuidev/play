@@ -92,7 +92,9 @@ new PlayApiStack(app, `PlayApiStack-${stage}`, {
   media: {
     videosBucketName: media.videosBucket.bucketName,
     distributionDomain: media.distribution.distributionDomainName,
-    publicKeyId: media.publicKeyId,
+    // No key id: it is published to SSM by the media stack and read by the
+    // handlers by name, because a rotated key has a new id and a value that
+    // changes cannot cross stacks without an export that has to be renamed.
     mediaConvertRoleArn: media.mediaConvertRole.roleArn,
     transcribeRoleArn: media.transcribeRole.roleArn,
   },

@@ -1,7 +1,7 @@
 import { createSign } from "node:crypto";
 import type { AudioInfo, StreamInfo, SubtitleInfo, ThumbnailInfo } from "../types";
 import { env } from "./config";
-import { cloudFrontPrivateKey } from "./cloudfront-key";
+import { cloudFrontKeyPairId, cloudFrontPrivateKey } from "./cloudfront-key";
 
 // wip
 
@@ -66,8 +66,15 @@ export async function buildSignedObjectUrl(
   });
 
   const policy = toUrlSafeBase64(policyJson);
-  const signature = toUrlSafeBase64(signPolicy(policyJson, await cloudFrontPrivateKey()));
-  const signedQuery = `Policy=${policy}&Signature=${signature}&Key-Pair-Id=${env.cloudfrontKeyPairId}`;
+  // Both halves come from Parameter Store — the key to sign with, and the id of
+  // the key it belongs to — so they are read together rather than one after the
+  // other. See `cloudfront-key.ts`.
+  const [privateKey, keyPairId] = await Promise.all([
+    cloudFrontPrivateKey(),
+    cloudFrontKeyPairId(),
+  ]);
+  const signature = toUrlSafeBase64(signPolicy(policyJson, privateKey));
+  const signedQuery = `Policy=${policy}&Signature=${signature}&Key-Pair-Id=${keyPairId}`;
 
   return {
     url: `${baseUrl}?${signedQuery}`,

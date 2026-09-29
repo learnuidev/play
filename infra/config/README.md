@@ -58,24 +58,40 @@ says so before anything is deployed.
 | `cloudFrontLogsBucketName` | The same, for the distribution's log bucket |
 | `cloudFrontPrivateKeyParam` | The *name* of the signing key parameter. Never the key. Defaults to `/play/<stage>/cloudfront/private-key` |
 | `cloudFrontPublicKeyParam` | The *name* of that key's public half. Defaults to `/play/<stage>/cloudfront/public-key` |
+| `cloudFrontPublicKeyIdParam` | The *name* of the parameter `PlayMediaStack` **writes** with the key's CloudFront id — the `Key-Pair-Id` every signed URL carries. Defaults to `/play/<stage>/cloudfront/public-key-id`. The handlers read it by name, which is what lets a key be rotated without the API stack being redeployed |
+| `cloudFrontKeyVersion` | Which generation of the public key is current. Defaults to `1`. Bumping it is how a key is **rotated**: a CloudFront key is immutable, so new material can only be a new key, and this string is part of both the key's name and its construct id |
 
 `auth` and `mail` are the two blocks a **person** writes rather than a script
 discovers, which is why they have a screen: the console's **Checklist** tab, one
 per environment. Everything else here is either a physical name read out of AWS
 or a resource count.
 
-**The CloudFront signing key pair is per environment**, and the two fields above
-are only names: the key material lives in SSM, at `/play/<stage>/cloudfront/*`
-unless the config says otherwise, and `infra/scripts/ensure-cloudfront-key.mjs`
-generates it — once, never rotated. A stage that **imports** its distribution
-names the pair that distribution was created against, because that is the only
-pair its key group will accept a signature from; `dev` is the one stage here that
-does, and it names the shared `/play/cloudfront/*`.
+**The CloudFront signing key pair is per environment**, and the three parameter
+fields above are only names: the key material lives in SSM, at
+`/play/<stage>/cloudfront/*` unless the config says otherwise, and
+`infra/scripts/ensure-cloudfront-key.mjs` generates it — once, never rotated. A
+stage that **imports** its distribution names the pair that distribution was
+created against, because that is the only pair its key group will accept a
+signature from; `dev` is the one stage here that does, and it names the shared
+`/play/cloudfront/*`.
 
 The two values are different shapes on purpose, and the script is the place that
 knows it: the **private** parameter is base64 of the PKCS#8 PEM (what
 `services/api/src/lib/cloudfront-key.ts` decodes), and the **public** one is the
 PEM itself (what `PlayMediaStack` interpolates into CloudFront's `EncodedKey`).
+Neither of them is the id, which CloudFront assigns to the key the stack creates
+and the stack then writes to the third parameter.
+
+**Rotating the key is a deploy, and it takes three edits**: write the new pair to
+the parameters the config names (`ensure-cloudfront-key.mjs` writes one that is
+absent and never overwrites one that is there, so a rotation writes new names or
+uses `put-parameter` deliberately), bump `cloudFrontKeyVersion`, and deploy the
+media stack. CloudFront's `UpdatePublicKey` refuses to change a key's material or
+name — CloudFormation then reports it as the generic `Invalid request provided:
+AWS::CloudFront::PublicKey` — so the version is what turns the rotation into a
+*new* key: the stack creates it, moves the key group to it, deletes the old one,
+and rewrites `cloudFrontPublicKeyIdParam`. The distribution and the API stack
+both carry on untouched.
 
 **The Google client secret is not in this file**, and must not be. It is a
 credential, this file is committed, and CloudFormation refuses the SSM Secure

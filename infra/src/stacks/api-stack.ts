@@ -43,7 +43,17 @@ import { ApiRoutesStack } from './api-routes-stack';
 export interface MediaRefs {
   videosBucketName: string;
   distributionDomain: string;
-  publicKeyId: string;
+  /**
+   * The CloudFront key id is deliberately **not** here.
+   *
+   * It is the one media value that changes without the media stack being
+   * replaced — a rotated key is a new key with a new id — and a cross-stack
+   * reference to it is an export that would have to be renamed when that happens,
+   * which CloudFormation will not do while this stack imports it. So the media
+   * stack publishes the id to the parameter named by
+   * `cloudFrontPublicKeyIdParam`, and the handlers read it from there; see
+   * `sharedEnvironment`.
+   */
   /** A token, because the role is created by the media stack. */
   mediaConvertRoleArn: string;
   /** A token, because the role is created by the media stack. */
@@ -358,25 +368,26 @@ export class PlayApiStack extends Stack {
       }),
     );
 
-    // The CloudFront signing key, read at runtime. One parameter, named exactly,
-    // rather than a wildcard: a role that can read every parameter in the account
-    // can read every secret in the account.
+    // The two parameters the handlers read at runtime — the signing key and the
+    // id of the key it belongs to — named exactly rather than by wildcard: a role
+    // that can read every parameter in the account can read every secret in the
+    // account.
     //
-    // No `kms:Decrypt` beside it, because the parameter is a SecureString
-    // encrypted with the AWS-managed `aws/ssm` key. A parameter moved to a
-    // customer-managed key needs that grant added here.
+    // No `kms:Decrypt` beside them, because both are encrypted with the
+    // AWS-managed `aws/ssm` key (a plain `String` is encrypted at rest too). A
+    // parameter moved to a customer-managed key needs that grant added here.
+    const parameterArn = (name: string): string =>
+      Arn.format(
+        { service: 'ssm', resource: 'parameter', resourceName: name.replace(/^\//, '') },
+        this,
+      );
+
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['ssm:GetParameter'],
         resources: [
-          Arn.format(
-            {
-              service: 'ssm',
-              resource: 'parameter',
-              resourceName: config.cloudFrontPrivateKeyParam.replace(/^\//, ''),
-            },
-            this,
-          ),
+          parameterArn(config.cloudFrontPrivateKeyParam),
+          parameterArn(config.cloudFrontPublicKeyIdParam),
         ],
       }),
     );
@@ -448,7 +459,11 @@ export class PlayApiStack extends Stack {
       ...tableEnvironment,
       VIDEOS_BUCKET: videosBucket.bucketName,
       CLOUDFRONT_DOMAIN: media.distributionDomain,
-      CLOUDFRONT_KEY_PAIR_ID: media.publicKeyId,
+      // The *name* of the parameter holding the key id rather than the id: the
+      // id is CloudFront-assigned and changes when the key is rotated, and a
+      // value that changes is a value that cannot cross stacks without dragging a
+      // CloudFormation export behind it. See `MediaRefs`.
+      CLOUDFRONT_KEY_PAIR_ID_PARAM: config.cloudFrontPublicKeyIdParam,
       CLOUDFRONT_PRIVATE_KEY_PARAM: config.cloudFrontPrivateKeyParam,
       MEDIACONVERT_ROLE_ARN: media.mediaConvertRoleArn,
       TRANSCRIBE_ROLE_ARN: media.transcribeRoleArn,

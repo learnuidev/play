@@ -46,6 +46,33 @@ export interface PlayMediaStackProps extends StackProps {
  * `infra/scripts/teardown-legacy-stack.sh` is the answer: it deletes the stack
  * with `--retain-resources` naming this policy, so the policy is never removed
  * and the copy declared here simply carries on.
+ *
+ * ## The key id does not cross stacks, and that is what makes rotation a deploy
+ *
+ * A CloudFront public key is **immutable**: `UpdatePublicKey` refuses new
+ * material or a new name, and CloudFormation's schema for the resource declares
+ * nothing that would make it create a replacement instead — so it sends that
+ * refused update and the deploy fails with the generic "Invalid request provided:
+ * AWS::CloudFront::PublicKey". New material is therefore a new key, which is what
+ * `cloudFrontKeyVersion` in the config produces, and the key's *id* changes with
+ * it.
+ *
+ * An id that changed would break any stack that referenced it across stacks: the
+ * reference is a CloudFormation export, a new id renames the export, and
+ * CloudFormation refuses to delete an export a consumer still imports. So the
+ * stack that owns the key publishes the id to SSM and the handlers read it by
+ * name (`CLOUDFRONT_KEY_PAIR_ID_PARAM`) — the same move as the private half, and
+ * for the same kind of reason.
+ *
+ * **One consequence is worth knowing before the deploy that first does this.** A
+ * stage deployed with an earlier version of this stack still *imports* the old
+ * export, and this stack's update removes it — so the API stack goes first, once:
+ *
+ *   cdk deploy PlayApiStack-<stage>   # drops the import; reads the id by name
+ *   cdk deploy PlayMediaStack-<stage> # creates the new key, moves the group, deletes the old
+ *
+ * After that pair of deploys the API stack holds no reference to the key at all,
+ * and a rotation is the media stack alone.
  */
 export class PlayMediaStack extends Stack {
   public readonly videosBucket: s3.IBucket;
@@ -110,6 +137,29 @@ export class PlayMediaStack extends Stack {
       // and there is no construct to import it into.
       this.publicKeyId = existing.cloudFrontPublicKeyId;
     }
+
+    // The id the handlers sign with, **published** rather than handed over.
+    //
+    // This parameter is why rotating a key is one stack's deploy. The id cannot
+    // travel from here to the API stack as a cross-stack value: a new key means a
+    // new id, a new id means a renamed CDK export, and CloudFormation refuses to
+    // delete an export while the consuming stack still imports it — so the media
+    // stack would sit waiting on a deploy the API stack cannot make until the
+    // media stack's key exists. Written here and read by name
+    // (`CLOUDFRONT_KEY_PAIR_ID_PARAM`), the API stack does not reference this
+    // stack for the key at all, and a rotation is invisible to it.
+    //
+    // Both modes publish it. A stage that imports its distribution knows the id
+    // as a config string rather than a CloudFront-assigned one, but the handlers
+    // on every stage read the same parameter name, and one of them existing and
+    // the others not is a signing failure nobody can see from a config file.
+    new ssm.StringParameter(this, 'VideoPublicKeyId', {
+      parameterName: config.cloudFrontPublicKeyIdParam,
+      stringValue: this.publicKeyId,
+      description:
+        `The CloudFront key id Play's handlers sign with (stage ${config.stage}, ` +
+        `key version ${config.cloudFrontKeyVersion}).`,
+    });
 
     // CloudFront's read of the bucket.
     //
@@ -255,14 +305,29 @@ export class PlayMediaStack extends Stack {
     // The public half of the signing key pair. The private half is never here:
     // it lives in SSM and the handlers read it by name, which is what keeps a
     // 2.3 KB private key out of a hundred Lambdas' environments.
-    const publicKey = new cloudfront.PublicKey(this, 'VideoPublicKey', {
-      publicKeyName: `play-videos-public-key-${config.stage}`,
+    //
+    // The version is in the construct id *and* in the name CloudFront sees, and
+    // it is the whole reason this resource can be rotated at all. A CloudFront
+    // key is immutable — `UpdatePublicKey` answers "you cannot modify encoded
+    // material and name of a public key once created", and CloudFormation's
+    // schema for this resource declares nothing as replacement-triggering, so it
+    // sends that doomed update rather than creating a new key. A new *generation*
+    // therefore has to be a new construct, which is what `cloudFrontKeyVersion`
+    // is: bump it and the deploy creates the new key, moves the key group, and
+    // deletes the old one.
+    const publicKey = new cloudfront.PublicKey(this, `VideoPublicKeyV${config.cloudFrontKeyVersion}`, {
+      publicKeyName: `play-videos-public-key-${config.stage}-v${config.cloudFrontKeyVersion}`,
       encodedKey: ssm.StringParameter.valueForStringParameter(
         this,
         config.cloudFrontPublicKeyParam,
       ),
     });
 
+    // The key group is **not** versioned with the key, and does not need to be:
+    // CloudFront lets a group's list of trusted keys change in place
+    // (`UpdateKeyGroup`), so the same group moves to the new key — and the
+    // distribution, which trusts the group rather than the key, never notices the
+    // rotation at all.
     const keyGroup = new cloudfront.KeyGroup(this, 'VideoKeyGroup', {
       keyGroupName: `play-videos-key-group-${config.stage}`,
       items: [publicKey],

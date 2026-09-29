@@ -47,7 +47,21 @@ export const env = {
   oauthCodesTableName: required('OAUTH_CODES_TABLE', process.env.OAUTH_CODES_TABLE),
   bucket: required('VIDEOS_BUCKET', process.env.VIDEOS_BUCKET),
   cloudfrontDomain: required('CLOUDFRONT_DOMAIN', process.env.CLOUDFRONT_DOMAIN),
-  cloudfrontKeyPairId: required('CLOUDFRONT_KEY_PAIR_ID', process.env.CLOUDFRONT_KEY_PAIR_ID),
+  /**
+   * Where the signing key's **CloudFront id** lives, rather than the id itself.
+   *
+   * The same move as the private key below, and for a second reason of its own: a
+   * CloudFront public key is immutable, so rotating one is a deploy that creates a
+   * new key with a new id. Were the id in this environment as a cross-stack
+   * value, that deploy would have to rename a CloudFormation export this stack
+   * still imports — which CloudFormation refuses to do. Read from Parameter
+   * Store, `lib/cloudfront-key` picks up a rotation without this service being
+   * deployed at all.
+   */
+  cloudfrontKeyPairIdParam: required(
+    'CLOUDFRONT_KEY_PAIR_ID_PARAM',
+    process.env.CLOUDFRONT_KEY_PAIR_ID_PARAM,
+  ),
   /**
    * Where the signing key lives, rather than the key itself.
    *

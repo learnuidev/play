@@ -541,11 +541,16 @@ export function buildPlan(stage: string): PlanStep[] {
    * itself is `infra/scripts/ensure-cloudfront-key.mjs`, which never rotates a
    * key that exists — a new pair would invalidate every URL already handed out,
    * which makes rotation a deploy of a new public key rather than a repair.
+   *
+   * What the step checks is the **pair**, not the id. The id is CloudFront's to
+   * assign, to the key the media stack creates, so the media stack is what
+   * publishes it — and this step runs before that deploy exists. A stage that
+   * imports its distribution already names the id in its config.
    */
   const signingKey: PlanStep = {
     id: "signing-key",
     title: "The CloudFront signing key is in SSM",
-    detail: `Signed URLs need a key pair, and neither half is in this repository: the **private** half is read by the handlers at request time, by parameter *name*, and the **public** half is what \`PlayMediaStack\` creates the distribution's public key from. The names come from the environment's config and are **per environment** by default — \`/play/<stage>/cloudfront/private-key\` and its public half — because the pair signs one distribution's URLs and one environment's handlers should not be able to mint URLs for another's. A stage that imports a distribution names the pair that distribution was created against, which is what \`dev\` does. \`infra/scripts/ensure-cloudfront-key.mjs\` writes whichever half is missing and **never replaces one that is there**.`,
+    detail: `Signed URLs need a key pair, and neither half is in this repository: the **private** half is read by the handlers at request time, by parameter *name*, and the **public** half is what \`PlayMediaStack\` creates the distribution's public key from. The names come from the environment's config and are **per environment** by default — \`/play/<stage>/cloudfront/private-key\` and its public half — because the pair signs one distribution's URLs and one environment's handlers should not be able to mint URLs for another's. A stage that imports a distribution names the pair that distribution was created against, which is what \`dev\` does. \`infra/scripts/ensure-cloudfront-key.mjs\` writes whichever half is missing and **never replaces one that is there**; the key's CloudFront *id* is a third parameter, written by the media stack during a deploy because that is the stack that owns the key. Rotating is a deploy rather than a repair for the same reason: a CloudFront key is immutable, so a new pair is written at new parameter names, \`cloudFrontKeyVersion\` goes up, and the media stack deploys.`,
     satisfiedLabel: "In SSM",
     timeoutMs: 2 * 60_000,
     check: async (ctx) => {
