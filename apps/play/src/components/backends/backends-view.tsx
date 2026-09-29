@@ -1,431 +1,277 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCwIcon, TerminalIcon } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { ChevronRightIcon, ExternalLinkIcon, PlusIcon, XIcon } from "lucide-react";
 
-import { useShell } from "@/components/console/state";
-import { DeployView } from "@/components/deploy/deploy-view";
-import { SettingsView } from "@/components/settings/settings-view";
+import { useNameStage, useShell } from "@/components/console/state";
 import { Button, IconButton } from "@/components/ui/button";
-import { Card, CardHeading } from "@/components/ui/card";
-import { Chip } from "@/components/ui/chip";
-import { EnvTable } from "@/components/ui/env-table";
+import { Card } from "@/components/ui/card";
+import { Chip, Dot } from "@/components/ui/chip";
 import { Picker } from "@/components/ui/picker";
-import { Tabs } from "@/components/ui/tabs";
-import { relative } from "@/lib/format";
-import type {
-  BackendEnvView,
-  BackendFunctionView,
-  BackendLogs,
-  DeploymentHistoryView,
-} from "@/lib/types";
+import { backendBlurb, backendPath, backendState } from "@/lib/backends";
+import { apiHost } from "@/lib/format";
+import type { EnvironmentView } from "@/lib/types";
 
 /**
- * A backend, in an environment.
+ * The backends: a row per environment, and the one button that starts a new one.
  *
- * There is one backend — the CDK app in `infra/` — and the dropdown exists
- * because "a backend and an environment" is the unit this whole console works
- * in. Naming it means the page says *what* and *where* before it says anything
- * else, and a second backend would be a second entry rather than a second page.
+ * ## Why the rows are environments
  *
- * The three tabs are the three questions anybody actually has about a deployed
- * backend: what went into it and what came out, what has been deployed to it,
- * and what it is saying.
+ * There is one backend — the CDK app in `infra/` — and the plural is only ever
+ * about *where* it has been deployed. So a row is "the API, in `dev`", and what
+ * it says is what the four stacks say: which are complete, whether this
+ * environment creates its own data or imports another's, and where the API is.
+ *
+ * ## Why the list is not drawn from a stream
+ *
+ * Every environment exists whether or not anything has been deployed to it, so
+ * the rows come from the shell's own list — the config files on disk, plus any
+ * stage named in this session — and the state only fills each one in. A list
+ * built from the deployed stacks would be empty on a fresh checkout, which is
+ * exactly when somebody needs to deploy the first one.
+ *
+ * ## Why the button does not deploy
+ *
+ * "Deploy to a new backend env" asks for a name and then *opens* that
+ * environment's page on its checklist, because that is what a new environment
+ * needs first: the plan's third step writes the config file, and what the plan
+ * will do is worth reading before it is run. Nothing in this app deploys without
+ * a press on that page.
  */
-
-const BACKENDS = [
-  {
-    value: "play",
-    label: "play",
-    hint: "the CDK app in infra/",
-  },
-] as const;
-
-type BackendKey = (typeof BACKENDS)[number]["value"];
-type TabId = "env" | "deployments" | "logs";
-
-const TABS = [
-  {
-    id: "env" as const,
-    label: "Env variables",
-    hint: "The inputs a person supplies, and the outputs a deploy publishes — the same values the frontends read.",
-  },
-  {
-    id: "deployments" as const,
-    label: "Deployments",
-    hint: "The checklist a deploy walks, and what CloudFormation has actually done to this environment.",
-  },
-  {
-    id: "logs" as const,
-    label: "Logs",
-    hint: "CloudWatch, one function at a time. Event-driven functions first — they are the ones with nowhere else to speak.",
-  },
-];
-
 export function BackendsView() {
-  const { stage, stages, state, environment } = useShell();
-  const [backend, setBackend] = useState<BackendKey>("play");
-  const [tab, setTab] = useState<TabId>("env");
+  const { stages, state, loading } = useShell();
+  const router = useRouter();
+  const [choice, setChoice] = useState("");
 
-  const envOptions = useMemo(
-    () =>
-      (stages.length ? stages : ["dev"]).map((candidate) => {
-        const view = state?.environments.find((item) => item.stage === candidate);
-        return {
-          value: candidate,
-          label: candidate,
-          hint: view
-            ? view.ownsEverything
-              ? "its own data"
-              : "imported data"
-            : "no config yet",
-        };
-      }),
-    [stages, state],
-  );
+  const account = state?.identity?.account ?? null;
+
+  const rows = useMemo(() => (stages.length ? stages : ["dev"]), [stages]);
+
+  const environmentOf = useMemo(() => {
+    const found = new Map<string, EnvironmentView>();
+    for (const environment of state?.environments ?? []) found.set(environment.stage, environment);
+    return found;
+  }, [state]);
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight">Backends</h1>
-        <p className="text-muted-foreground text-sm">
-          The API and everything it stands on, one environment at a time.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight">Backends</h1>
+          <p className="text-muted-foreground text-sm">
+            One backend — the CDK app in <span className="font-mono">infra/</span> — and every
+            environment it has been deployed to.
+          </p>
+        </div>
+
+        <NewBackend />
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Picker label="Backend" value={backend} onChange={setBackend} options={BACKENDS} />
-        {/* The env dropdown drives the shell's stage, so moving between pages
-            keeps the environment you were looking at. */}
-        <EnvPicker stage={stage} options={envOptions} />
-      </div>
+      {/* A way in, for the same reason the frontends list has one: the
+          environment is a route, so this is a link with a keyboard on it rather
+          than a selection that changes what the list below is about. */}
+      <Picker
+        label="Environment"
+        value={choice}
+        onChange={(next) => {
+          setChoice(next);
+          if (next) router.push(backendPath(next));
+        }}
+        options={[
+          { value: "", label: "Open an environment…" },
+          ...rows.map((stage) => ({
+            value: stage,
+            label: stage,
+            hint: loading ? "reading…" : backendState(environmentOf.get(stage) ?? null, account).label,
+          })),
+        ]}
+        className="sm:max-w-sm"
+      />
 
-      {environment ? (
-        <Tabs tabs={TABS} value={tab} onChange={setTab} />
-      ) : (
-        <Card>
-          <CardHeading
-            title="No config file yet"
-            hint={`${stage} has no infra/config/play-${stage}.json. Deploy it once — the third step writes the file — and this page fills in.`}
+      <div className="flex flex-col gap-4">
+        {rows.map((stage) => (
+          <BackendRow
+            key={stage}
+            stage={stage}
+            environment={environmentOf.get(stage) ?? null}
+            account={account}
+            loading={loading}
           />
-        </Card>
-      )}
-
-      {environment && tab === "env" ? <EnvTab /> : null}
-      {environment && tab === "deployments" ? <DeploymentsTab /> : null}
-      {environment && tab === "logs" ? <LogsTab /> : null}
+        ))}
+      </div>
     </div>
   );
 }
 
 /* ------------------------------------------------------------------ *
- * Tab 1 — env variables
+ * One row
  * ------------------------------------------------------------------ */
 
-function EnvTab() {
-  const { stage } = useShell();
-  const [env, setEnv] = useState<BackendEnvView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+function BackendRow({
+  stage,
+  environment,
+  account,
+  loading,
+}: {
+  stage: string;
+  environment: EnvironmentView | null;
+  /** The account the console is acting as, so a stage in another one is named. */
+  account: string | null;
+  /**
+   * Before the first read, "not deployed" is the absence of a fact rather than
+   * one — and so is every other verdict this row could carry, so it carries none.
+   */
+  loading: boolean;
+}) {
+  const status = backendState(environment, account);
+  const stacks = environment?.stacks ?? [];
+  const complete = stacks.filter((stack) => stack.healthy).length;
 
-  useEffect(() => {
-    let cancelled = false;
-    setEnv(null);
-    setError(null);
+  return (
+    <Card className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-semibold tracking-tight">
+              <Link
+                href={backendPath(stage)}
+                className="focus-visible:ring-ring group inline-flex items-center gap-1 rounded-sm font-mono hover:underline hover:underline-offset-4 focus-visible:ring-2 focus-visible:outline-none"
+              >
+                {stage}
+                <ChevronRightIcon className="text-muted-foreground group-hover:text-foreground size-4 transition-colors" />
+              </Link>
+            </h2>
+            {loading ? null : (
+              <Chip tone={status.tone}>
+                <Dot tone={status.tone} />
+                {status.label}
+              </Chip>
+            )}
+          </div>
+          <p className="text-muted-foreground mt-1.5 text-sm">
+            {loading ? "Reading the environment…" : backendBlurb(environment)}
+          </p>
+        </div>
 
-    fetch(`/api/backends/${encodeURIComponent(stage)}/env`, { cache: "no-store" })
-      .then(async (response) => {
-        const body = (await response.json()) as { env?: BackendEnvView; error?: string };
-        if (cancelled) return;
-        if (!response.ok || !body.env) {
-          setError(body.error ?? "The environment could not be read.");
-          return;
-        }
-        setEnv(body.env);
-      })
-      .catch(() => {
-        if (!cancelled) setError("The environment could not be read.");
-      });
+        {environment?.apiUrl ? (
+          <a
+            href={environment.apiUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open ${environment.apiUrl}`}
+            className="border-border/70 bg-card hover:bg-accent inline-flex h-10 max-w-full items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors"
+          >
+            <span className="truncate font-mono text-xs">{apiHost(environment.apiUrl)}</span>
+            <ExternalLinkIcon className="size-3.5 shrink-0" />
+          </a>
+        ) : null}
+      </div>
 
-    return () => {
-      cancelled = true;
-    };
-  }, [stage]);
+      <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+        <span>
+          {loading
+            ? "Reading the stacks…"
+            : stacks.length === 0
+              ? "No stacks yet."
+              : `${complete} of ${stacks.length} stacks complete.`}
+        </span>
+        {environment?.account ? (
+          <span className="ml-auto font-mono">
+            {environment.account} · {environment.region}
+          </span>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
 
-  if (error) {
+/* ------------------------------------------------------------------ *
+ * Deploy to a new backend env
+ * ------------------------------------------------------------------ */
+
+/**
+ * The name, and then the checklist.
+ *
+ * The stage is only *named* here. What makes it real is the deploy page's third
+ * step — which writes `infra/config/play-<stage>.json`, as a new environment with
+ * its own tables, bucket, distribution and user pool — and the reason this hands
+ * over to that page rather than starting a run is that the plan is written down
+ * precisely so it can be read first.
+ */
+function NewBackend() {
+  const nameStage = useNameStage();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+
+  const stage = value.trim().toLowerCase();
+  const valid = /^[a-z0-9][a-z0-9-]{0,30}$/.test(stage);
+
+  if (!open) {
     return (
-      <Card>
-        <p className="text-destructive text-sm">{error}</p>
-      </Card>
+      <Button
+        variant="primary"
+        onClick={() => setOpen(true)}
+        icon={<PlusIcon className="size-4" />}
+      >
+        Deploy to a new backend env
+      </Button>
     );
   }
 
-  return (
-    <div className="flex flex-col gap-6">
-      {/* The inputs half is the Settings form itself, unchanged: it is the
-          editable surface, and duplicating it as a table would be a second
-          place for the same seven fields to drift. */}
-      <SettingsView embedded />
-
-      <Card>
-        <CardHeading
-          title="Outputs"
-          hint="What the deploy publishes. These are the values the three frontends are handed — a frontend's own variables are just these rows with a different name."
-        />
-        <div className="mt-5">
-          {env ? (
-            <EnvTable rows={env.outputs} emptyNote="This environment has not deployed yet." />
-          ) : (
-            <p className="text-muted-foreground text-xs">Reading the stacks…</p>
-          )}
-        </div>
-      </Card>
-
-      <Card>
-        <CardHeading
-          title="Inputs, as the deploy sees them"
-          hint="The same values the form above writes, listed with where each one is read from and which part of the deployment consumes it."
-        />
-        <div className="mt-5">
-          {env ? (
-            <EnvTable rows={env.inputs} />
-          ) : (
-            <p className="text-muted-foreground text-xs">Reading the config…</p>
-          )}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * Tab 2 — deployments
- * ------------------------------------------------------------------ */
-
-function DeploymentsTab() {
-  const { stage } = useShell();
-  const [history, setHistory] = useState<DeploymentHistoryView | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    fetch(`/api/backends/${encodeURIComponent(stage)}/deployments`, { cache: "no-store" })
-      .then(async (response) => {
-        const body = (await response.json()) as { history?: DeploymentHistoryView };
-        if (body.history) setHistory(body.history);
-      })
-      .catch(() => {
-        // A missing history is not a broken page; the checklist still works.
-      })
-      .finally(() => setLoading(false));
-  }, [stage]);
-
-  useEffect(load, [load]);
+  const close = () => {
+    setOpen(false);
+    setValue("");
+  };
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* The checklist is the console's whole reason for existing, so it is
-          rendered here rather than summarised — this tab *is* the deploy page. */}
-      <DeployView embedded />
-
-      <Card>
-        <CardHeading
-          title="What CloudFormation has done"
-          hint="Read from the stacks themselves, not from this process — so it survives the console restarting, and it goes back further than the last thing you ran."
-          action={
-            <IconButton onClick={load} title="Refresh" aria-label="Refresh">
-              <RefreshCwIcon className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
-            </IconButton>
-          }
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!valid) return;
+        // The environment in the URL is the one the rest of the console then
+        // reads, so the page it opens adopts the name itself.
+        nameStage(stage);
+        router.push(`${backendPath(stage)}?tab=deployments`);
+      }}
+      className="flex w-full flex-col gap-2 sm:w-auto"
+    >
+      <div className="flex items-center gap-2">
+        <input
+          autoFocus
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") close();
+          }}
+          placeholder="staging"
+          aria-label="New environment name"
+          className="border-border/70 bg-background/60 focus-visible:ring-ring h-10 min-w-0 flex-1 rounded-full border px-4 font-mono text-sm focus-visible:ring-2 focus-visible:outline-none sm:w-56 sm:flex-none"
         />
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={!valid}
+          icon={<ChevronRightIcon className="size-4" />}
+        >
+          Open the checklist
+        </Button>
+        <IconButton type="button" onClick={close} aria-label="Cancel" title="Cancel">
+          <XIcon className="size-3.5" />
+        </IconButton>
+      </div>
 
-        {history?.note ? (
-          <p className="text-muted-foreground mt-4 text-xs">{history.note}</p>
-        ) : null}
-
-        <div className="mt-4 flex flex-col">
-          {(history?.events ?? []).slice(0, 30).map((event, index) => (
-            <div
-              key={`${event.at}-${index}`}
-              className="border-border/40 flex items-baseline gap-3 border-t py-2.5 text-xs first:border-t-0"
-            >
-              <span className="text-muted-foreground w-20 shrink-0 tabular-nums">
-                {relative(event.at, Date.now())}
-              </span>
-              <Chip tone={statusTone(event.status)} className="shrink-0">
-                {event.status}
-              </Chip>
-              <span className="min-w-0 flex-1">
-                <span className="font-mono">{event.resource ?? event.stack}</span>
-                {event.reason ? (
-                  <span className="text-muted-foreground"> — {event.reason}</span>
-                ) : null}
-              </span>
-            </div>
-          ))}
-          {!loading && (history?.events ?? []).length === 0 && !history?.note ? (
-            <p className="text-muted-foreground text-xs">Nothing has been deployed here yet.</p>
-          ) : null}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-function statusTone(status: string) {
-  if (status.endsWith("_FAILED")) return "bad" as const;
-  if (status.includes("ROLLBACK")) return "warn" as const;
-  if (status.endsWith("_COMPLETE")) return "ok" as const;
-  if (status.endsWith("_IN_PROGRESS")) return "run" as const;
-  return "muted" as const;
-}
-
-/* ------------------------------------------------------------------ *
- * Tab 3 — logs
- * ------------------------------------------------------------------ */
-
-function LogsTab() {
-  const { stage } = useShell();
-  const [functions, setFunctions] = useState<BackendFunctionView[]>([]);
-  const [selected, setSelected] = useState<string>("");
-  const [logs, setLogs] = useState<BackendLogs | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(
-    (fn?: string) => {
-      setLoading(true);
-      setError(null);
-      const query = fn ? `?function=${encodeURIComponent(fn)}` : "";
-      fetch(`/api/backends/${encodeURIComponent(stage)}/logs${query}`, { cache: "no-store" })
-        .then(async (response) => {
-          const body = (await response.json()) as {
-            functions?: BackendFunctionView[];
-            logs?: BackendLogs | null;
-            error?: string;
-          };
-          if (!response.ok) {
-            setError(body.error ?? "The logs could not be read.");
-            return;
-          }
-          if (body.functions) setFunctions(body.functions);
-          if (body.logs) setLogs(body.logs);
-        })
-        .catch(() => setError("The logs could not be read."))
-        .finally(() => setLoading(false));
-    },
-    [stage],
-  );
-
-  // The function list first, then the default one — an event-driven function,
-  // because those are the ones whose silence is invisible everywhere else.
-  useEffect(() => {
-    setFunctions([]);
-    setLogs(null);
-    setSelected("");
-    load();
-  }, [stage, load]);
-
-  useEffect(() => {
-    if (selected || functions.length === 0) return;
-    const first = functions[0];
-    setSelected(first.name);
-    load(first.name);
-  }, [functions, selected, load]);
-
-  return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeading
-          title="Function"
-          hint={`${functions.length} Lambda${functions.length === 1 ? "" : "s"} in ${stage}. The first few are the event-driven ones.`}
-        />
-
-        <div className="mt-5">
-          <Picker
-            label="CloudWatch log group"
-            value={selected}
-            onChange={(next) => {
-              setSelected(next);
-              load(next);
-            }}
-            options={
-              functions.length
-                ? functions.map((fn) => ({
-                    value: fn.name,
-                    label: fn.key,
-                    hint: fn.eventDriven ? "event-driven" : undefined,
-                  }))
-                : [{ value: "", label: "no functions" }]
-            }
-          />
-        </div>
-
-        {logs ? (
-          <p className="text-muted-foreground mt-4 font-mono text-xs">{logs.logGroup}</p>
-        ) : null}
-      </Card>
-
-      {error ? (
-        <Card>
-          <p className="text-destructive text-sm">{error}</p>
-        </Card>
-      ) : null}
-
-      <Card flush className="pb-4">
-        <div className="flex flex-wrap items-center gap-3 px-6 pt-6">
-          <h2 className="text-base font-semibold tracking-tight">Last hour</h2>
-          {loading ? <Chip tone="run">reading</Chip> : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto font-mono"
-            onClick={() => selected && load(selected)}
-            busy={loading}
-          >
-            refresh
-          </Button>
-        </div>
-
-        <div className="cp-transcript mt-4 max-h-96 overflow-auto px-6">
-          {logs?.events.length ? (
-            logs.events.map((event, index) => (
-              <div key={`${event.at}-${index}`} className="flex gap-3 py-0.5 font-mono text-xs">
-                <span className="text-muted-foreground/70 shrink-0 tabular-nums">
-                  {new Date(event.at).toLocaleTimeString()}
-                </span>
-                <span className="min-w-0 flex-1 break-all whitespace-pre-wrap">{event.message}</span>
-              </div>
-            ))
-          ) : (
-            <p className="text-muted-foreground flex items-center gap-2 py-2 text-xs">
-              <TerminalIcon className="size-3.5" />
-              {logs?.note ?? "Choose a function."}
-            </p>
-          )}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * The environment dropdown
- * ------------------------------------------------------------------ */
-
-function EnvPicker({
-  stage,
-  options,
-}: {
-  stage: string;
-  options: ReadonlyArray<{ value: string; label: string; hint?: string }>;
-}) {
-  const { setStage } = useShell();
-  return (
-    <Picker
-      label="Environment"
-      value={stage}
-      onChange={setStage}
-      options={options}
-    />
+      <p className="text-muted-foreground text-xs leading-relaxed">
+        Nothing runs yet. This opens{" "}
+        <span className="font-mono text-foreground/80">{stage || "the new environment"}</span>&rsquo;s
+        checklist, where the third step writes{" "}
+        <span className="font-mono text-foreground/80">
+          infra/config/play-{stage || "<stage>"}.json
+        </span>{" "}
+        — a new environment, creating its own tables, bucket and user pool.
+      </p>
+    </form>
   );
 }

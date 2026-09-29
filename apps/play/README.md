@@ -3,8 +3,8 @@
 A local control room for the backend. It answers three questions, and they are
 the three that otherwise live in a shell history nobody can read:
 
-- **Backends** — what a deploy reads and produces, what has been deployed, and
-  what this environment is saying;
+- **Backends** — every environment the API has been deployed to, what each one
+  was deployed with, and how a new one starts;
 - **Frontends** — the three apps, what each one is handed, and where they run;
 - **Integrations** — the AWS account the console acts as, and the Vercel account
   the two deployed apps live on, which the console can sign in to by running the
@@ -28,8 +28,9 @@ Frontends        /frontends        all three, what is up, and Start
                  /frontends/<app>  one of them — Env variables · Deployments · Logs
                                    ×  an environment
 
-Backends         play              Env variables · Deployments · Logs
-                                   ×  an environment
+Backends         /backends         every environment, what is deployed, and
+                                   Deploy to a new backend env
+                 /backends/<stage> one of them — Env variables · Deployments · Logs
 
 Integrations     AWS      who the console acts as, and what is deployed
                  Vercel   where the two deployed apps run — read-only, plus the
@@ -38,19 +39,49 @@ Integrations     AWS      who the console acts as, and what is deployed
 
 Which one, and against what, are **two dropdowns at the top of the page they
 belong to**, in the same place, because they are the same shape of question. On
-the frontends list the first of them *opens* a frontend rather than selecting one
-in place: the frontend is a route, so one app's output is linkable, the back
-button returns to the list, and the list keeps saying what all three are doing
-while you read about one of them. The environment dropdown is the same control on
-every page, and it writes the state the whole console reads, so moving between
-pages keeps the environment you were looking at.
+both lists the first of them *opens* something rather than selecting it in place:
+a frontend, or an environment's backend. Both are routes, so one app's output and
+one environment's stacks are each linkable, the back button returns to the list,
+and the list keeps saying what all of them are doing while you read about one.
+The environment dropdown on a frontend's own page is the shared stage, and it
+writes the state the whole console reads, so moving between pages keeps the
+environment you were looking at — and `/backends/<stage>` sets that same stage on
+the way in, because the environment in the URL is the one the rest of the console
+should be looking at.
 
 Starting a frontend is **above the tabs**, beside the environment it would be
-started against: it is the page's subject rather than one of its three views.
+started against: it is the page's subject rather than one of its three views. A
+backend has no equivalent control there, because its equivalent *is* one of the
+tabs — the Deployments tab is the deploy page, and the six-hundred-word
+consequences of pressing the button belong next to the button.
+
+### Why `/backends` is a list of environments
+
+There is one backend: the CDK app in `infra/`. The plural is about *where it has
+been deployed*, so a row is a stage, and everything a row says is a fact about
+four CloudFormation stacks — which are complete, whether this environment creates
+its own tables, bucket and pool or imports another stage's, and where its API is.
+Every environment exists whether or not anything has been deployed to it, so the
+rows come from the repository's own list and the stacks only fill each one in: a
+list drawn from the deployed stacks would be empty on a fresh checkout, which is
+exactly when the first deploy has to happen.
+
+**Deploy to a new backend env** asks for a name and then *opens* that
+environment's page on its checklist — `/backends/<stage>?tab=deployments`. It does
+not start a run, and that is the point of it: a new environment needs its config
+file first, the plan's third step is what writes one, and what the plan will do is
+worth reading before it is run. The name is the only thing this console cannot
+read off AWS.
+
+There is therefore **no 404 for a stage nobody has configured** — that page is the
+one this console most needs to draw, and `/backends/staging` works the moment
+somebody has thought of it. A name that could never be a stage *is* a 404, because
+the alternative is a page about nothing.
 
 The environment is deliberately not in the rail. A list there would be a second
 place to select the same thing, which is a second answer to one question — and
-the rail is left with the three parts of the problem instead of a menu.
+naming a new one lives on the list where the environments are, rather than in the
+chrome, so the rail is left with the three parts of the problem instead of a menu.
 
 ### Env variables — inputs, and outputs
 
@@ -75,7 +106,10 @@ about any of it: which direction the value travels, and who reads it.
 For a backend, this tab *is* the deploy page — the thirteen-step checklist, the
 transcript, the button — plus what CloudFormation has actually done, read from
 the stacks rather than remembered by this process. A history kept on
-`globalThis` would begin when you opened the page.
+`globalThis` would begin when you opened the page. The environment it is about
+comes from the URL rather than from the shell's selection: `/backends/<stage>` *is*
+that environment, and a checklist that drew another stage's step notes while the
+shell caught up would be a page about two environments at once.
 
 For a frontend it is where the app is running: locally from here, and on Vercel
 if that project is connected.
@@ -411,7 +445,7 @@ src/app/api/
 
 src/components/
   console/         the frame: the rail, the environment picker, the theme
-  backends/        the three tabs for a backend
+  backends/        the list of environments, and one environment's three tabs
   frontends/       the list, one app's page, and the environment picker both use
   integrations/    AWS and Vercel, and the sign-in stream
   deploy/          the checklist, the step rows, the transcript, the result

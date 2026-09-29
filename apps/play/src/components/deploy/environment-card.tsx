@@ -5,6 +5,7 @@ import { RocketIcon, ShieldAlertIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip, Dot, type Tone } from "@/components/ui/chip";
+import { backendState } from "@/lib/backends";
 import { cn } from "@/lib/cn";
 import { apiHost, stackInitials, stackWord } from "@/lib/format";
 import type { ConsoleState, EnvironmentView, StackSummary } from "@/lib/types";
@@ -37,7 +38,13 @@ export function EnvironmentCard({
   busy: boolean;
 }) {
   const healthy = environment?.stacks.filter((stack) => stack.healthy).length ?? 0;
-  const status = environmentStatus(environment, state?.identity?.account ?? null);
+  // The same verdict the environment's row carries in the list: one function, so
+  // a row that says "deployed" cannot sit above a card that says otherwise.
+  const status = backendState(environment, state?.identity?.account ?? null);
+  // Before the first read, `environment` is null for *every* stage — so nothing
+  // here may treat that as "there is no config file". The two are the same shape
+  // and opposite meanings, and the wrong one is the alarming one.
+  const reading = state === null;
 
   return (
     <Card>
@@ -45,19 +52,23 @@ export function EnvironmentCard({
         <div className="min-w-0">
           <div className="flex items-center gap-3">
             <h2 className="truncate font-mono text-2xl font-semibold tracking-tight">{stage}</h2>
-            <Chip tone={status.tone}>
-              <Dot tone={status.tone} pulse={status.tone === "run"} />
-              {status.label}
-            </Chip>
+            {reading ? null : (
+              <Chip tone={status.tone}>
+                <Dot tone={status.tone} />
+                {status.label}
+              </Chip>
+            )}
           </div>
           <p className="text-muted-foreground mt-1.5 text-sm">
-            {environment
-              ? `account ${environment.account} · ${environment.region} · ${
-                  environment.ownsEverything
-                    ? "its own tables, media and pool"
-                    : `${environment.tables} imported tables`
-                }`
-              : "no config file yet — the plan writes one"}
+            {reading
+              ? "Reading the stacks…"
+              : environment
+                ? `account ${environment.account} · ${environment.region} · ${
+                    environment.ownsEverything
+                      ? "its own tables, media and pool"
+                      : `${environment.tables} imported tables`
+                  }`
+                : "no config file yet — the plan writes one"}
           </p>
         </div>
 
@@ -73,7 +84,7 @@ export function EnvironmentCard({
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {stackTiles(environment).map((tile) => (
+        {stackTiles(environment, reading).map((tile) => (
           <StackTile key={tile.name} tile={tile} />
         ))}
       </div>
@@ -96,7 +107,7 @@ export function EnvironmentCard({
       ) : null}
 
       <div className="mt-5 flex flex-col gap-2.5 border-t border-border/40 pt-4">
-        {environment?.ownsEverything ? (
+        {reading ? null : environment?.ownsEverything ? (
           <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
             <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
             <span>
@@ -176,14 +187,20 @@ interface Tile {
   exists: boolean;
 }
 
-function stackTiles(environment: EnvironmentView | null): Tile[] {
+function stackTiles(environment: EnvironmentView | null, reading: boolean): Tile[] {
   const words = ["Data", "Media", "Auth", "Api"];
   return words.map((word) => {
     const found: StackSummary | undefined = environment?.stacks.find(
       (stack) => stackWord(stack.name) === word,
     );
-    if (!found || found.status === "NOT_DEPLOYED") {
-      return { name: `Play${word}Stack`, word, status: "not deployed", tone: "muted", exists: false };
+    if (reading || !found || found.status === "NOT_DEPLOYED") {
+      return {
+        name: `Play${word}Stack`,
+        word,
+        status: reading ? "reading…" : "not deployed",
+        tone: "muted",
+        exists: false,
+      };
     }
     return {
       name: found.name,
@@ -211,22 +228,4 @@ function StackTile({ tile }: { tile: Tile }) {
       <span className="text-muted-foreground truncate text-xs">{tile.status}</span>
     </div>
   );
-}
-
-/* ------------------------------------------------------------------ *
- * The state of the environment, in one chip
- * ------------------------------------------------------------------ */
-
-function environmentStatus(
-  environment: EnvironmentView | null,
-  account: string | null,
-): { tone: Tone; label: string } {
-  if (!environment) return { tone: "muted", label: "new" };
-  if (environment.deployed) return { tone: "ok", label: "deployed" };
-  if (environment.partial) return { tone: "warn", label: "partly deployed" };
-  if (!environment.hasConfig) return { tone: "muted", label: "needs a config file" };
-  if (environment.account && account && environment.account !== account) {
-    return { tone: "bad", label: "different account" };
-  }
-  return { tone: "muted", label: "not deployed" };
 }

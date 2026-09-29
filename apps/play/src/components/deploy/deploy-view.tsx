@@ -38,11 +38,25 @@ import type { RunStatus, StepView } from "@/lib/types";
  * which builds it from the same `PlanStep` objects the run executes. That is not
  * a nicety: the request behind this feature was a checklist of everything a
  * deployment needs, and a checklist you only see after the fact is a log.
+ *
+ * **The environment is a prop, not the shell's selection.** The caller is
+ * `/backends/<stage>`, where the environment is the URL — and a page that drew
+ * another stage's step notes or another stage's stack statuses for the moment it
+ * took the shell to catch up would be a page about two environments at once. It
+ * matters most for a stage nobody has deployed: that page exists precisely to
+ * make it deployable, and drawing the previous environment's data on it would be
+ * wrong in the loudest possible way.
  */
 
-export function DeployView({ embedded = false }: { embedded?: boolean } = {}) {
-  const { stage, environment, state, unknown } = useShell();
+export function DeployView({ stage, embedded = false }: { stage: string; embedded?: boolean }) {
+  const { state } = useShell();
   const deploy = useDeploy();
+
+  const environment = state?.environments.find((item) => item.stage === stage) ?? null;
+  // Whether there is a config file is a fact about the repository, so it is only
+  // a fact once the state has been read — before that, saying "no config file
+  // yet" would say it about every environment.
+  const unknown = state !== null && environment === null;
   const [preview, setPreview] = useState<StepView[] | null>(null);
 
   const run = deploy.run;
@@ -147,10 +161,10 @@ export function DeployView({ embedded = false }: { embedded?: boolean } = {}) {
             </span>
           </span>
           <Link
-            href="/settings"
+            href={`/backends/${encodeURIComponent(stage)}`}
             className="text-foreground/90 hover:text-foreground shrink-0 font-medium underline underline-offset-4"
           >
-            Open Settings
+            Open Env variables
           </Link>
         </div>
       ) : null}
@@ -303,7 +317,7 @@ function ResultCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["ru
 
         <div className="flex items-center gap-2">
           <Link
-            href="/apps"
+            href="/frontends"
             className="border-border/70 bg-card hover:bg-accent inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors"
           >
             Start the frontends

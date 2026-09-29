@@ -2,12 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 import {
   CloudIcon,
   GlobeIcon,
   MoonIcon,
-  PlusIcon,
   RocketIcon,
   ServerIcon,
   SunIcon,
@@ -16,18 +14,13 @@ import {
 
 import { Chip, Dot } from "@/components/ui/chip";
 import { Button, IconButton } from "@/components/ui/button";
-import { useNameStage, useShell, useTheme } from "@/components/console/state";
+import { useShell, useTheme } from "@/components/console/state";
 import { cn } from "@/lib/cn";
 
 /**
  * The frame: a rail on the left, and the page beside it.
  *
- * Two things about it are decisions rather than layout.
- *
- * **The rail is the environment picker.** Not a dropdown in the header: the
- * environment is the subject of every screen here, and a control that is on
- * screen the whole time says so. Selecting one changes what the deploy page is
- * about and what the frontend cards would be started against, from one place.
+ * One thing about it is a decision rather than layout.
  *
  * **The chrome never moves.** The rail is `h-screen` and the bar is sticky and
  * translucent, so scrolling a thirteen-step checklist and a thousand-line
@@ -44,11 +37,12 @@ import { cn } from "@/lib/cn";
  * list of pages: *what you are deploying*, *what reads it*, and *where it
  * lives*.
  *
- * The environment is deliberately **not** in the rail. It is a dropdown on the
- * page it applies to, beside the other dropdown that answers the same shape of
- * question — which backend, which environment — and it writes the same state
- * the whole console reads, so moving between pages keeps the environment you
- * were looking at.
+ * The environment is deliberately **not** in the rail. It is the environment in
+ * `/backends/<stage>`'s URL, or the dropdown on a frontend's page — the control
+ * belongs beside the thing it is about — and both write the one piece of state
+ * the whole console reads, so moving between pages keeps the environment you were
+ * looking at. The rail says *which* environment you are looking at, in the bar
+ * above, and otherwise leaves it alone.
  */
 const NAV = [
   {
@@ -145,16 +139,14 @@ function Rail() {
       </nav>
 
       {/*
-        The environments are *not* listed here. Which environment you are
-        looking at is a dropdown on the page it applies to, sitting beside the
-        other dropdown that answers the same shape of question — and a list here
-        would be a second place to select the same thing, which is a second
-        answer to one question. What is left is the one action that has nowhere
-        else to live: naming a stage that does not exist yet.
+        The environments are *not* listed here — and neither is naming a new one.
+        Which environment you are looking at is the environment in
+        `/backends/<stage>`'s URL, and the list that names them is where a stage
+        that does not exist yet is created: one button, one place, one answer.
+        A control here would be a second way to do both, and the rail is better
+        off with the three parts of the problem than with a menu.
       */}
-      <div className="flex min-h-0 flex-1 flex-col justify-end gap-2">
-        <NewEnvironment />
-      </div>
+      <div className="flex-1" />
 
       <Identity />
     </aside>
@@ -219,75 +211,6 @@ function NavItem({
         <span className="text-muted-foreground shrink-0 truncate text-xs">{hint}</span>
       ) : null}
     </Link>
-  );
-}
-
-/**
- * Naming a stage that does not exist yet.
- *
- * It is here rather than behind a dialog because the answer to "which
- * environment" is sometimes "one that is not there yet", and a picker that only
- * offers what exists makes that a repository edit rather than a click. The
- * stage is only *named* — the deploy page's third step is what gives it a
- * config file.
- */
-function NewEnvironment() {
-  const name = useNameStage();
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-2 rounded-2xl px-3 py-2 text-left text-xs transition-colors"
-      >
-        <PlusIcon className="size-3.5" />
-        New environment
-      </button>
-    );
-  }
-
-  const commit = () => {
-    const trimmed = value.trim().toLowerCase();
-    if (/^[a-z0-9][a-z0-9-]{0,30}$/.test(trimmed)) {
-      name(trimmed);
-      setOpen(false);
-      setValue("");
-    }
-  };
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        commit();
-      }}
-      className="flex items-center gap-1 px-1"
-    >
-      <input
-        autoFocus
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            setOpen(false);
-            setValue("");
-          }
-        }}
-        placeholder="staging"
-        className="border-border/70 bg-background/60 focus-visible:ring-ring h-8 min-w-0 flex-1 rounded-full border px-3 font-mono text-xs focus-visible:ring-2 focus-visible:outline-none"
-      />
-      <IconButton
-        type="submit"
-        title="Use this stage"
-        aria-label="Use this stage"
-        disabled={!/^[a-z0-9][a-z0-9-]{0,30}$/.test(value.trim().toLowerCase())}
-      >
-        <PlusIcon className="size-3.5" />
-      </IconButton>
-    </form>
   );
 }
 
