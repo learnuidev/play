@@ -31,6 +31,6 @@
       "https://studio.lets-play.xyz"
     ]
   },
-  "cloudFrontPrivateKeyParam": "/play/cloudfront/private-key",
-  "cloudFrontPublicKeyParam": "/play/cloudfront/public-key"
+  "cloudFrontPrivateKeyParam": "/play/test/cloudfront/private-key",
+  "cloudFrontPublicKeyParam": "/play/test/cloudfront/public-key"
 }
