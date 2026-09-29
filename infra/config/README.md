@@ -8,7 +8,7 @@ One file per stage. What is in it depends on which kind of stage it describes:
   backend, migrated off the legacy Serverless stack without moving any data.
 - **A new stage** — anything else — imports nothing, so it names nothing. It has
   no `existing` block; `ownership` is the whole of what it says about resources,
-  and the stacks create them, named `play-<stage>-*`.
+  and the stacks create them, named after the stage.
 
 Both kinds are committed and meant to be read before a deploy: the file is the
 one place that says *which* resources a `cdk deploy` is about to be pointed at.
@@ -54,6 +54,8 @@ says so before anything is deployed.
 | `mail.*` | The invitation sender and the two app base URLs. **Deploy-time, not runtime** |
 | `auth.googleClientId`, `auth.callbackUrls`, `auth.logoutUrls` | The Google client id, and the origins Cognito accepts. On a migrated stage the live pool's values are read from Cognito by `set-auth-urls.mjs` instead |
 | `googleClientSecretName` | The Secrets Manager secret a **created** pool reads the client secret from. Defaults to `play/<stage>/google-client-secret`, which is per-stage so two environments cannot overwrite each other |
+| `videosBucketName` | What to call the **videos bucket**, on a stage that creates its media. Absent — the default, and what the console writes — lets CloudFormation name it, because an S3 bucket name is unique across every AWS account |
+| `cloudFrontLogsBucketName` | The same, for the distribution's log bucket |
 | `cloudFrontPrivateKeyParam` | The *name* of the signing key parameter. Never the key. Defaults to `/play/<stage>/cloudfront/private-key` |
 | `cloudFrontPublicKeyParam` | The *name* of that key's public half. Defaults to `/play/<stage>/cloudfront/public-key` |
 
@@ -85,6 +87,11 @@ required exactly when the corresponding group is imported. So a stage that
 imports its tables cannot leave one out, and a stage that creates them is not
 asked for 27 names it was never going to have.
 
+The two bucket-name fields are the other side of the same rule, and they are
+optional where `existing` is required: a stage that creates its media gets
+**generated** bucket names unless it asks for fixed ones. See below — S3 is the
+one resource here whose name is global.
+
 ## `ownership`
 
 ```json
@@ -96,13 +103,13 @@ answers:
 
 | | Value | The stage | Its data |
 | --- | --- | --- | --- |
-| **New environment** | all `true` | Creates the tables, the bucket, the distribution and the pool, named `play-<stage>-*` | Its own, empty |
+| **New environment** | all `true` | Creates the tables, the buckets, the distribution and the pool, named after the stage | Its own, empty |
 | **Migrated stage** | all `false` | Imports them by physical name | Shared with every other migrated stage |
 
 **A new environment is all `true`, and that is what the deploy console writes.**
 Deploying `staging` for the first time gives you staging's own 27 tables, its own
 videos bucket and CloudFront distribution, and its own Cognito user pool — all
-empty, and all named after the stage. Nothing is shared, so a deploy there cannot
+empty, and all this stage's own. Nothing is shared, so a deploy there cannot
 change what `dev` reads, and there is no handover step to worry about because
 there is only ever one owner of staging's bucket.
 
@@ -152,3 +159,38 @@ applies them.
 
 The third writes this file, because those two values *are* deployed — they are in
 every Lambda's environment.
+
+## Why a new stage does not name its buckets
+
+Every other name here is *this account's* business. `play-staging-users` is a
+DynamoDB table and no other account can take it; `play-staging-<account>` is a
+Cognito domain prefix, and the account is in it. **An S3 bucket name is unique
+across every AWS account**, so `play-<stage>-videos` is a name somebody else may
+have registered years ago — and a stage called `test` is exactly the kind of name
+somebody else has.
+
+When that happens the deploy does not fail on the line that chose the name. It
+stops during change-set validation:
+
+> Resource of type 'AWS::S3::Bucket' with identifier 'play-test-videos' already
+> exists.
+
+which names the bucket and not whose it is. So a stage that creates its media
+leaves both names out, and CloudFormation makes them up: unique by construction,
+and nothing needs to *know* them, because `VideosBucketName` is a stack output
+and the handlers get the name in their environment.
+
+A stage that already has buckets **freezes** their names here, because naming an
+existing bucket is a replacement — a new empty bucket, and the video left behind
+in the old one. `staging` does:
+
+```json
+"videosBucketName": "play-staging-videos",
+"cloudFrontLogsBucketName": "play-staging-cloudfront-logs"
+```
+
+A name that is frozen can also be *taken* — by another account, or by a bucket
+that outlived the stack which created it, since every bucket here is
+`RemovalPolicy.RETAIN`. The deploy console checks both before a run starts and
+says which one it is; `infra/README.md` has the rest of the destroy-and-redeploy
+story.

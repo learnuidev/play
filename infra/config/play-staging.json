@@ -32,5 +32,7 @@
     ]
   },
   "cloudFrontPrivateKeyParam": "/play/staging/cloudfront/private-key",
-  "cloudFrontPublicKeyParam": "/play/staging/cloudfront/public-key"
+  "cloudFrontPublicKeyParam": "/play/staging/cloudfront/public-key",
+  "videosBucketName": "play-staging-videos",
+  "cloudFrontLogsBucketName": "play-staging-cloudfront-logs"
 }

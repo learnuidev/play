@@ -1,4 +1,4 @@
-import { run } from "./exec";
+import { lastMeaningfulLines, run } from "./exec";
 import type { Identity, StackSummary } from "@/lib/types";
 
 /**
@@ -225,6 +225,58 @@ export async function describeStack(
     status: stack.StackStatus,
     healthy: stackHealthy(stack.StackStatus),
     outputs,
+  };
+}
+
+/**
+ * Whether a bucket name is free, already ours, or somebody else's.
+ *
+ * `HeadBucket` is the only way to ask, and it answers three ways: 200 for a
+ * bucket this account can see, 404 for one that does not exist, and **403 for
+ * one that exists in another account** — because S3's namespace is global, and
+ * a bucket this account cannot see is a bucket this account cannot create.
+ *
+ * That last answer is worth asking for by name. CloudFormation reports it as
+ * "Resource of type 'AWS::S3::Bucket' with identifier 'play-test-videos' already
+ * exists" during change-set validation, which names the bucket and neither whose
+ * it is nor what to do about it.
+ */
+export type BucketAccess = "free" | "ours" | "other" | "unknown";
+
+export interface BucketAnswer {
+  access: BucketAccess;
+  /** The CLI's own words, when the answer was not one of the three. */
+  detail: string | null;
+}
+
+export async function bucketAccess(
+  bucket: string,
+  ctx: Partial<AwsContext> = {},
+): Promise<BucketAnswer> {
+  const { profile, region } = ctx;
+  const args = [
+    "s3api",
+    "head-bucket",
+    "--bucket",
+    bucket,
+    ...(profile ? ["--profile", profile] : []),
+    ...(region ? ["--region", region] : []),
+  ];
+
+  const result = await run("aws", args, { timeoutMs: 30_000 }).catch(() => null);
+  if (!result) return { access: "unknown", detail: "the AWS CLI could not be started" };
+  if (result.code === 0) return { access: "ours", detail: null };
+
+  const stderr = result.stderr.trim();
+  if (/404|NoSuchBucket|Not Found/i.test(stderr)) return { access: "free", detail: null };
+  // A 403 is the global-namespace answer: somebody else holds the name. It can
+  // also mean a policy denies this principal, which is the same outcome — this
+  // account cannot create the bucket either way.
+  if (/403|Forbidden|AccessDenied/i.test(stderr)) return { access: "other", detail: null };
+
+  return {
+    access: "unknown",
+    detail: lastMeaningfulLines(stderr || result.stdout, 2).join(" ") || "no output",
   };
 }
 

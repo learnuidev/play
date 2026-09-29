@@ -41,7 +41,7 @@ Whether the first three **create** or **import** what they hold is `ownership` i
 `infra/config/play-<stage>.json`, one flag per group:
 
 - **A new environment** sets all three `true`. Every table, bucket, distribution
-  and pool is created, named `play-<stage>-*` and empty — which is what
+  and pool is created, empty and this stage's own — which is what
   `apps/play` writes for a stage that has never existed.
 - **A migrated stage** sets all three `false` and names them. `dev` is the only
   one, and it is `false` because its resources predate this app and hold the
@@ -102,11 +102,18 @@ a Lambda's environment, and the failure surfaces as a 500 at the first request.
 | `scripts/ensure-cloudfront-key.mjs` | Puts an environment's CloudFront URL-signing key pair in SSM: `cloudFrontPrivateKeyParam` (the private half, a `SecureString` the handlers read by name) and `cloudFrontPublicKeyParam` (the public half `PlayMediaStack` creates the distribution's public key from). Per environment by default — `/play/<stage>/cloudfront/*`. Generates a 2048-bit RSA pair when neither is there, derives the public half when only the private one is, and **never rotates a key that exists** — rotation is a deploy of a new public key, not a script. The console's Checklist tab runs it when a new environment is created |
 | `scripts/provision-google-secret.mjs` | Copies the Google client secret from SSM into Secrets Manager at `play/<stage>/google-client-secret`. Needed before a stack that **creates** a user pool deploys — CloudFormation refuses an SSM Secure reference in `UserPoolIdentityProvider`. Idempotent. The console's Checklist tab is the way to do this by hand |
 
-## Destroying a stage, and the log groups it leaves behind
+## Destroying a stage, and what it leaves behind
 
 Every log group here is named (`/aws/lambda/play-<stage>-<function>`) and marked
 `RemovalPolicy.RETAIN`, so that a stack delete is not a reason to lose the record
-of what happened. The cost shows up when you **delete a stage and deploy it again
+of what happened. The two S3 buckets are retained the same way — they hold the
+video — and a *generated* bucket name is what makes that harmless: the next
+deploy of the stage makes its own buckets, and the old ones sit there until
+somebody decides what to do with them. A stage whose config **names** its buckets
+does not have that escape: the next deploy cannot create a bucket that exists,
+which is early validation failing with "Resource of type 'AWS::S3::Bucket' with
+identifier 'play-staging-videos' already exists" once the stack is gone. The
+deploy console checks for exactly that before a run starts. The cost shows up when you **delete a stage and deploy it again
 under the same name**: the retained log groups outlive the stack, and the next
 deploy fails early validation because it is trying to create a log group that
 already exists.

@@ -21,13 +21,15 @@ import { defaultRegion, profileSetting, repoPath } from "./repo";
  *
  * | | `tables`/`media`/`auth` | The stage | Its data |
  * | --- | --- | --- | --- |
- * | **New** | `true` | Creates them, named `play-<stage>-*` | Its own, empty |
+ * | **New** | `true` | Creates them, named after the stage or by CloudFormation | Its own, empty |
  * | **Migrated** | `false` | Imports them by physical name | Shared with every other migrated stage |
  *
  * **A new environment creates everything.** That is the default the console
  * writes, and it is the one that makes "deploy to a new environment" mean what
  * it sounds like: new tables, a new bucket, a new distribution, a new user pool,
- * all empty, named after the stage.
+ * all empty, and named so that two environments cannot collide — the tables after
+ * the stage, the two S3 buckets by CloudFormation, because a bucket name is
+ * unique across every AWS account.
  *
  * `false` is the *migrated* case and exists for exactly one reason: `dev`'s
  * resources predate this CDK app by years and hold the product. An imported
@@ -84,6 +86,20 @@ export interface StageConfig {
   auth?: { googleClientId?: string; callbackUrls?: string[]; logoutUrls?: string[] };
   cloudFrontPrivateKeyParam?: string;
   cloudFrontPublicKeyParam?: string;
+  /**
+   * What to call the two buckets a stage that **creates** its media gets.
+   *
+   * Absent means CloudFormation names them — which is what a new environment
+   * gets, because an S3 name is unique across every AWS account and
+   * `play-<stage>-videos` is a name somebody else may already hold. A stage
+   * that has buckets freezes their names here (naming one that exists is a
+   * *replacement*), and the console reports a fixed name it cannot create
+   * before a deploy starts rather than after CloudFormation's early validation.
+   *
+   * Mirrors `infra/src/config.ts`'s two fields.
+   */
+  videosBucketName?: string;
+  cloudFrontLogsBucketName?: string;
   ownership?: StageOwnership;
   [key: string]: unknown;
 }

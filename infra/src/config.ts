@@ -85,6 +85,28 @@ export interface PlayConfig {
    * checks it field by field rather than demanding the whole block.
    */
   existing?: ExistingResources;
+  /**
+   * What to call the two buckets a stage that **creates** its media gets.
+   *
+   * Absent by default, and absent is the better answer: an S3 bucket name is
+   * unique across *every* AWS account, so `play-<stage>-videos` is a name some
+   * other account may simply own — for a stage called `test`, one does — and
+   * CloudFormation then fails early validation with "Resource of type
+   * 'AWS::S3::Bucket' with identifier 'play-test-videos' already exists",
+   * before anything is created.
+   *
+   * Left out, CloudFormation names each bucket itself: unique by construction,
+   * and the physical name is not something a person needs to know, because
+   * every consumer reads it from the stack — `VideosBucketName` is an output,
+   * and the handlers get it in their environment. Set either field to keep a
+   * name a stage already has (naming a bucket that exists is a *replacement*,
+   * so a deployed stage freezes what it has) or to pick one deliberately.
+   *
+   * Only for a stage that creates its media: an imported one names its bucket
+   * in `existing.videosBucket`, which is a physical name rather than a choice.
+   */
+  videosBucketName?: string;
+  cloudFrontLogsBucketName?: string;
   mail: MailSettings;
   auth: AuthSettings;
   /** The *name* of the CloudFront signing key parameter. Never the key. */
@@ -249,6 +271,20 @@ function validate(config: PlayConfig): string[] {
 
   const ownership = ownershipOf(config);
   const existing = config.existing;
+
+  // A stage either creates its buckets or imports one, and each has its own way
+  // of being named. Both at once reads like a decision and behaves like a coin
+  // toss, and the loser is a deploy that replaces a bucket full of video.
+  if (!ownership.media) {
+    for (const field of ['videosBucketName', 'cloudFrontLogsBucketName'] as const) {
+      if (config[field]) {
+        problems.push(
+          `${field} is set, but ownership.media is false — an imported stage names the ` +
+            'bucket it uses in existing.videosBucket, and this stage creates neither bucket',
+        );
+      }
+    }
+  }
 
   // The blocks this environment imports, and the fields each one needs. Keyed
   // by block so the error can name which switch to flip instead of listing

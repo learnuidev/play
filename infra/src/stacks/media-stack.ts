@@ -19,8 +19,12 @@ export interface PlayMediaStackProps extends StackProps {
  *
  * `ownership.media` decides what happens to the bucket and the distribution:
  *
- * - **`true` — a new environment — creates them**, named `play-<stage>-videos`
- *   and with a distribution of its own. Empty, and nobody else's.
+ * - **`true` — a new environment — creates them**, with a distribution of its
+ *   own. Empty, and nobody else's. The buckets are **named by CloudFormation**
+ *   rather than after the stage: an S3 name is unique across every AWS account,
+ *   so `play-<stage>-videos` is a name another account may already hold, and
+ *   the deploy fails early validation before it creates anything. A stage that
+ *   wants a fixed name sets `videosBucketName` in its config.
  * - **`false` — `dev` — imports them** by physical name. They hold every
  *   uploaded and processed video, and a CloudFront distribution that is
  *   recreated is a distribution with a *new domain name*, which is a new URL in
@@ -62,7 +66,10 @@ export class PlayMediaStack extends Stack {
 
     this.videosBucket = owned
       ? new s3.Bucket(this, 'VideosBucket', {
-          bucketName: `play-${config.stage}-videos`,
+          // Undefined unless the config names one: a generated name cannot be
+          // taken by another account, and every consumer reads it from the
+          // `VideosBucketName` output rather than from this line.
+          bucketName: config.videosBucketName,
           // Uploads arrive from the browser by presigned PUT, from MediaConvert
           // and Transcribe as service writes, and are read back by CloudFront.
           // Nothing about that needs public access, so it is blocked four ways.
@@ -236,7 +243,9 @@ export class PlayMediaStack extends Stack {
     publicKeyId: string;
   } {
     const logsBucket = new s3.Bucket(this, 'CloudFrontLogsBucket', {
-      bucketName: `play-${config.stage}-cloudfront-logs`,
+      // Named for the same reason as the videos bucket: only when the config
+      // says so, and generated otherwise.
+      bucketName: config.cloudFrontLogsBucketName,
       encryption: s3.BucketEncryption.S3_MANAGED,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,

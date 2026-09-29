@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { LogStream } from "@/lib/types";
 import {
+  bucketAccess,
   describeStack,
   describeStacks,
   getIdentity,
@@ -409,7 +410,7 @@ export function buildPlan(stage: string): PlanStep[] {
    *   discover and nothing to import. The file is written with `ownership` set
    *   for all three groups, which is what tells the stacks to **create** the
    *   tables, the bucket, the distribution and the user pool rather than reach
-   *   for somebody else's. Everything created is named after the stage, is
+   *   for somebody else's. Everything created is this stage's own, is
    *   empty, and is retained if the stack is deleted.
    *
    * The difference between the two is the difference between *a second
@@ -427,7 +428,7 @@ export function buildPlan(stage: string): PlanStep[] {
   const config: PlanStep = {
     id: "config",
     title: "The environment's resources are named",
-    detail: `\`${stageConfigPath}\` is what the stacks stand on. A stage that exists already imports the tables, bucket, distribution and pool by physical name; a **new** stage has no such names and is written to create all of them instead, named \`play-<stage>-*\`. Either way a stage without this file cannot synthesize at all.`,
+    detail: `\`${stageConfigPath}\` is what the stacks stand on. A stage that exists already imports the tables, bucket, distribution and pool by physical name; a **new** stage has no such names and is written to create all of them instead — the tables named \`play-<stage>-*\`, the two S3 buckets named by CloudFormation, because an S3 bucket name is unique across every AWS account and \`play-test-videos\` is already somebody else's. Either way a stage without this file cannot synthesize at all.`,
     satisfiedLabel: "On disk",
     check: async (ctx) => {
       const loaded = readConfig(ctx.stage);
@@ -718,10 +719,7 @@ export function buildPlan(stage: string): PlanStep[] {
     timeoutMs: 5 * 60_000,
     check: async (ctx) => {
       if (ownershipOf(readConfig(ctx.stage)).media) {
-        return {
-          satisfied: true,
-          note: `this environment creates its own bucket — no other stage notifies it`,
-        };
+        return ownedBucketCheck(ctx);
       }
 
       const result = await exec(
@@ -755,6 +753,18 @@ export function buildPlan(stage: string): PlanStep[] {
     },
     apply: async (ctx) => {
       if (ownershipOf(readConfig(ctx.stage)).media) {
+        // The check is the whole of the work for an owned bucket: nothing to
+        // hand over, but possibly something in the way. A name that cannot be
+        // created halts here rather than at CloudFormation's early validation,
+        // which names the bucket and not the reason.
+        const verdict = await ownedBucketCheck(ctx);
+        if (!verdict.satisfied) {
+          throw new Error(
+            `${verdict.note}\n\nA deploy cannot start until the bucket a config *names* can be created. ` +
+              "Leaving videosBucketName out of the config is the other way round it: CloudFormation " +
+              "names the bucket, and a generated name cannot be taken.",
+          );
+        }
         return { note: "nothing to hand over — this environment's bucket is its own" };
       }
 
@@ -1222,6 +1232,81 @@ export function buildPlan(stage: string): PlanStep[] {
 /* ------------------------------------------------------------------ *
  * Small helpers the steps lean on
  * ------------------------------------------------------------------ */
+
+/**
+ * Whether this environment's own buckets are free to create.
+ *
+ * A stage that creates its media gets **generated** bucket names unless its
+ * config names them, and a generated name cannot be taken — so the interesting
+ * case is a stage that froze one, which is what `staging` did to avoid replacing
+ * a bucket full of video. Two things can then be in the way:
+ *
+ * - **another AWS account holds the name.** S3's namespace is global, so
+ *   `play-test-videos` was gone before this repository ever ran; the deploy
+ *   fails early validation with "already exists", which reads like a leftover of
+ *   ours and is not.
+ * - **a bucket outlived the stack that made it.** Every bucket here is
+ *   `RemovalPolicy.RETAIN`, so deleting a stage leaves its buckets behind, and
+ *   the next deploy of that stage cannot create a bucket that exists. Same
+ *   failure, different fix: this one *is* ours.
+ */
+async function ownedBucketCheck(ctx: StepContext): Promise<CheckOutcome> {
+  const config = readConfig(ctx.stage);
+  const named: { what: string; bucket: string; field: string }[] = [];
+  if (config?.videosBucketName) {
+    named.push({ what: "videos", bucket: config.videosBucketName, field: "videosBucketName" });
+  }
+  if (config?.cloudFrontLogsBucketName) {
+    named.push({
+      what: "CloudFront logs",
+      bucket: config.cloudFrontLogsBucketName,
+      field: "cloudFrontLogsBucketName",
+    });
+  }
+
+  if (named.length === 0) {
+    return {
+      satisfied: true,
+      note: "it creates its own bucket, and CloudFormation names it — a generated name cannot be taken",
+    };
+  }
+
+  for (const { what, bucket, field } of named) {
+    const answer = await bucketAccess(bucket, { profile: ctx.profile, region: ctx.region });
+
+    if (answer.access === "free") continue;
+
+    if (answer.access === "other") {
+      return {
+        satisfied: false,
+        note: `the ${what} bucket '${bucket}' exists in another AWS account — an S3 bucket name is unique across every account, so nothing here can create it. Give this stage a name of its own, or point ${field} at a name that is free`,
+      };
+    }
+
+    if (answer.access === "unknown") {
+      return {
+        satisfied: false,
+        note: `the ${what} bucket '${bucket}' could not be checked — ${answer.detail}`,
+      };
+    }
+
+    const stack = await describeStack(`PlayMediaStack-${ctx.stage}`, {
+      profile: ctx.profile,
+      region: ctx.region,
+    });
+    if (!stack) {
+      return {
+        satisfied: false,
+        note: `'${bucket}' exists and no stack of this environment owns it — a bucket outlives the stack that created it, and CloudFormation refuses to create one that already exists. Empty and delete it, or leave ${field} out of the config so the next deploy generates a name of its own`,
+      };
+    }
+  }
+
+  return {
+    satisfied: true,
+    note: `${named.map((entry) => entry.bucket).join(" · ")} — this environment's own`,
+  };
+}
 
 async function outputsFor(
   ctx: StepContext,
