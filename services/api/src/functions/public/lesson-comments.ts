@@ -43,9 +43,11 @@ const UNNAMED = 'Play member';
  * A lesson's discussion, and the two things an app may do to it.
  *
  * `GET` reads it; `POST` adds to it. One resource with two methods and one
- * Lambda, because they are one conversation — and because a function costs this
- * service a root-level resource it does not have to spare (see the resource
- * ceiling written down in `serverless.yml`).
+ * Lambda, because they are one conversation — and because a function is a
+ * Lambda, a log group, a permission and a method, which was four resources
+ * against a ceiling of 500 when this was one Serverless stack. The ceiling is
+ * gone; the reason to keep one function per resource rather than per method is
+ * not, since a second function is a second cold start for the same page.
  *
  * ## Reading
  *

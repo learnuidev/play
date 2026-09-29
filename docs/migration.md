@@ -1,265 +1,297 @@
-# Moving the backend off Serverless Framework
+# The backend, moved off Serverless Framework
 
-`services/api` is one Serverless Framework service: one CloudFormation stack
-(`play-backend-{stage}`), 134 Lambda handlers, 133 HTTP routes, 23 DynamoDB
-tables, and a `serverless-plugin-split-stacks` plugin whose only job is to keep it
-inside CloudFormation's limits. That plugin has run out of room, and the way it
-runs out is not graceful.
+`services/api` used to be one Serverless Framework service: one CloudFormation
+stack (`play-backend-dev`) holding 500 resources — CloudFormation's ceiling,
+exactly — with 65 nested stacks and a plugin whose only job was to keep it under
+that number. It is now an AWS CDK app in [`infra/`](../infra/README.md): eight
+stacks, none of them near a limit, described in TypeScript in this repository.
 
-This document is the plan for replacing it with AWS CDK. It is written to be read
-before starting, not during: the order below is the part that matters, because the
-data is the one thing that cannot be recreated.
+This document is the record of what moved, what deliberately did not, and what
+is left to do. [workspace.md](workspace.md) is the map of the repository and
+[deploy.md](deploy.md) is how the two frontend apps are deployed. The CDK app's
+own map is [`infra/README.md`](../infra/README.md).
 
-[workspace.md](workspace.md) is the map of the repository and
-[deploy.md](deploy.md) is how the two apps are deployed; this one is only about
-the backend's infrastructure, and about the ceiling it is standing on.
+## What it was, and what it is
 
-## Where it stands today
-
-| | |
-| --- | --- |
-| Root stack resources | **500 — CloudFormation's ceiling.** It validates and deploys, with zero headroom |
-| Nested stacks | 65, one per newer function |
-| Handlers / routes | 134 / 133 |
-| Tables | 23 (17 have a `Name` stack output; 6 do not) |
-| Hand-written CloudFormation | 40 resources in `resources:`, including the CloudFront distribution, the buckets, the user pool and three roles |
-| Hand-written IAM | 26 statements listing 49 ARNs |
-| `serverless.yml` | 3,093 lines |
-
-The 500 is not the interesting number. The interesting number is **435**: the
-resources the *service* generates, of which about 70 functions (Lambda + log group
-+ permission each, plus their methods and resources) still live in the root stack
-because `split-stacks` only migrates resources that were not already deployed:
-
-> It only ever migrates resources that are *not* already in the deployed
-> stack — everything already there stays where it is.
-
-So the plugin splits the *new* half of the service and leaves the old half in the
-root, and the two halves grow at different rates. There are no orphans to reclaim:
-65 nested stacks, zero of them without a function behind them. The 500 is all live
-resources, and the next function anyone adds is a failed deploy.
-
-### What the ceiling has already cost
-
-Three deploy failures in one week, none of them application bugs:
-
-| Failure | Cause |
-| --- | --- |
-| `Circular dependency between resources: [… 49 nested stacks …]` | Renaming a function moved its nested stack to the end of the template while the `/v1` methods that depend on it stayed where they were; `stackConcurrency: 5` chains stacks `i → i−5`, and one dependency pointing forward closed the chain into a circle. Surfaced at `validateTemplate`, after packaging |
-| `501` root resources | The same trap again: renaming a function key left the service holding two nested stacks for one function — one over the ceiling, which is a template that does not deploy |
-| `401` for every `/v1` caller, valid credentials included | An API Gateway `REQUEST` authorizer declares every credential header as an `identitySource`, and CloudFormation validates them **on every request**: all must be present, so `Authorization, x-api-key` means "send both", which no real caller does |
-
-The first two are properties of `split-stacks`, not of the service: it re-migrates
-by logical id, keeps deployed nested stacks where they are, and adds ordering
-edges of its own. The plugin's own README opens with:
-
-> Using this plugin is a bad idea. It means you've allowed your serverless service
-> to grow in to something huge.
-
-## Why CDK
-
-| What | Why it matters here |
-| --- | --- |
-| **IAM is derived, not written** | `table.grantReadWriteData(fn)` replaces hand-listed ARNs. Today every new table is a manual edit to a 49-ARN block, and a missing `${Table.Arn}/index/*` is a runtime 500, because querying a GSI is a `Query` against the *index* |
-| **`synth` and `diff` are local** | Two of the three failures above were infrastructure errors reported only after eleven minutes of packaging or against a deployed API. `cdk synth` is instant and `cdk diff` shows the change before it is applied |
-| **You own the logical ids** | The other failure class was `split-stacks` moving resources between nested stacks when a name changed. Nothing moves if nothing is renamed for you |
-| **Stacks become a decision** | The 500-per-stack limit does not disappear; it is assigned. One feature today touches one stack of 500, and every deploy re-plans the whole service |
-| **One language for infra and app** | The handlers are already TypeScript; the infrastructure is the only YAML |
-
-What CDK does **not** fix: CloudFormation is still underneath. Stacks still
-replace resources on immutable-property changes, rollbacks are still rollbacks, and
-a `cdk deploy` still means a real change to a real account. There is also a
-bootstrap stack to create once per account and region.
-
-Two alternatives, for completeness:
-
-- **Stay on Serverless and split the service in two** (app API, public API). Half a
-  day, no new tooling, and it removes the ceiling. It is also the same seam the CDK
-  migration lifts out first, so that work carries over rather than being wasted.
-  Worth choosing if the priority is shipping this week rather than tooling.
-- **AWS SAM.** Closer to what is here, but the same one-stack model, so it does not
-  address the ceiling — only the YAML does not get better either.
-
-## The rule the whole migration hangs on
-
-**Import the stateful resources; create the stateless ones.**
-
-| Kind | Resources | How |
+| | Before | After |
 | --- | --- | --- |
-| **Stateful — import, never recreate** | 23 tables, the videos bucket, the CloudFront distribution, the Cognito user pool (and its client, domain and Google provider), the SSM parameters, the SES identity | `Table.fromTableName`, `Bucket.fromBucketName`, `Distribution.fromDistributionAttributes`, `UserPool.fromUserPoolId` |
-| **Stateless — create fresh** | 134 Lambdas, 133 routes, the Cognito authorizer, the gateway responses, the IAM roles and grants, the log groups | Normal CDK constructs |
+| Stacks | 1 root at 500 resources + 65 nested | 4 top level + 4 nested, largest 279 |
+| Config | `serverless.yml`, 3,093 lines | `infra/src` and `infra/bin`, TypeScript |
+| Handlers | 134 functions, 133 routes | unchanged — same files, same routes |
+| Tables | 23, described in YAML | 23, **imported**; schemas preserved in `infra/src/generated/service.ts` |
+| IAM | 26 statements listing 49 ARNs by hand | derived from the table objects, one statement each |
+| Bundling | `serverless-esbuild`, one artifact per function | `esbuild` directly, one artifact per function |
+| Deploy | `serverless deploy` | `cdk deploy`, after `cdk synth` and `cdk diff` |
 
-An imported resource is **unmanaged**: CDK will not change its properties and will
-not delete it. That is the point — it is also why the imports are permanent-ish
-until phase E.
+Nothing under `services/api/src` moved. The handlers, the libraries and the types
+are exactly what they were; what changed is everything that described them.
 
-What must never happen: creating a table with the same name to "adopt" it.
-CloudFormation will fail the deploy (`already exists`) or, if it does not, replace
-it — and a replaced table is an empty table. Every course, lesson, membership,
-comment and credential lives in these 23 tables, and the user pool holds the
-accounts.
+## What did not move, and why that is the point
 
-## The stacks
+**The stateful resources are imported, not recreated.** Every table, the videos
+bucket, the CloudFront distribution and its key group, and the Cognito user pool
+with its app client are referenced by name:
 
-| Stack | Holds | Deploy frequency |
-| --- | --- | --- |
-| `PlayDataStack` | The 23 tables. Imported now, owned in phase E | Rarely |
-| `PlayMediaStack` | Videos bucket + policy, CloudFront distribution, key group, public key, OAC, logs bucket, MediaConvert and Transcribe roles | Rarely |
-| `PlayAuthStack` | User pool, client, domain, Google identity provider, and the redirect URLs (per-stage parameters) | Occasionally |
-| `PlayApiStack` | The 134 functions, their routes, the Cognito authorizer, the gateway responses, and per-function IAM derived from grants | Constantly |
-| `PlayPublicApiStack` (later) | `/v1`, `/oauth` and the key-management routes, if that surface keeps growing faster than the rest | — |
-
-Two things to get right in the API stack:
-
-- **Bundle once.** `serverless-esbuild` produces one artifact per function today.
-  Keep that: run esbuild once into `dist/` and have CDK reference the assets.
-  134 `NodejsFunction`s each bundling their own copy is a synth that takes minutes
-  and a deploy that takes longer.
-- **One function per resource family, not per method.** The plugin's per-function
-  strategy is why 65 nested stacks exist. In CDK, functions are cheap to *declare*
-  — but they are still Lambdas, cold starts and metrics; group by resource the way
-  `/v1` already groups the comment pair.
-
-## The migration
-
-### Phase A — make deletion survivable (30 minutes)
-
-Nothing else in this document is safe until this is done. Add retention to the
-tables in `services/api/serverless.yml` and deploy once:
-
-```yaml
-    VideosTable:
-      Type: AWS::DynamoDB::Table
-      DeletionPolicy: Retain      # the data outlives the stack
-      UpdateReplacePolicy: Retain # and outlives a replacement
-      Properties:
-        # …as now
+```ts
+dynamodb.Table.fromTableName(this, 'VideosTable', config.existing.tables.VideosTable)
+cognito.UserPool.fromUserPoolId(this, 'CognitoUserPool', config.existing.userPoolId)
 ```
 
-Do it for all 23 tables, and turn on point-in-time recovery for the tables whose
-loss would be more than an inconvenience (`VideosTable`, `SpacesTable`,
-`ContentsTable`, `ProfilesTable`, and the four OAuth tables).
+An imported resource is **unmanaged**. CloudFormation does not put it in the
+stack's template, will not change its properties, and will not delete it. That is
+the whole reason this migration could not lose data — and `cdk deploy` on a
+fresh checkout is very nearly a no-op because of it.
 
-**The two buckets already have `DeletionPolicy: Retain`; nothing else does.** The
-user pool is the one to look at twice: deleting it takes every account with it,
-including the federated ones, and there is no copy of them anywhere — so it wants
-`Retain` before anything in this document is attempted. This is the insurance that
-makes `serverless remove` — or a mistake in any later phase — survivable.
+The rule it comes from is the one thing to carry forward:
 
-Also add the six missing stack outputs (`ApiKeysTableName`, `ProfilesTableName`,
-`OAuthAppsTableName`, `OAuthGrantsTableName`, `OAuthTokensTableName`,
-`OAuthCodesTableName`). The CDK import needs the physical names, and the outputs
-are how the maintenance scripts already resolve them:
+> **Import what holds data. Create what does not.**
 
-> `describe-stack-resources` is not usable here: it silently truncates at 100
-> resources on this stack and returns no NextToken, so the tables never appear in
-> it.
+The other half is the corollary: importing is not the same as managing. There are
+consequences, they are real, and they are worth reading before the first change
+that touches auth:
 
-And once, for the new app:
+| Because it is imported | What it means |
+| --- | --- |
+| The user pool and its client | The callback URLs Cognito accepts are **not** deployed. `services/api/scripts/set-auth-urls.mjs` writes them straight to Cognito. It used to write SSM and tell you to redeploy; that deploy no longer exists, and could not work |
+| The same pool | Setting the pre sign-up trigger is `infra/scripts/adopt-cognito.mjs`, for the same reason |
+| The CloudFront public key | Rotating the signing key is a CloudFront API call. `generate-cloudfront-keypair.sh` ends with the exact commands |
+| The tables | Nothing will notice if one is deleted, and nothing will recreate it. Point-in-time recovery is not on — enabling it is an in-place call, and worth doing for the tables whose loss would be more than an inconvenience |
+| Everything imported | It is not tagged, and it does not appear in `cdk diff`. That is what "unmanaged" means |
+
+## The eight stacks
+
+They are split by what a change to one of them costs.
+
+| Stack | Holds | Count |
+| --- | --- | --- |
+| `PlayDataStack` | The 23 tables, imported | 1 |
+| `PlayMediaStack` | Bucket and distribution, imported; the MediaConvert and Transcribe roles, created | 4 |
+| `PlayAuthStack` | The pool, imported; the pre sign-up trigger, created | 5 |
+| `PlayApiStack` | The REST API, authorizer, gateway responses, execution role, the 3 event-driven functions, 4 nested stacks | 28 |
+| `PlayApiStack-ApiContentRoutes` | videos, sections, contents — 46 functions, 69 methods | 279 |
+| `PlayApiStack-ApiCoursesRoutes` | spaces, cohorts, rewards, catalog — 32 functions, 53 methods | 209 |
+| `PlayApiStack-ApiPeopleRoutes` | organizations, me — 26 functions, 46 methods | 172 |
+| `PlayApiStack-ApiPublicApiRoutes` | v1, oauth — 26 functions, 52 methods | 191 |
+
+### Why the API is divided
+
+The API does not fit in one stack: 134 functions with a log group and a
+permission each, 133 methods, 87 CORS preflights and 101 gateway resources comes
+to about 850 resources. That is not a surprise — it is the wall this migration
+exists to get away from, and Serverless hit it exactly.
+
+`serverless-plugin-split-stacks` answered it by moving resources into nested
+stacks *by logical id*, re-deciding the partition on every deploy. That is what
+made renaming a function able to leave the service holding two nested stacks for
+it and 501 resources in the root, which is a template that does not validate.
+
+The partition is now written down, in
+[`infra/src/stacks/api-groups.ts`](../infra/src/stacks/api-groups.ts), and the
+groups are the product's own vocabulary. **A path's first segment belongs to
+exactly one group** — not a preference, a requirement, because each stack builds
+its own slice of the gateway's resource tree and two stacks creating `me` is two
+resources with the same parent and path part. API Gateway accepts that silently
+and serves whichever it feels like.
+
+`planGroups` enforces it and every route having a home, at synth, in a second,
+with a message naming the group to add.
+
+## What was verified
+
+The migration was checked against the live API before anything was deployed,
+because the alternative is checking it in production.
+
+| Check | Result |
+| --- | --- |
+| Route table | `cdk synth`, resolved to paths, against `aws apigateway get-resources` on the running API: **220 methods over 102 resources, identical** |
+| CORS preflights | Same 87 resources, same `Allow-Methods` per path, same `Allow-Headers` |
+| Authorizer | Same name, type, 300-second cache, `Authorization` identity source, same pool ARN |
+| Gateway responses | `DEFAULT_4XX` and `DEFAULT_5XX`, same CORS headers |
+| Lambda environment | All 35 variables, identical values — the imported ones as literal strings instead of `Ref`s, which resolve to the same names |
+| IAM | The same actions per table. The media role, the session policy and the SSM parameter grant are unchanged |
+
+What could not be checked without deploying is the part that always could not:
+whether the handlers answer the same way, which is why the cutover below runs the
+two APIs side by side rather than swapping them.
+
+## The cutover
+
+The old stack is still there and still serving. Nothing below has been done —
+these are the steps, in this order.
+
+### 1. Bootstrap, once per account and region
 
 ```bash
-npx cdk bootstrap aws://<account>/<region> --profile <profile>
+npm run bootstrap --workspace play-infra
 ```
 
-### Phase B — the CDK app (1–3 days)
-
-Create `infra/` at the repository root as its own package — add `"infra"` to the
-root `package.json`'s `workspaces` list, so it installs with everything else and
-`npm run typecheck` covers it — with one stack per row of the table above. Keep it
-TypeScript, and keep the *handler table* generated rather than hand-written (step 3
-below). Then, in this order:
-
-1. **`PlayDataStack` and `PlayMediaStack`, imports only.** No resources created, no
-   properties set on the imported ones. `cdk deploy` here should be a no-op that
-   proves the account, the profile, the region and the names all line up.
-2. **`PlayAuthStack`, imports only.** The pool, its client and its domain are
-   referenced by id from the stack outputs.
-3. **`PlayApiStack`, created fresh.** The function table is the mechanical part:
-   for each of the 134 entries in `functions:`, one Lambda with the same handler
-   path, the same environment and the same HTTP route. **Generate it from
-   `serverless.yml`** — a script that reads the existing file and emits the CDK
-   definition — so that nothing is missed and the YAML can be deleted afterwards
-   rather than kept as a second source of truth.
-4. **IAM from grants, not statements.** The 26 hand-written statements become
-   `grantReadWriteData` / `grantReadData` calls on the tables and buckets each
-   function actually touches. Read the current statements as the spec for who
-   touches what; do not split them further in the first pass. A permission that is
-   missing shows up as a 500 immediately; one that is too wide is a decision to
-   make later, deliberately.
-5. **Prove the pipeline with `/v1/me`** before moving the rest: one function, one
-   route, a token, a real answer. The remaining 133 are repetition; a wrong
-   assumption about the event shape is 134 wrong functions.
-
-### Phase C — deploy beside, then cut over (2–4 hours)
-
-The new API and the old one run at the same time, against the same tables. Nothing
-about the old stack changes while this happens.
-
-1. Deploy the CDK stacks. The old API keeps serving.
-2. Probe the new API directly — with an API key, with an OAuth token, and with the
-   keys screen's own flows. The point of running both is being able to compare
-   answers.
-3. Point the apps at it:
-
-   ```bash
-   # apps/studio/.env.local, apps/marketplace/.env.local, apps/demo/.env.local
-   NEXT_PUBLIC_API_URL=https://<new-api-id>.execute-api.<region>.amazonaws.com/dev
-   ```
-
-   The user pool does not move in this phase, so the `NEXT_PUBLIC_COGNITO_*`
-   values are unchanged, and an existing session keeps working.
-4. Watch it for a day. Rollback is editing that one value back: the old stack is
-   untouched and still has all 23 tables.
-
-### Phase D — remove the old stack
-
-Only once the apps have been on the new API long enough to trust it:
+### 2. Hand the S3 notification over — once, and before the first deploy
 
 ```bash
-npm run remove --workspace play-backend -- --aws-profile <profile>   # or: npx serverless remove
+node infra/scripts/handover-s3-notifications.mjs --plan
+node infra/scripts/handover-s3-notifications.mjs
 ```
 
-Phase A is what makes this boring: every table has `Retain`, so the stack goes and
-the data stays. Verify afterwards that the tables are still there before deleting
-anything else. Then delete `services/api/serverless.yml`, its plugin
-configuration, and the `.serverless` build directory.
+**Skipping this fails the deploy**, with:
 
-### Phase E — own the data, later or never
+> Configuration is ambiguously defined. Cannot have overlapping suffixes in two
+> rules if the prefixes are overlapping for the same event type.
 
-Imported resources stay unmanaged. Moving them into CDK properly means creating a
-new resource with a new name and copying the data, one table at a time, during a
-window when the loss of a few seconds of writes is acceptable. Do it when a
-property actually needs changing (throughput mode, a new index, a stream) — not
-for tidiness. The same goes for the user pool, which is the last thing to move:
-recreating it means every account re-registering and the Google federation being
+`put-bucket-notification-configuration` replaces a bucket's *whole* notification
+configuration, and two rules for the same event with an overlapping prefix are
+rejected outright. The old stack already has a rule — `s3:ObjectCreated:*` on
+`uploads/`, to `play-backend-dev-process-video` — and because the bucket is
+**imported**, CDK's `Custom::S3BucketNotifications` handler does not replace it.
+That handler is deliberately conservative: on a create it reads what is on the
+bucket, treats everything it finds as somebody else's, and appends its own rules.
+With a bucket CDK created itself it replaces the configuration; with
+`Bucket.fromBucketName` it cannot know which rules are stale, so it keeps them.
+Two owners, one bucket, and the deploy fails on the second rule.
+
+The script removes the colliding rules and nothing else, so a bucket some other
+system also listens to keeps that system's rules. It is idempotent — run it a
+second time and it finds nothing to do.
+
+Uploads are not processed between running it and the deploy that follows. That
+window is the point of the step, not a side effect of it, which is why it is
+something you run on purpose rather than something `npm run deploy` does before
+showing you the diff.
+
+### 3. Deploy, and read the diff first
+
+```bash
+export AWS_PROFILE="$(. scripts/api-config.env && printf %s "$API_AWS_PROFILE")"
+
+npm run diff   --workspace play-infra    # what would change
+npm run deploy --workspace play-infra    # deploy all four
+```
+
+Three of the four stacks create almost nothing: the tables are imported, so
+`PlayDataStack` is one `AWS::CDK::Metadata` resource. `PlayMediaStack` creates
+the two media roles and the bucket policy, `PlayAuthStack` the trigger function.
+Everything that costs anything is in `PlayApiStack`.
+
+**Do not point anything at the new API yet.** The pools, the tables and the
+bucket are shared, so both APIs work against the same data at the same time —
+which is the point of doing it this way.
+
+If step 2 was skipped, this is where it fails. Delete the `ROLLBACK_COMPLETE`
+stack it leaves behind — CloudFormation cannot update a stack in that state — and
+start again:
+
+```bash
+aws cloudformation delete-stack --stack-name PlayApiStack-dev
+aws cloudformation wait stack-delete-complete --stack-name PlayApiStack-dev
+```
+
+The log groups it created are `DeletionPolicy: Retain`, so the rollback leaves
+them behind and the next deploy fails on `already exists`. Clear them:
+
+```bash
+aws logs describe-log-groups --log-group-name-prefix /aws/lambda/play-dev- \
+  --query 'logGroups[].logGroupName' --output text |
+  tr '\t' '\n' | xargs -n1 aws logs delete-log-group --log-group-name
+```
+
+### 4. Probe the new API directly
+
+The `ApiUrl` output of `PlayApiStack-<stage>`, with a real API key, a real OAuth
+token, and the keys screen's own flows. Comparing answers against the old API is
+the reason both are up.
+
+### 5. Point the apps at it
+
+```bash
+# or edit each .env.local by hand
+npm run get-env
+```
+
+`get-env` reads the CDK stacks now — `PlayApiStack` for the URL and
+`PlayAuthStack` for the pool, client and Hosted UI domain. The pool does not
+move, so `NEXT_PUBLIC_COGNITO_*` is unchanged and existing sessions keep working.
+
+```bash
+grep NEXT_PUBLIC_API_URL apps/*/.env.local
+```
+
+Rollback is putting the old URL back: the old stack is untouched and still has
+all 23 tables.
+
+### 6. Repoint the user pool's pre sign-up trigger
+
+```bash
+node infra/scripts/adopt-cognito.mjs --show
+node infra/scripts/adopt-cognito.mjs
+```
+
+The pool is imported, so nothing deployed can set `LambdaConfig.PreSignUp`. Until
+this runs it points at the *old* stack's `link-federated-user` — and that function
+disappears in step 7, at which point **sign-up stops working**. The failure does
+not look like a deleted stack, which is why the teardown script refuses to run
+until this has been done.
+
+### 7. Remove the old stack
+
+```bash
+infra/scripts/teardown-legacy-stack.sh --plan     # what would go, and what would stay
+infra/scripts/teardown-legacy-stack.sh
+```
+
+`--retain-resources`, not a plain delete. It names 35 resources to leave in
+place — 23 tables, the buckets, the bucket policy, the CloudFront pieces, the
+pool and its client, and the S3 notification marker — so the stack goes and
+everything that holds data stays, unmanaged, exactly where the CDK stacks already
+reference it. What is deleted is what the migration replaced: the REST API, the
+134 functions, the 65 nested stacks, the execution role and the deployment
+bucket.
+
+The script checks the CDK stacks exist, checks the pool's trigger has been
+repointed, prints the retained list, and offers `--plan`. It then verifies
+afterwards that the tables are still `ACTIVE`, the pool is still `Enabled`, and
+the bucket still has its notification.
+
+### 8. Optional, and worth it
+
+Point-in-time recovery on the tables whose loss would be more than an
+inconvenience. In-place, no data touched:
+
+```bash
+aws dynamodb update-continuous-backups --table-name <name> \
+  --point-in-time-recovery-specification PointInTimeRecoveryEnabled=true
+```
+
+## Phase E, later or never
+
+Imported resources stay unmanaged. Moving them under CloudFormation properly
+means creating a new resource under a new name and copying the data, one table at
+a time, in a window where losing a few seconds of writes is acceptable. The
+schemas are not lost — they are in `infra/src/generated/service.ts`, which is
+where they went when the YAML was deleted — and setting `ownership.tables` in
+`infra/config/play-<stage>.json` makes `PlayDataStack` build them.
+
+Do it when a property actually needs changing: throughput mode, a new index, a
+stream. Not for tidiness.
+
+The user pool is the last thing to move and the one to think hardest about.
+Recreating it means every account re-registering and the Google federation being
 rebuilt.
 
 ## What not to do
 
-- **Do not recreate the tables or the user pool.** Import them, or leave them
-  alone. Both failure modes here are data loss, and the pool's is the quieter of
-  the two: it is cheap to recreate and the accounts are gone.
-- **Do not use `cdk import` on a table that a Serverless stack still owns.** Wait
-  for phase D.
-- **Do not switch REST API to HTTP API in the same change.** The proxy event shape
-  differs, so it reaches all 134 handlers at once — a separate, later decision.
-- **Do not change the application framework.** `src/functions/**` and `src/lib/**`
-  are portable as they are; the migration is about what describes them.
-- **Do not rename anything that is already deployed while the old stack is live.**
-  That is the trap that cost a circular dependency and a 501: a deployed name is a
-  name, whatever the file beside it is called.
-
-## Until then
-
-While the service is on Serverless and at the ceiling:
-
-- **No new functions.** A new Lambda is a new root resource, and there is no room
-  for one. New routes go on an existing function — one function per resource
-  family, which `/v1` already does for the comment pair.
-- **Read the count before adding anything to `resources:`.** A table, a bucket or a
-  distribution is spent headroom, not a local change.
-- **Package before deploying** if a route, a name or a plugin configuration
-  changed: `npx serverless package --package /tmp/pack` writes the root template
-  out on its own, and the failure to look for is a dependency pointing *forward*
-  into a nested stack on a chain. `aws cloudformation validate-template
-  --template-url s3://…` then performs the check the deploy would fail on.
+- **Do not create a table, a bucket or a pool with one of these names to "adopt"
+  it.** CloudFormation fails the deploy with `already exists` or, worse, replaces
+  it — and a replaced table is an empty table.
+- **Do not `cdk import` a table the legacy stack still owns.** Wait for step 7.
+- **Do not delete the legacy stack with a plain `delete-stack`.** 500 resources,
+  23 of which are the product. `infra/scripts/teardown-legacy-stack.sh` exists
+  because that command is one keystroke away.
+- **Do not switch REST API to HTTP API in the same change as anything else.** The
+  proxy event shape differs, so it reaches all 134 handlers at once.
+- **Do not add an authorizer to `/v1`.** It accepts a credential from either of
+  two headers, and API Gateway validates every header named as an `identitySource`
+  on every request — so an authorizer there demands both and refuses every real
+  caller. `docs/workspace.md` has the API reference quote.
+- **Do not let a shell script deploy.** `set-mail-sender.sh` writes
+  `infra/config/play-<stage>.json` as well as SSM, and the deploy reads the file.
+  Changing only the SSM parameter is mail sent from the wrong address with
+  nothing in the logs to say why.

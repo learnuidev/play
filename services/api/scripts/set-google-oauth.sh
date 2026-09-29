@@ -8,9 +8,23 @@
 #   /play/auth/callback-urls      (String)        comma-separated callback URLs
 #   /play/auth/logout-urls        (String)        comma-separated logout URLs
 #
-# The backend (serverless.yml) reads these via ${ssm:...} and creates the Cognito
-# Google identity provider, the Hosted UI domain, and the app client's OAuth
-# settings from them. Nothing needs to live in .env or local environment files.
+# The credentials live in SSM because they are a secret and because that is where
+# the deployment record keeps them — `infra/scripts/import-state.mjs` reads the
+# client id back into `infra/config/play-<stage>.json`, which is what a *new*
+# user pool would be built from.
+#
+# ## What changed when the backend moved to CDK
+#
+# Nothing about this pool is deployed any more: `PlayAuthStack` **imports** it,
+# and an imported resource is unmanaged, so there is no deploy that applies these
+# values. The identity provider is therefore created here, through the Cognito
+# API, and the app client's provider list is updated by `set-auth-urls.mjs`
+# (which reads the client before writing it, because `UpdateUserPoolClient` sends
+# every attribute it is not given back to its default).
+#
+# The Hosted UI domain and the pool itself are part of the same import, so an
+# account that has never had Google configured needs those created by hand as
+# well — see docs/migration.md.
 #
 # Prerequisites — in the Google Cloud Console (APIs & Services > Credentials):
 #
@@ -83,9 +97,27 @@ if [[ "$DELETE" == true ]]; then
       --region "$REGION" >/dev/null 2>&1 || true
     echo "Deleted /play/auth/$name (if it existed)"
   done
-  echo
-  echo "Redeploy to drop the Google identity provider and Hosted UI domain:"
-  echo "  serverless deploy --stage $STAGE --aws-profile $PROFILE --region $REGION"
+  POOL_ID="$(aws_ cloudformation describe-stacks --stack-name "PlayAuthStack-$STAGE" \
+    --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolId'].OutputValue" \
+    --output text 2>/dev/null || true)"
+
+  if [[ -n "$POOL_ID" && "$POOL_ID" != "None" ]]; then
+    echo
+    echo "Deleting the Google identity provider from $POOL_ID..."
+    aws_ cognito-idp delete-identity-provider \
+      --user-pool-id "$POOL_ID" --provider-name Google >/dev/null 2>&1 \
+      && echo "  deleted" || echo "  (not present, or could not be deleted)"
+  fi
+
+  cat <<EOF
+
+Then stop the app client offering it:
+
+  node services/api/scripts/set-auth-urls.mjs --no-google --stage=$STAGE
+
+An existing Hosted UI domain is left in place: nothing depends on it once Google
+is off, and removing it would change the URL both apps' sign-out returns to.
+EOF
   exit 0
 fi
 
@@ -119,6 +151,51 @@ aws ssm put-parameter --name /play/auth/logout-urls --type String \
 
 DOMAIN="play-${STAGE}-${ACCOUNT_ID}.auth.${REGION}.amazoncognito.com"
 
+POOL_ID="$(aws_ cloudformation describe-stacks --stack-name "PlayAuthStack-$STAGE" \
+  --query "Stacks[0].Outputs[?OutputKey=='CognitoUserPoolId'].OutputValue" \
+  --output text 2>/dev/null || true)"
+
+if [[ -z "$POOL_ID" || "$POOL_ID" == "None" ]]; then
+  cat <<EOF
+
+SSM parameters written, but the user pool id could not be read from
+PlayAuthStack-$STAGE — deploy the backend and run this again, or pass the pool
+id by hand:
+
+  aws cognito-idp create-identity-provider --user-pool-id <pool id> \
+    --provider-name Google --provider-type Google \
+    --provider-details 'client_id=$CLIENT_ID,client_secret=$CLIENT_SECRET,authorize_scopes=email profile openid' \
+    --attribute-mapping '{"email":"email","email_verified":"email_verified","given_name":"given_name","family_name":"family_name","name":"name","picture":"picture"}' \
+    --profile $PROFILE --region $REGION
+EOF
+  exit 1
+fi
+
+echo
+echo "Configuring the Google identity provider on $POOL_ID (profile: $PROFILE)..."
+
+# Create, then update if it is already there: this script is re-run whenever the
+# Google client is rotated, and `create` fails on the second run.
+PROVIDER_DETAILS="client_id=$CLIENT_ID,client_secret=$CLIENT_SECRET,authorize_scopes=email profile openid"
+ATTRIBUTE_MAPPING='{"email":"email","email_verified":"email_verified","given_name":"given_name","family_name":"family_name","name":"name","picture":"picture"}'
+
+aws_ cognito-idp describe-identity-provider \
+  --user-pool-id "$POOL_ID" --provider-name Google >/dev/null 2>&1 && PROVIDER_EXISTS=true || PROVIDER_EXISTS=false
+
+if [[ "$PROVIDER_EXISTS" == true ]]; then
+  aws_ cognito-idp update-identity-provider \
+    --user-pool-id "$POOL_ID" --provider-name Google \
+    --provider-details "$PROVIDER_DETAILS" \
+    --attribute-mapping "$ATTRIBUTE_MAPPING" >/dev/null
+  echo "  updated"
+else
+  aws_ cognito-idp create-identity-provider \
+    --user-pool-id "$POOL_ID" --provider-name Google --provider-type Google \
+    --provider-details "$PROVIDER_DETAILS" \
+    --attribute-mapping "$ATTRIBUTE_MAPPING" >/dev/null
+  echo "  created"
+fi
+
 cat <<EOF
 
 SSM parameters written:
@@ -127,11 +204,21 @@ SSM parameters written:
   /play/auth/callback-urls        (String)  $CALLBACK_URLS
   /play/auth/logout-urls          (String)  $LOGOUT_URLS
 
-Now in the Google Cloud Console, set these on your OAuth 2.0 Web client:
-  Authorized JavaScript origins: https://$DOMAIN
-  Authorized redirect URIs:      https://$DOMAIN/oauth2/idpresponse
+Identity provider configured on the imported user pool.
 
-Then deploy and refresh both apps' env:
-  npm run deploy --workspace play-backend -- --stage $STAGE --aws-profile $PROFILE --region $REGION
+Two steps left.
+
+1. Let the app client offer Google, and set the URLs it may return to:
+
+     node services/api/scripts/set-auth-urls.mjs \
+       --google --stage=$STAGE --profile=$PROFILE \
+       --callback-urls="$CALLBACK_URLS" --logout-urls="$LOGOUT_URLS"
+
+2. In the Google Cloud Console, set these on your OAuth 2.0 Web client:
+     Authorized JavaScript origins: https://$DOMAIN
+     Authorized redirect URIs:      https://$DOMAIN/oauth2/idpresponse
+
+Then refresh both apps' env, which is what tells them Google sign-in exists:
+
   npm run get-env -- --profile=$PROFILE --stage=$STAGE
 EOF

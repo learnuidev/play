@@ -1,0 +1,41 @@
+{
+  "name": "play-infra",
+  "version": "1.0.0",
+  "description": "AWS CDK app for the Play backend — the API, and the data, media and auth it stands on (AWS + TypeScript + DynamoDB)",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "cdk": "cdk",
+    "list": "cdk list",
+    "synth": "npm run bundle && cdk synth",
+    "diff": "npm run bundle && cdk diff --all",
+    "deploy": "npm run bundle && cdk deploy --all",
+    "deploy:dev": "npm run bundle && cdk deploy --all --context stage=dev",
+    "deploy:data": "npm run bundle && cdk deploy PlayDataStack-dev",
+    "deploy:media": "npm run bundle && cdk deploy PlayMediaStack-dev",
+    "deploy:auth": "npm run bundle && cdk deploy PlayAuthStack-dev",
+    "deploy:api": "npm run bundle && cdk deploy PlayApiStack-dev",
+    "destroy": "cdk destroy --all",
+    "bootstrap": "cdk bootstrap",
+    "bundle": "node scripts/bundle.mjs",
+    "bundle:force": "node scripts/bundle.mjs --force",
+    "generate": "node scripts/generate-from-serverless.mjs",
+    "import-state": "node scripts/import-state.mjs",
+    "adopt-cognito": "node scripts/adopt-cognito.mjs",
+    "handover-s3": "node scripts/handover-s3-notifications.mjs",
+    "teardown-legacy": "bash scripts/teardown-legacy-stack.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.15",
+    "aws-cdk": "^2.160.0",
+    "esbuild": "^0.23.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4",
+    "yaml": "^2.5.1"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.160.0",
+    "constructs": "^10.4.2"
+  }
+}

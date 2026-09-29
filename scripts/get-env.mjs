@@ -1,12 +1,20 @@
 #!/usr/bin/env node
 /**
- * Fetches the backend CloudFormation stack outputs (deployed with Serverless
- * Framework) and writes the required NEXT_PUBLIC_* values to `.env.local`.
+ * Fetches the backend CloudFormation stack outputs (the AWS CDK app) and writes
+ * the required NEXT_PUBLIC_* values to `.env.local`.
  *
- * Both apps read the same stack: one user pool, one API, one bucket. They differ
- * only in where they run, and the redirect URLs Cognito needs are derived from
- * the browser's own origin — so this script writes the same file into either app
- * and the only thing that changes is the port the app serves on.
+ * Both apps read the same deployment: one user pool, one API, one bucket. They
+ * differ only in where they run, and the redirect URLs Cognito needs are derived
+ * from the browser's own origin — so this script writes the same file into
+ * either app and the only thing that changes is the port the app serves on.
+ *
+ * ## Two stacks, because the backend is four
+ *
+ * The CDK app splits the backend by what a change to it costs — the data, the
+ * media, the auth and the API are separate stacks (`infra/bin/play.ts`). The
+ * values an app needs come from two of them: the API URL from `PlayApiStack`,
+ * and the user pool, its client and the Hosted UI domain from `PlayAuthStack`.
+ * Both are read and their outputs merged, so a caller still gets one flat map.
  *
  * Usage (from an app's own directory, or through `npm run get-env` at the root):
  *   node ../../scripts/get-env.mjs [options]
@@ -14,7 +22,6 @@
  * Options:
  *   --profile=<name>     AWS profile to use          (default: scripts/api-config.env)
  *   --stage=<name>       Backend stage               (default: dev)
- *   --stack-name=<name>  Full CloudFormation stack   (default: play-backend-<stage>)
  *   --region=<name>      AWS region                  (default: us-east-1)
  *   --out=<path>         Output file                 (default: ./.env.local of the current directory)
  *   --help               Show this help
@@ -35,7 +42,6 @@ if (args.includes("--help") || args.includes("-h")) {
       "Options:",
       "  --profile=<name>     AWS profile to use          (default: scripts/api-config.env)",
       "  --stage=<name>       Backend stage               (default: dev)",
-      "  --stack-name=<name>  Full CloudFormation stack   (default: play-backend-<stage>)",
       "  --region=<name>      AWS region                  (default: us-east-1)",
       "  --out=<path>         Output file                 (default: ./.env.local, in the current directory)",
       "  --help               Show this help",
@@ -84,10 +90,6 @@ const profile = getArg(
   process.env.AWS_PROFILE || readApiConfig().API_AWS_PROFILE,
 );
 const stage = getArg("stage", process.env.STAGE || "dev");
-const stackName = getArg(
-  "stack-name",
-  process.env.STACK_NAME || `play-backend-${stage}`,
-);
 const region = getArg(
   "region",
   process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1",
@@ -108,34 +110,53 @@ function run(cmd, argv) {
   }
 }
 
-console.log(
-  `Fetching stack outputs from '${stackName}' (profile: ${profile}, region: ${region})...`,
-);
+/**
+ * The stacks whose outputs an app needs, and what each one is for.
+ *
+ * Named rather than discovered by prefix: a prefix scan would silently include a
+ * stack from another stage if one were ever deployed under a shared account, and
+ * the failure would be an app pointed at the wrong API.
+ */
+const STACKS = [
+  [`PlayApiStack-${stage}`, "the API URL"],
+  [`PlayAuthStack-${stage}`, "the user pool, its client and the Hosted UI domain"],
+];
 
-const raw = run("aws", [
-  "cloudformation",
-  "describe-stacks",
-  "--stack-name",
-  stackName,
-  "--profile",
-  profile,
-  "--region",
-  region,
-  "--output",
-  "json",
-]);
-
-const parsed = JSON.parse(raw);
-const stack = parsed.Stacks && parsed.Stacks[0];
-if (!stack) {
-  throw new Error(
-    `Stack '${stackName}' not found. Is the backend deployed with this stage/profile?`,
-  );
-}
+console.log(`Fetching stack outputs (profile: ${profile}, region: ${region})...`);
 
 const outputs = {};
-for (const o of stack.Outputs || []) {
-  outputs[o.OutputKey] = o.OutputValue;
+for (const [stackName, purpose] of STACKS) {
+  process.stdout.write(`  ${stackName} — ${purpose}\n`);
+
+  let raw;
+  try {
+    raw = run("aws", [
+      "cloudformation",
+      "describe-stacks",
+      "--stack-name",
+      stackName,
+      "--profile",
+      profile,
+      "--region",
+      region,
+      "--output",
+      "json",
+    ]);
+  } catch (err) {
+    throw new Error(
+      `Stack '${stackName}' was not found. Deploy the backend with this stage and profile first:\n\n` +
+        `  npm run deploy --workspace play-infra\n\n${err.message}`,
+    );
+  }
+
+  const stack = JSON.parse(raw).Stacks && JSON.parse(raw).Stacks[0];
+  if (!stack) {
+    throw new Error(`Stack '${stackName}' not found. Is the backend deployed?`);
+  }
+
+  for (const o of stack.Outputs || []) {
+    outputs[o.OutputKey] = o.OutputValue;
+  }
 }
 
 const env = {
@@ -149,12 +170,13 @@ const missing = Object.entries(env)
   .map(([key]) => key);
 if (missing.length > 0) {
   throw new Error(
-    `Stack '${stackName}' is missing outputs for: ${missing.join(", ")}`,
+    `The backend stacks are missing outputs for: ${missing.join(", ")}. ` +
+      "A partially deployed backend is worth looking at before trusting it.",
   );
 }
 
 // Optional: present only when the backend was deployed with Google OAuth
-// credentials (see play-backend/scripts/set-google-oauth.sh). Without them the
+// credentials (see services/api/scripts/set-google-oauth.sh). Without them the
 // app falls back to email/password sign-in only.
 const optionalEnv = {
   NEXT_PUBLIC_COGNITO_DOMAIN: outputs.CognitoDomain,

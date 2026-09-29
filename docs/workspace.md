@@ -1,6 +1,6 @@
 # Working in this repository
 
-One npm workspace, four kinds of package. This is the map and the rules that keep
+One npm workspace, five kinds of package. This is the map and the rules that keep
 it from turning back into two apps with copies of each other's code.
 
 ```
@@ -16,7 +16,8 @@ play/
 │   ├── ui/               @play/ui        — design primitives
 │   └── learning/         @play/learning  — the classroom, the player, course cards
 ├── services/
-│   └── api/              play-backend    — Serverless Framework + TypeScript
+│   └── api/              play-backend    — the handlers (TypeScript)
+├── infra/                play-infra      — the AWS CDK app that deploys them
 └── scripts/
     └── get-env.mjs       reads the stack outputs into an app's .env.local
 ```
@@ -34,7 +35,10 @@ npm run build                     # both apps
 npm run build:studio              # one app
 npm run typecheck                 # every workspace that has a typecheck script
 npm run get-env -- --profile=…    # stack outputs into both apps' .env.local
-npm run deploy --workspace play-backend   # serverless deploy (services/api)
+
+npm run diff                      # what an infrastructure change would do
+npm run deploy                    # cdk deploy — every backend stack
+npm run deploy:api                # just the API, which is the one that changes
 ```
 
 `npm run <script> --workspace <name>` runs a script in one workspace;
@@ -326,11 +330,13 @@ account and a sign-in link instead of the key-minting button, and waits for
 
 Redirect URLs are derived from `window.location.origin`, so the studio gets
 `localhost:3000/auth/callback` and the marketplace `localhost:3001/auth/callback`
-with no per-app configuration. Both must be registered on the user pool —
-`custom.authDefaults` in `serverless.yml` lists both for local development, and
-`services/api/scripts/set-auth-urls.sh` rewrites the SSM parameter that overrides
-it (a value there wins over the defaults, and Cognito only re-reads the list at
-deploy time).
+with no per-app configuration. Both must be registered on the user pool, and the
+list is the one piece of auth that changes with *where* the apps are served
+rather than with who signs in. `services/api/scripts/set-auth-urls.mjs` writes it,
+straight to Cognito: the pool is **imported** by `infra`, so no deploy applies it,
+and the script reads the app client before writing it because Cognito's update
+calls reset every attribute they are not given. `infra/config/play-<stage>.json`
+holds the same list, as the record of what a fresh pool would be built with.
 
 Signing in with Google leaves the page entirely, so `?next=` does not survive it:
 `rememberAfterSignIn` leaves a note in session storage and `OAuthCallback` reads
@@ -340,63 +346,90 @@ phishing link wearing the app's name.
 
 ## The backend
 
-`services/api` is one Serverless service whose CloudFormation stack is
-`play-backend-{stage}` — the directory was renamed when it moved in, the service
-was not, because renaming it would rebuild the stack rather than update it.
+Two workspaces, split where a change matters.
 
-**That stack is at CloudFormation's 500-resource ceiling**, so the paragraph below
-about adding a route has a constraint on it that is not visible in the file: a new
-function is a new root-level resource, and there are none to spare. Read
-[migration.md](migration.md) before adding one — it says where the ceiling came
-from, what it has already cost, and the plan for moving the service to CDK so that
-it stops being a wall.
+- **`services/api`** is the backend's code: 134 handlers, their libraries, and the
+  types they share with the apps. It holds no infrastructure, has no deploy
+  script, and has one command worth running — `npm run typecheck --workspace
+  play-backend`.
+- **`infra`** is the AWS CDK app that deploys them: the API, the tables, the media
+  and the auth. [`infra/README.md`](../infra/README.md) is its map, and
+  [migration.md](migration.md) says where it came from.
 
 ```bash
-npm run typecheck --workspace play-backend
-npm run deploy --workspace play-backend -- --aws-profile <profile>
+export AWS_PROFILE="$(. scripts/api-config.env && printf %s "$API_AWS_PROFILE")"
+
+npm run diff  --workspace play-infra         # what would change, before it does
+npm run deploy --workspace play-infra        # every stack
+npm run deploy:api --workspace play-infra    # just the API
+npm run synth --workspace play-infra         # local, no credentials needed
 ```
 
-A new route is two things: a handler under `src/functions/**`, and a `functions:`
-entry in `serverless.yml` with its path, method and `authorizer`. Leaving the
-authorizer off is how the two public catalog routes are public, and the `/v1`
-routes too — they authenticate themselves, for the reason below. A route under
-`/o`, `/spaces` or `/me` takes `${self:custom.authorizer}`, which is the Cognito
-user pool, and that is what makes those routes signed-in-only.
+**The infrastructure that holds data is imported rather than managed.** The 23
+tables, the videos bucket, the CloudFront distribution and the Cognito user pool
+all exist already, and the CDK app references them by name with `fromTableName`,
+`fromBucketName`, `fromDistributionAttributes` and `fromUserPoolId`. An imported
+resource is unmanaged: a deploy will not change its properties and will not
+delete it — and will not notice if one disappears. That is what makes `cdk
+deploy` safe here, and it is the reason a few operations are API calls rather
+than deploys.
 
-### Renaming a function is a deployment change, not a tidy-up
+### A new route is two things
 
-The number of functions in `functions:` is not the number of things a rename
-touches. `serverless-plugin-split-stacks` migrates resources **by logical id**: on
-every deploy it reads the deployed stack and puts each resource back into the
-nested stack it is already in. Rename a function and its resources become new, so
-its nested stack moves to the end of the template — while the API Gateway methods
-that reference it, whose logical ids come from their *paths*, stay where they
-were. Add `stackConcurrency` (which chains stacks `i → i−5` so ninety of them are
-not created at once) and an old stack that lands on the same residue class closes
-that chain into a circle:
+A handler under `services/api/src/functions/**`, and an entry in
+`infra/src/generated/service.ts` — its entry point, its timeout, and its routes
+with path, method and whether they are authorized. Then:
 
-```
-Circular dependency between resources: [RemoveDashcohortDashmemberNestedStack,
-OauthDashrevokeNestedStack, …, ApiGatewayDeployment…]
+```bash
+npm run synth --workspace play-infra
 ```
 
-which surfaces at `validateTemplate`, after packaging has finished. That is what
-happened when the `/v1` credential endpoint was renamed: the function key in
-`serverless.yml` (`get-api-key-identity`) is a *deployed* name, and the file beside
-it (`get-api-identity.ts`) is what the code is. **Rename the file, not the key** —
-and if a key must move, expect to move it together with the API resources whose
-logical ids depend on it.
+Leaving the authorizer off is how the two public catalog routes are public, and
+the `/v1` routes too — they authenticate themselves, for the reason below. It
+also decides which nested stack a route lands in, because the group is picked
+from its first path segment:
 
-The check for it is local and cheap, because a cycle here is always one backward
-chain plus one edge that disagrees with it: package, then assert that every nested
-stack depends only on stacks that come before it. `serverless package --package
-/tmp/pack` writes the root template out on its own, and
-`aws cloudformation validate-template --template-url s3://…` performs the same
-validation the deploy failed on.
+| Group | Path roots | What a change to it re-plans |
+| --- | --- | --- |
+| `Content` | `videos`, `sections`, `contents` | 279 resources |
+| `Courses` | `spaces`, `cohorts`, `rewards`, `catalog` | 209 |
+| `People` | `organizations`, `me` | 172 |
+| `PublicApi` | `v1`, `oauth` | 191 |
 
-The stack is also **tight against CloudFormation's 500-resource ceiling** — 497 of
-them, the nested stacks included — so anything that adds a root-level resource (a
-table, a bucket) is spending the whole service's headroom rather than its own.
+The rule the groups have to obey is that **a path's first segment belongs to
+exactly one of them**, and `synth` refuses if a root is unclaimed or claimed
+twice. It is not decoration: each stack builds its own slice of the gateway's
+resource tree, so two stacks creating `me` is two resources with the same parent
+and path part — which API Gateway accepts silently and then serves whichever it
+feels like. `infra/src/stacks/api-groups.ts` is where the partition and the
+reasoning live.
+
+This is also the answer to what the Serverless service could not do. It was one
+stack of 500 resources with a plugin that moved the overflow into nested stacks
+*by logical id*, re-deciding the partition on every deploy — which is why
+renaming a function could leave it holding two nested stacks for one function,
+501 resources, and a template that does not deploy. The partition is written
+down now, and nothing moves because a name changed.
+
+### The imported resources are changed by hand, not by a deploy
+
+Anything belonging to an imported resource is outside CloudFormation's reach, so
+each one has a script:
+
+| Task | Command |
+| --- | --- |
+| A callback URL, or a new deployed origin | `node services/api/scripts/set-auth-urls.mjs` |
+| Google sign-in enabled or rotated | `services/api/scripts/set-google-oauth.sh` |
+| The pool's pre sign-up trigger | `node infra/scripts/adopt-cognito.mjs` |
+| Rotating the CloudFront signing key | `services/api/scripts/generate-cloudfront-keypair.sh`, which ends with the two commands that apply it |
+| Removing the old Serverless stack | `infra/scripts/teardown-legacy-stack.sh` |
+| Handing the bucket's S3 notification over | `node infra/scripts/handover-s3-notifications.mjs` — once, before the first deploy |
+
+The first three read the resource before writing it. Cognito's update calls are
+not patches: every attribute they are not given is set back to its default, so a
+callback-URL change that sent only the URLs would quietly drop the client's auth
+flows and identity providers — a sign-in failure that looks nothing like a
+misconfigured URL.
 
 ### The provider environment is a budget
 

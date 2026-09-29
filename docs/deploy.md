@@ -1,9 +1,9 @@
 # Deploying the two apps to Vercel
 
 Play Studio and Play Marketplace are two Vercel projects built from this one
-repository. The backend is not part of this: `services/api` is the Serverless
-stack on AWS, and it stays there — Vercel serves the two Next apps, and both of
-them call the same deployed API and the same Cognito user pool.
+repository. The backend is not part of this: it is the AWS CDK app in `infra/`,
+deployed from your machine, and it stays there — Vercel serves the two Next apps,
+and both of them call the same deployed API and the same Cognito user pool.
 
 Read [workspace.md](workspace.md) first if the layout is new. Two facts from it
 shape everything below:
@@ -28,7 +28,7 @@ the two settings that matter are in the dashboard and are called out below.
 | The repo pushed to GitHub (`origin`) | Vercel builds from the remote, not from your machine |
 | A Vercel account with access to that repo | Two projects, both importing it |
 | A deployed backend — `play-backend-dev` exists | The apps are useless without an API URL and a user pool |
-| The AWS profile from `scripts/api-config.env`, exported as `AWS_PROFILE` | The `aws` and `serverless` commands below take the profile from the environment, not from a flag ([AWS profile](../README.md#aws-profile)) |
+| The AWS profile from `scripts/api-config.env`, exported as `AWS_PROFILE` | The `aws` and `cdk` commands below take the profile from the environment, not from a flag ([AWS profile](../README.md#aws-profile)) |
 | `npm run build` passing locally | It does; both apps compile clean, which is the whole build Vercel runs |
 
 The values Vercel needs are the ones already in each app's `.env.local`, written
@@ -121,12 +121,13 @@ on a list held by the app client — anything else is refused with
 works on a domain nobody has registered; Google is the one that needs this. That
 asymmetry is worth knowing before you debug the wrong half of it.
 
-The list is a deploy-time value: it lives in SSM, it has no stage in its name —
-`/play/auth/callback-urls`, so one list serves every stage — and it is read into
-the app client when the backend is deployed. A value in SSM wins over the
-defaults in `serverless.yml`.
+The list is written **straight to Cognito**, and that is a consequence of the
+migration worth knowing: the user pool is *imported* by `infra`, so no deploy
+applies anything to it. It used to be an SSM parameter that Serverless read at
+deploy time; the script now calls `UpdateUserPoolClient` itself, so there is one
+step and nothing to remember afterwards.
 
-`set-auth-urls.sh`'s own defaults are already the list this deployment wants:
+`set-auth-urls.mjs`'s own defaults are already the list this deployment wants:
 both apps on localhost, and both on their domains (studio.lets-play.xyz and
 lets-play.xyz). So the write is the script with no arguments, and the only reason
 to pass `--callback-urls` is to say something different:
@@ -134,18 +135,16 @@ to pass `--callback-urls` is to say something different:
 ```bash
 # the four origins, each as a /auth/callback path and a bare origin: the path is
 # where a sign-in returns to, the bare origin is where a sign-out does
-services/api/scripts/set-auth-urls.sh --stage=dev
+node services/api/scripts/set-auth-urls.mjs --stage=dev
 
-# Cognito only re-reads the list at deploy time, so the pool still holds the old
-# one until you do this
-npm run deploy --workspace play-backend -- --stage dev
-
-# what the pool actually accepts now
-aws cognito-idp describe-user-pool-client \
-  --user-pool-id us-east-1_D7mJYJiqy --client-id 1j0lniedu2vmlelautok8bhurb \
-  --region us-east-1 \
-  --query 'UserPoolClient.CallbackURLs'
+# what the pool accepts now — the script prints this too
+node services/api/scripts/set-auth-urls.mjs --show
 ```
+
+It reads the app client before writing it, because `UpdateUserPoolClient` is not
+a patch: every attribute it is not given is set back to its default, so a change
+that sent only the URLs would quietly drop the client's auth flows and identity
+providers.
 
 Keep localhost in the list. It costs nothing, and dropping it means the next
 local sign-in stops working — and keep the *bare* origin as well as the
@@ -160,16 +159,18 @@ why an origin that is missing from the list cannot sign in with Google at all.
 ### Emails point at the apps too
 
 Invitations and reward notifications are mailed by the backend, and their links
-come from two more SSM parameters rather than from anything Vercel knows:
+come from two deploy-time settings rather than from anything Vercel knows. They
+end up in every Lambda's environment, so they are read from
+`infra/config/play-<stage>.json` and applied by a deploy:
 
 ```bash
-aws ssm put-parameter --name /play/mail/app-base-url --type String \
-  --value "https://studio.lets-play.xyz" --overwrite --region us-east-1
-aws ssm put-parameter --name /play/mail/marketplace-base-url --type String \
-  --value "https://lets-play.xyz" --overwrite --region us-east-1
-
-npm run deploy --workspace play-backend -- --stage dev
+npm run deploy:api --workspace play-infra
 ```
+
+`services/api/scripts/set-mail-sender.sh --app-url=…` is the script that writes
+them, and it writes the config file as well as SSM — SSM is the record, the file
+is what the deploy reads, and leaving the two to diverge is mail sent from an
+address nothing explains.
 
 Leave them unset and an invitation to a real person points at
 `http://localhost:3000`, which is a link that only works on your laptop.
@@ -228,12 +229,12 @@ Work through this once; each line is a different wiring mistake:
   above in the environment builds both apps — studio 20 routes, marketplace 9.
 - **Node.** The repo asks for `>= 20`; Vercel's default runtime satisfies it, so
   there is nothing to pin.
-- **Install time.** A root `npm install` also installs `services/api`'s
-  devDependencies, `serverless` included, for builds that never use them. It is
+- **Install time.** A root `npm install` also installs `infra`'s devDependencies —
+  the CDK toolkit, `ts-node` and `esbuild` — for builds that never use them. It is
   waste, not a problem, and the Vercel install cache hides most of it. If it
   starts to hurt, scope the Install Command to the app being built (for example
-  `npm install --workspace=play-studio --include-workspace-root`) and verify it
-  in a preview deployment first — the default is the path that has been tested.
+  `npm install --workspace=play-studio --include-workspace-root`) and verify it in
+  a preview deployment first — the default is the path that has been tested.
 - **The backend deploys from your machine, not from Vercel.** `npm run deploy`
-  still happens here, against AWS credentials Vercel never sees. Vercel only ever
-  builds the two frontends.
+  (which is `cdk deploy`) still happens here, against AWS credentials Vercel never
+  sees. Vercel only ever builds the two frontends.

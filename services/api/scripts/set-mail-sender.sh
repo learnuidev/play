@@ -6,7 +6,7 @@
 #   /play/mail/from-address  (String) address invitations are sent from
 #   /play/mail/app-base-url  (String) where an invitation email points
 #
-# The backend (serverless.yml) reads these via ${ssm:...} and sends through
+# The backend reads these and sends through
 # Amazon SES. Nothing needs to live in .env or local environment files. With no
 # from-address configured the service still works — invitations are created and
 # the admin is handed the link to pass on — it just does not email anybody.
@@ -108,11 +108,46 @@ if [[ "$DELETE" == true ]]; then
     aws_ ssm delete-parameter --name "/play/mail/$name" >/dev/null 2>&1 || true
     echo "Deleted /play/mail/$name (if it existed)"
   done
+  write_config "" ""
   echo
-  echo "Redeploy to stop sending invitation email:"
-  echo "  serverless deploy --stage $STAGE --aws-profile $PROFILE --region $REGION"
+  echo "Redeploy so the Lambdas pick up the cleared address:"
+  echo "  npm run deploy:api --workspace play-infra"
   exit 0
 fi
+
+# ## Where the values have to go now
+#
+# The mail settings used to be `${ssm:...}` interpolations in serverless.yml,
+# read by Serverless at deploy time and baked into every Lambda's environment.
+# The CDK app deliberately makes no AWS calls at synth — a lookup that misses
+# does not fail, it writes the *parameter name* into a hundred environments — so
+# the deploy-time values live in `infra/config/play-<stage>.json` instead.
+#
+# SSM is still written: it is the record, and it is what a fresh environment
+# would be built from. But the file is what the deploy reads, so this script
+# writes both. Leaving them to diverge is the one failure mode worth naming: a
+# value in SSM and a different one in the config file looks like mail being sent
+# from the wrong address for no reason.
+write_config() {
+  local from="$1" app_url="$2"
+  local file
+  file="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/infra/config/play-$STAGE.json"
+
+  if [[ ! -f "$file" ]]; then
+    echo "  (no $file — run npm run import-state --workspace play-infra first)" >&2
+    return 0
+  fi
+
+  node -e '
+    const fs = require("fs");
+    const [file, from, appUrl] = process.argv.slice(1);
+    const config = JSON.parse(fs.readFileSync(file, "utf8"));
+    config.mail = config.mail ?? {};
+    config.mail.fromAddress = from;
+    if (appUrl) config.mail.appBaseUrl = appUrl;
+    fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+  ' "$file" "$from" "$app_url"
+}
 
 if [[ -z "$FROM" ]]; then
   read -r -p "Send invitations from (verified email address or domain): " FROM
@@ -151,20 +186,26 @@ aws_ ssm put-parameter --name /play/mail/from-address --type String \
 aws_ ssm put-parameter --name /play/mail/app-base-url --type String \
   --value "$APP_URL" --overwrite >/dev/null
 
+write_config "$FROM" "$APP_URL" "marketplace"
+
 cat <<EOF
 
 SSM parameters written:
   /play/mail/from-address  $FROM
   /play/mail/app-base-url  $APP_URL
+
+Deploy-time config written:
+  infra/config/play-$STAGE.json   mail.fromAddress, mail.appBaseUrl
 EOF
 
 report_status
 
 cat <<EOF
 
-Then deploy:
-  serverless deploy --stage $STAGE --aws-profile $PROFILE --region $REGION
+Then deploy the API, which is what puts them in the Lambdas' environment:
+  npm run deploy:api --workspace play-infra
 
-Note: --app-url is where the invitation link points. Set it to the deployed
-frontend before inviting people who are not on this machine.
+Note: --app-url is where an invitation link points. Set it to the deployed studio
+before inviting people who are not on this machine, or every invitation will
+point at localhost.
 EOF

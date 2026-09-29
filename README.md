@@ -43,7 +43,8 @@ different intentions.
   Google sign-in is supported through Cognito federation (Hosted UI + OAuth code
   flow) and is optional — see [Google sign-in](#google-sign-in-optional).
 - **API Gateway (REST)** — fully RESTful surface for videos.
-- **Lambda + TypeScript** — all handlers, bundled with `serverless-esbuild`.
+- **Lambda + TypeScript** — 134 handlers, bundled with `esbuild` and deployed by
+  the AWS CDK app in `infra/`.
 - **DynamoDB** — video metadata, keyed by `videoId`, with four GSIs: owner and
   organization indexes for listing/filtering, so a user's uploads and an
   organization's library are both a `Query`. Organizations and their memberships
@@ -89,7 +90,8 @@ play/
 │   ├── ui/               design primitives: button, card, dialog, tabs, …
 │   └── learning/         the classroom, the player, the outline, course cards
 ├── services/
-│   └── api/              Serverless Framework + TypeScript (Node.js 22)
+│   └── api/              the backend's handlers (TypeScript, Node.js 22, no infrastructure)
+├── infra/                the AWS CDK app that deploys them — see infra/README.md
 └── scripts/              get-env.mjs, used by both apps
 ```
 
@@ -497,15 +499,16 @@ aws configure --profile your-aws-profile-name
 
 This writes to `~/.aws/credentials` and `~/.aws/config`.
 
-`serverless` is the one tool that cannot read that file — it takes the profile
-from the environment, so a shell you deploy from reads it out of the file once:
+`cdk` is the one tool that cannot read that file — it takes the profile from the
+environment, and has no `--profile` flag of its own — so a shell you deploy from
+reads it out of the file once:
 
 ```bash
 export AWS_PROFILE="$(. scripts/api-config.env && printf %s "$API_AWS_PROFILE")"
 ```
 
-Individual commands still take `--profile=<name>` (bash scripts) or
-`--aws-profile <name>` (`serverless`) to point somewhere else for one run.
+Individual commands still take `--profile=<name>` (the `aws` CLI and the bash
+scripts) to point somewhere else for one run.
 
 ## Where configuration lives
 
@@ -513,23 +516,31 @@ Individual commands still take `--profile=<name>` (bash scripts) or
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | The AWS profile every script uses                     | `scripts/api-config.env` (an `AWS_PROFILE` in the environment wins)                  |
 | CloudFront signing key pair                           | AWS SSM Parameter Store (see below) — **not** `.env`                                 |
+| Which resources exist already (tables, bucket, pool)   | `infra/config/play-<stage>.json`, discovered by `import-state`                        |
 | Google OAuth client id/secret                         | AWS SSM Parameter Store (see [Google sign-in](#google-sign-in-optional))             |
-| Backend stage/region                                  | CLI flags on `serverless deploy`                                                     |
+| Backend stage/region                                  | `--context stage=…` on `cdk deploy`; `infra/config/play-<stage>.json` names the resources it stands on |
 | Frontend API/Cognito values                           | `apps/studio/.env.local`, `apps/marketplace/.env.local`                              |
-| Where an _author's_ email points (course invitations) | `custom.mail.appBaseUrl`, overridable with `/play/mail/app-base-url`                 |
-| Where a _learner's_ email points (rewards)            | `custom.mail.marketplaceBaseUrl`, overridable with `/play/mail/marketplace-base-url` |
+| Where an _author's_ email points (course invitations) | `mail.appBaseUrl` in `infra/config/play-<stage>.json`, written by `set-mail-sender.sh` |
+| Where a _learner's_ email points (rewards)            | `mail.marketplaceBaseUrl`, in the same file                                          |
 
-The backend has **no `.env` requirements** — the CloudFront keys are read from
-SSM via `${ssm:...}` in `serverless.yml`.
+The backend has **no `.env` requirements** — the CloudFront private key is read
+from SSM at runtime, by name, and cached for the life of the container
+(`services/api/src/lib/cloudfront-key.ts`). It is deliberately not in the
+Lambdas' environment: at 2.3 KB it was most of Lambda's 4 KB budget, and a
+private key readable in the console from a hundred functions that never sign
+anything.
 
 ## 1. Deploy the backend
 
 ```bash
-cd services/api
 npm install
+export AWS_PROFILE="$(. scripts/api-config.env && printf %s "$API_AWS_PROFILE")"
 
 # Generate the CloudFront key pair (for signed URLs) and write it to SSM
-./scripts/generate-cloudfront-keypair.sh
+./services/api/scripts/generate-cloudfront-keypair.sh
+
+# Once per account and region, before the first deploy
+npm run bootstrap
 ```
 
 The script stores the key material in SSM Parameter Store:
@@ -537,25 +548,34 @@ The script stores the key material in SSM Parameter Store:
 - `/play/cloudfront/private-key` (SecureString) — base64 PKCS#8 private key
 - `/play/cloudfront/public-key` (String) — PEM public key (`BEGIN/END PUBLIC KEY`)
 
-Then deploy — this is the one step whose tool cannot read `api-config.env`, so
-`AWS_PROFILE` has to be in the environment (see [AWS profile](#aws-profile)):
+Then deploy — four stacks, and `cdk` takes the profile from the environment
+rather than from a flag (see [AWS profile](#aws-profile)):
 
 ```bash
-npm run deploy   # = serverless deploy --stage dev, against $AWS_PROFILE
+npm run diff     # what would change, before it does
+npm run deploy   # = cdk deploy --all, against $AWS_PROFILE
 ```
 
-Note the stack outputs — you'll need `ApiUrl`, `CognitoUserPoolId`, and
-`CognitoUserPoolClientId` for the frontend:
+Three of the four stacks create almost nothing: the tables, the bucket, the
+distribution and the user pool already exist and are **imported**, so a deploy
+will not change or delete them. Read
+[infra/README.md](infra/README.md) for the map, and
+[docs/migration.md](docs/migration.md) for what that means in practice — in
+short, a few operations (the pool's callback URLs, its pre sign-up trigger, the
+CloudFront key) are API calls rather than deploys, and each has a script.
+
+The values the frontend needs come from the stacks, and one command writes them:
 
 ```bash
-npx serverless info --verbose
+npm run get-env   # reads PlayApiStack and PlayAuthStack into each app's .env.local
 ```
 
-> **Key rotation:** CloudFront public keys cannot be updated in place through
-> CloudFormation. If you re-run the generator with a new key, either delete the
-> old public key from the CloudFront console first, or rotate it manually
-> (create a new key + key group, update the distribution). The
-> `generate-cloudfront-keypair.sh` script overwrites the SSM parameters.
+> **Key rotation:** the CloudFront public key is an *imported* resource, so
+> rotating the signing key is a CloudFront API call rather than a deploy.
+> `generate-cloudfront-keypair.sh` writes the new key material to SSM and ends
+> with the two commands that apply it. Until both are done — the public key
+> updated, and the API redeployed so no container is still signing with the old
+> private key — a player will load and never start.
 
 ## 2. Run the apps
 
@@ -736,8 +756,10 @@ cd services/api
 ```
 
 The script prompts for the client id/secret (the secret is read without echo),
-writes them to SSM Parameter Store, and prints the exact values to paste into the
-Google client:
+writes them to SSM Parameter Store, configures the Google identity provider on
+the user pool, and prints the exact values to paste into the Google client. The
+pool is **imported** by `infra`, so this is an API call rather than a deploy —
+there is no stack that owns it to change it.
 
 | Google client field           | Value                                         |
 | ----------------------------- | --------------------------------------------- |
@@ -758,18 +780,23 @@ neither app sets those: `@play/auth` derives them from the origin the browser is
 on, so the studio gets `localhost:3000/auth/callback` and the marketplace
 `localhost:3001/auth/callback`.
 
-> **Adding an app or a port?** A value in SSM _wins over_ the defaults in
-> `custom.authDefaults`, and Cognito only learns the list at deploy time — so a
-> new origin must be added to the parameter **and** deployed, or signing in from
-> it fails with `redirect_mismatch`. `./scripts/set-auth-urls.sh` rewrites just
-> those two parameters (`--show` prints what is stored, `--delete` falls back to
-> the defaults in `serverless.yml`).
+> **Adding an app or a port?** The user pool is imported, so the list it accepts
+> is not deployed — it is written. A new origin that is not on it fails to sign
+> in with `redirect_mismatch`, which looks like a broken app rather than a missing
+> entry:
+>
+> ```bash
+> node services/api/scripts/set-auth-urls.mjs --callback-urls="…"   # applies immediately
+> node services/api/scripts/set-auth-urls.mjs --show                # what Cognito accepts now
+> ```
+>
+> The script reads the app client before writing it, because Cognito's update
+> calls reset every attribute they are not given.
 
 ### 3. Deploy and refresh the apps' env
 
 ```bash
-./scripts/set-auth-urls.sh   # if an app or port is new
-npm run deploy
+node services/api/scripts/set-auth-urls.mjs   # if an app or port is new
 
 cd ../apps/studio
 npm run get-env   # adds COGNITO_DOMAIN + GOOGLE_AUTH_ENABLED
@@ -907,8 +934,8 @@ To turn Google sign-in off again:
 
 ```bash
 cd services/api
-./scripts/set-google-oauth.sh --delete
-npm run deploy
+./scripts/set-google-oauth.sh --delete          # removes the identity provider
+node scripts/set-auth-urls.mjs --no-google      # and stops the client offering it
 ```
 
 > Deleting the Hosted UI domain invalidates the existing hosted UI session
@@ -1562,8 +1589,13 @@ both key spaces once.
 > The stack rolls back cleanly and the table is left untouched (no data loss, no
 > half-created index), so the fix is to split it:
 >
-> 1. Declare only `OrganizationCreatedIndex` in `serverless.yml` and deploy.
+> 1. Declare only `OrganizationCreatedIndex` and deploy.
 > 2. Add `OrganizationStatusIndex` back and deploy again.
+>
+> This is history rather than instructions: it happened while the tables were
+> still managed. They are **imported** now, so a new index on one of them is an
+> `aws dynamodb update-table` call — and a second one waits for the first to
+> finish backfilling, for the same reason.
 >
 > Between the two deploys a status-filtered organization listing (`GET
 /videos?organizationId=…&status=…`) fails, because the code asks for an index
@@ -1632,7 +1664,8 @@ node scripts/backfill-video-organizations.js --organization-id=<orgId> --dry-run
 node scripts/backfill-video-organizations.js --organization-id=<orgId>
 ```
 
-It resolves the physical table names from the stack outputs, verifies the
+It resolves the physical table names from `infra/config/play-<stage>.json` — the
+same file the CDK app imports the tables by — verifies the
 organization exists, reports how many videos it will reassign, and warns about
 video owners who are not members of that organization — they keep access to
 their own uploads, but will not see the rest of the organization's library until

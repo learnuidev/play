@@ -50,7 +50,8 @@ async function readPrivateKey(): Promise<string> {
       // The parameter is a SecureString, so this is what asks for the plaintext.
       // There is no `kms:Decrypt` grant beside it because the parameter is
       // encrypted with the AWS-managed `aws/ssm` key; a parameter moved to a
-      // customer-managed key needs one added to the role in serverless.yml.
+      // customer-managed key needs one added to the execution role in
+      // `infra/src/stacks/api-stack.ts`.
       WithDecryption: true,
     }),
   );

@@ -1,0 +1,11 @@
+# The bundled handlers. Rebuilt by `npm run bundle`; about 700 MB, and derived
+# from services/api/src, which is what a review should read.
+dist/
+
+# Synth output — templates and staged assets. Derived from bin/ and src/.
+cdk.out/
+
+# Context cache. The app makes no AWS lookups at synth time (see
+# src/config.ts), so there should never be anything here; if one appears, it is
+# a lookup somebody added and it belongs in the review.
+cdk.context.json

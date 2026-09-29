@@ -22,15 +22,19 @@
  *   --dry-run                    report what would change, write nothing
  *   --profile=<aws-profile>      default: the profile in scripts/api-config.env
  *   --region=<aws-region>        default: us-east-1
- *   --stack=<stack-name>         default: play-backend-dev
+ *   --stage=<name>               default: dev
  *   --videos-table=<name>        override table name resolution
  *   --organizations-table=<name> override table name resolution
  *   --members-table=<name>       override table name resolution
  *
- * Table names carry a CloudFormation suffix, so they are resolved from the
- * deployed stack via the AWS CLI unless overridden. Safe to re-run: videos that
- * already have an organization are skipped, and the update refuses to overwrite
- * an organization assigned after the scan.
+ * Table names carry a CloudFormation suffix, so they are read from the file the
+ * CDK app imports them by — `infra/config/play-<stage>.json` — unless overridden.
+ * They used to come from the Serverless stack's outputs, which no longer exist
+ * once that stack is removed, and reading the file means this makes no AWS call
+ * to find out what it is going to write to.
+ *
+ * Safe to re-run: videos that already have an organization are skipped, and the
+ * update refuses to overwrite an organization assigned after the scan.
  */
 
 const { execFileSync } = require('node:child_process');
@@ -69,8 +73,29 @@ function readApiConfig() {
 const DEFAULTS = {
   profile: process.env.AWS_PROFILE || readApiConfig().API_AWS_PROFILE,
   region: 'us-east-1',
-  stack: 'play-backend-dev',
+  stage: 'dev',
 };
+
+/**
+ * The committed record of which physical table is which.
+ *
+ * `infra/scripts/import-state.mjs` writes it, `infra/src/stacks/data-stack.ts`
+ * reads it to import the tables, and this reads it for the same reason — it is
+ * the one place that knows the CloudFormation suffix on a table's name.
+ */
+const CONFIG_FILE = path.join(__dirname, '..', '..', '..', 'infra', 'config');
+
+function readStageConfig(stage) {
+  const file = path.join(CONFIG_FILE, `play-${stage}.json`);
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `No ${path.relative(path.join(__dirname, '..', '..', '..'), file)}.\n` +
+        'Discover the deployed resources first:\n\n' +
+        '  npm run import-state --workspace play-infra\n',
+    );
+  }
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
 
 function usage(message, exitCode = 1) {
   const text = `Usage: node scripts/backfill-video-organizations.js --organization-id=<orgId> [options]
@@ -80,7 +105,7 @@ Options:
   --dry-run                     report what would change, write nothing
   --profile=<aws-profile>       default: ${DEFAULTS.profile}
   --region=<aws-region>         default: ${DEFAULTS.region}
-  --stack=<stack-name>          default: ${DEFAULTS.stack}
+  --stage=<name>                default: ${DEFAULTS.stage}
   --videos-table=<name>         override table name resolution
   --organizations-table=<name>  override table name resolution
   --members-table=<name>        override table name resolution`;
@@ -103,7 +128,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--organization-id=')) args.organizationId = arg.slice('--organization-id='.length);
     else if (arg.startsWith('--profile=')) args.profile = arg.slice('--profile='.length);
     else if (arg.startsWith('--region=')) args.region = arg.slice('--region='.length);
-    else if (arg.startsWith('--stack=')) args.stack = arg.slice('--stack='.length);
+    else if (arg.startsWith('--stage=')) args.stage = arg.slice('--stage='.length);
     else if (arg.startsWith('--videos-table=')) args.videosTable = arg.slice('--videos-table='.length);
     else if (arg.startsWith('--organizations-table=')) args.organizationsTable = arg.slice('--organizations-table='.length);
     else if (arg.startsWith('--members-table=')) args.membersTable = arg.slice('--members-table='.length);
@@ -128,27 +153,17 @@ function run(cmd, argv) {
   }
 }
 
-/** Resolves a table's physical name from the deployed stack's outputs. */
-function resolveTableName(outputKey, { stack, profile, region }) {
-  const raw = run('aws', [
-    'cloudformation',
-    'describe-stacks',
-    '--stack-name', stack,
-    '--profile', profile,
-    '--region', region,
-    '--output', 'json',
-  ]);
-
-  const parsed = JSON.parse(raw);
-  const found = (parsed.Stacks?.[0]?.Outputs ?? []).find((o) => o.OutputKey === outputKey);
-  if (!found || !found.OutputValue) {
+/** A table's physical name, by the construct id the CDK app imports it as. */
+function resolveTableName(logicalId, { stage }) {
+  const name = readStageConfig(stage).existing.tables[logicalId];
+  if (!name) {
     throw new Error(
-      `Stack '${stack}' has no '${outputKey}' output. Redeploy the backend so it exports ` +
-        'table names (npm run deploy -- --aws-profile ' + profile + '), or pass the table ' +
-        'name explicitly (--videos-table=, --organizations-table=, --members-table=).',
+      `infra/config/play-${stage}.json has no name for '${logicalId}'. Re-run ` +
+        'npm run import-state --workspace play-infra, or pass the table name ' +
+        'explicitly (--videos-table=, --organizations-table=, --members-table=).',
     );
   }
-  return found.OutputValue;
+  return name;
 }
 
 async function main() {
@@ -166,11 +181,11 @@ async function main() {
     { marshallOptions: { removeUndefinedValues: true } },
   );
 
-  const videosTable = args.videosTable || resolveTableName('VideosTableName', args);
-  const organizationsTable = args.organizationsTable || resolveTableName('OrganizationsTableName', args);
-  const membersTable = args.membersTable || resolveTableName('OrgMembersTableName', args);
+  const videosTable = args.videosTable || resolveTableName('VideosTable', args);
+  const organizationsTable = args.organizationsTable || resolveTableName('OrganizationsTable', args);
+  const membersTable = args.membersTable || resolveTableName('OrgMembersTable', args);
 
-  console.log(`Stack:         ${args.stack} (${args.region}, profile ${args.profile})`);
+  console.log(`Stage:         ${args.stage} (${args.region}, profile ${args.profile})`);
   console.log(`Videos:        ${videosTable}`);
   console.log(`Organizations: ${organizationsTable}`);
   console.log(`Members:       ${membersTable}`);

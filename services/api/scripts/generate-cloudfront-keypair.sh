@@ -6,10 +6,17 @@
 #   /play/cloudfront/private-key  (SecureString)  base64 of PKCS#8 private key
 #   /play/cloudfront/public-key   (String)        PEM (BEGIN/END PUBLIC KEY) as CloudFront expects
 #
-# The backend (serverless.yml) reads these parameters via ${ssm:...}, so no
-# keys need to live in .env or local environment variables.
+# The Lambdas read the private key from SSM at runtime, by name rather than by
+# value, and cache it for the life of the container (`lib/cloudfront-key`). That
+# is deliberate: the key is 2.3 KB, and interpolating it into every function's
+# environment was most of Lambda's 4 KB budget and a private key readable from
+# the console in a hundred places that never sign anything.
 #
 # Local PEM files are still written (cloudfront_*.pem) for backup/rotation.
+#
+# Writing the parameters is not the whole job — nothing is signed with them until
+# CloudFront's public key is updated and the Lambda containers that hold the old
+# private key are gone. The note this script ends with says how.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -68,6 +75,31 @@ echo "SSM parameters written:"
 echo "  /play/cloudfront/private-key (SecureString)"
 echo "  /play/cloudfront/public-key  (String)"
 echo
-echo "Now run: serverless deploy --aws-profile $PROFILE --region $REGION"
+cat <<EOF
+
+The key pair is in SSM. Two things apply it, and neither is a deploy.
+
+  The **private** key is read by the Lambdas at runtime, by name, and cached for
+  the life of the container (lib/cloudfront-key). A rotation therefore does not
+  take effect until the containers that signed a URL with the old key are gone —
+  a redeploy of the API stack is the reliable way to make that immediate:
+
+    npm run deploy:api --workspace play-infra
+
+  The **public** key is a CloudFront resource, and PlayMediaStack imports it
+  rather than managing it. Applying a new one is an API call against the
+  distribution's key group:
+
+    aws cloudfront get-public-key --id <public key id> \
+      --profile $PROFILE --region $REGION --query 'ETag' --output text
+    aws cloudfront update-public-key --id <public key id> --if-match <etag> \
+      --public-key-config 'Name=play-videos-public-key-$STAGE,CallerReference=play-videos-public-key-$STAGE,EncodedKey=<base64>' \
+      --profile $PROFILE --region $REGION
+
+  The public key id and the distribution id are in infra/config/play-$STAGE.json.
+
+Until both are done, the browser's signed URLs will not validate — which looks
+like a player that loads and never starts.
+EOF
 echo
 echo "WARNING: treat cloudfront_private*.pem as a secret. Do not commit it."

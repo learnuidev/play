@@ -5,6 +5,7 @@
   "description": "Play — one repository for the creator studio, the learner marketplace, a third-party demo app, and the AWS backend they share.",
   "workspaces": [
     "apps/*",
+    "infra",
     "packages/*",
     "services/*"
   ],
@@ -22,8 +23,16 @@
     "build:demo": "npm run build --workspace play-demo",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "get-env": "npm run get-env --workspace play-studio && npm run get-env --workspace play-marketplace && npm run get-env --workspace play-demo",
-    "deploy": "npm run deploy --workspace play-backend --",
-    "deploy:dev": "npm run deploy:dev --workspace play-backend --"
+    "synth": "npm run synth --workspace play-infra",
+    "diff": "npm run diff --workspace play-infra",
+    "deploy": "npm run deploy --workspace play-infra",
+    "deploy:dev": "npm run deploy:dev --workspace play-infra",
+    "deploy:api": "npm run deploy:api --workspace play-infra",
+    "deploy:data": "npm run deploy:data --workspace play-infra",
+    "deploy:media": "npm run deploy:media --workspace play-infra",
+    "deploy:auth": "npm run deploy:auth --workspace play-infra",
+    "bootstrap": "npm run bootstrap --workspace play-infra",
+    "bundle": "npm run bundle --workspace play-infra"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
