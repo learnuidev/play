@@ -1,9 +1,11 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import type { Content, ContentType } from '../types';
+import type { Content, ContentType, QuizGeneration } from '../types';
 import { deleteContentFileItems, deleteContentFileObjects } from './content-files';
 import { deleteCommentItem, listAllComments } from './comments';
 import { env } from './config';
 import { documentClient as client, isConditionalCheckFailed } from './dynamodb';
+import { moveIntoPlace } from './placement';
+import { deleteQuestionsForContent } from './questions';
 
 export const CONTENTS_TABLE = env.contentsTableName;
 
@@ -40,6 +42,16 @@ export interface UpdateContentPatch {
   /** Pass `null` to clear the notes. */
   notes?: Record<string, unknown> | null;
   position?: number;
+  /** The section to file it under. Only `placeContent` moves a row between them. */
+  sectionId?: string;
+  /**
+   * The state of an AI generation run against this content.
+   *
+   * Pass `null` to clear it — which is what a run that has been read does, so a
+   * quiz page stops polling a finished job. Only `lib/quiz-generation` writes
+   * one.
+   */
+  generation?: QuizGeneration | null;
 }
 
 export async function updateContent(contentId: string, patch: UpdateContentPatch): Promise<void> {
@@ -70,6 +82,8 @@ export async function updateContent(contentId: string, patch: UpdateContentPatch
   if (patch.videoId !== undefined) assignOrRemove('videoId', patch.videoId);
   if (patch.notes !== undefined) assignOrRemove('notes', patch.notes);
   if (patch.position !== undefined) assign('position', patch.position);
+  if (patch.sectionId !== undefined) assign('sectionId', patch.sectionId);
+  if (patch.generation !== undefined) assignOrRemove('generation', patch.generation);
 
   const expression = remove ? `${set} REMOVE ${remove.slice(2)}` : set;
 
@@ -90,7 +104,7 @@ export async function deleteContentItem(contentId: string): Promise<void> {
 
 /**
  * Removes a piece of content and everything that hangs off it: its attachment
- * rows and objects, and its comments.
+ * rows and objects, its comments, and — when it is a quiz — its questions.
  *
  * The content row goes last. If the cascade fails part way, what is left is a
  * content that still exists and can be deleted again, rather than a row of
@@ -106,6 +120,7 @@ export async function purgeContent(content: Content): Promise<void> {
     await deleteCommentItem(content.contentId, comment.commentId);
   }
 
+  await deleteQuestionsForContent(content.contentId);
   await deleteContentFileItems(content.contentId);
   await deleteContentFileObjects(content.contentId);
   await deleteContentItem(content.contentId);
@@ -289,6 +304,73 @@ export async function nextContentPosition(sectionId: string): Promise<number> {
 
   const last = (res.Items ?? [])[0] as Content | undefined;
   return (last?.position ?? 0) + 1;
+}
+
+/**
+ * Writes positions 1..n over a section's content, touching only what moved.
+ *
+ * The same reasoning as `renumberQuestions`: a move renumbers the rows around
+ * it, and a writer that rewrote the whole section on every drop would be doing
+ * forty writes to move one row and leaving a longer window in which the list is
+ * half-ordered.
+ */
+async function renumberContents(contents: Content[]): Promise<void> {
+  for (const [index, content] of contents.entries()) {
+    const position = index + 1;
+    if (content.position === position) continue;
+    await updateContent(content.contentId, { position });
+  }
+}
+
+/**
+ * Puts a piece of content where an author dropped it.
+ *
+ * `index` is a place in the *target* section, zero-based, and the order that
+ * results is computed here rather than accepted from the client — the page that
+ * drew the list cannot know what has been added to it since, and a client that
+ * sent a whole order would be a client that can silently lose a row it never
+ * saw.
+ *
+ * Moving between sections is the same operation with two lists to renumber:
+ * the row is taken out of the section it was in (which closes the gap behind
+ * it) and put into the destination (which opens one). A drag that lands in the
+ * section it started in renumbers one.
+ *
+ * Both renumbers are sequences of single-item writes rather than a transaction.
+ * Part way through, the worst case is two rows sharing a position — which the
+ * listing breaks by id, so the list is odd to look at and nothing is lost.
+ */
+export async function placeContent(
+  content: Content,
+  target: { sectionId: string; index: number },
+): Promise<void> {
+  const movesSection = target.sectionId !== content.sectionId;
+
+  const [destination, source] = await Promise.all([
+    listAllContentsBySection(target.sectionId),
+    movesSection ? listAllContentsBySection(content.sectionId) : Promise.resolve<Content[]>([]),
+  ]);
+
+  const ordered = moveIntoPlace(
+    destination,
+    (entry) => entry.contentId === content.contentId,
+    { ...content, sectionId: target.sectionId },
+    target.index,
+  );
+
+  // The row is written first when it changes section: the destination's order
+  // is meaningless while the row still claims to belong elsewhere, and a
+  // failure after this leaves the content filed where it was dropped with the
+  // order around it not yet settled.
+  if (movesSection) {
+    await updateContent(content.contentId, { sectionId: target.sectionId });
+  }
+
+  await renumberContents(ordered);
+
+  if (movesSection) {
+    await renumberContents(source.filter((entry) => entry.contentId !== content.contentId));
+  }
 }
 
 /**

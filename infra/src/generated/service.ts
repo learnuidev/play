@@ -827,6 +827,60 @@ export const TABLES: TableSpec[] = [
     ],
     grantsIndexes: false,
   },
+  /**
+   *  The questions of a quiz.
+   *
+   *  A table of its own rather than a list on the quiz's content row, for the
+   *  same reason a lesson's attachments have one: a question is edited,
+   *  verified, reordered and deleted on its own, and a list stored inside the
+   *  content would make every one of those a rewrite of the whole quiz — two
+   *  authors working on one quiz would overwrite each other, and a long quiz
+   *  would be a 400 KB item limit away from not saving at all.
+   *
+   *  Keyed by the question. `ContentPositionIndex` is how a quiz is read — one
+   *  query, in the order it asks them — and it is the only index, because a
+   *  question belongs to one quiz and is never looked up another way. "Every
+   *  unverified question in this course" is the one question this table cannot
+   *  answer, and it is not a gap: verifying happens on the quiz's own page,
+   *  where the questions it is about are.
+   *
+   *  This is the first table added since the migration, so it is the first one
+   *  that is *not* an adopted legacy resource: it is created by
+   *  `infra/scripts/create-questions-table.mjs`, and its name is recorded in
+   *  `infra/config/play-<stage>.json` like every other, because the data stack
+   *  imports tables rather than creating them.
+   */
+  {
+    id: 'QuestionsTable',
+    envVar: 'QUESTIONS_TABLE',
+    billingMode: 'PAY_PER_REQUEST',
+    attributeDefinitions: [
+      { name: 'questionId', type: 'S' },
+      { name: 'contentId', type: 'S' },
+      { name: 'position', type: 'N' },
+    ],
+    keySchema: [
+      { name: 'questionId', keyType: 'HASH' },
+    ],
+    globalSecondaryIndexes: [
+      {
+        name: 'ContentPositionIndex',
+        keySchema: [
+          { name: 'contentId', keyType: 'HASH' },
+          { name: 'position', keyType: 'RANGE' },
+        ],
+        projectAll: true,
+      },
+    ],
+    actions: [
+      'dynamodb:DeleteItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+    ],
+    grantsIndexes: true,
+  },
 ];
 
 export const FUNCTIONS: FunctionSpec[] = [
@@ -1635,6 +1689,165 @@ export const FUNCTIONS: FunctionSpec[] = [
     http: [{"path":"contents/{contentId}/files/{fileId}","method":"DELETE","authorized":true}],
     s3: [],
     eventBridge: [],
+  },
+  {
+    /**
+     *  Where a lesson or a quiz sits in its section — the write a drag performs.
+     *
+     *  A route of its own rather than a `position` on the content patch, because
+     *  a drop is two facts at once (which section, and where in it) and because
+     *  the order that results is the *section's*: the server renumbers what
+     *  follows the row, from what it currently holds. A client that sent the
+     *  whole order would be a client that can lose a row added since it drew the
+     *  list.
+     */
+    key: 'place-content',
+    entry: 'src/functions/contents/place-content.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"contents/{contentId}/placement","method":"PUT","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  /**
+   *  Quizzes: the questions a quiz asks, how they are written, and who has read
+   *  them.
+   *
+   *  Every route here authorizes as *write* — including the reads. A question
+   *  carries the answer key, and there is no reader of it who is not editing the
+   *  quiz; the day a quiz can be taken is the day a separate route hands out its
+   *  questions without the answers.
+   */
+  {
+    key: 'list-questions',
+    entry: 'src/functions/questions/list-questions.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"contents/{contentId}/questions","method":"GET","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'create-question',
+    entry: 'src/functions/questions/create-question.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"contents/{contentId}/questions","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'import-questions',
+    entry: 'src/functions/questions/import-questions.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: 'Imports questions from an .xlsx, .csv or .json file',
+    http: [{"path":"contents/{contentId}/questions/import","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    /**
+     *  Starts an AI generation, and answers before it finishes.
+     *
+     *  The run is queued: the request writes the state onto the quiz and
+     *  publishes an event, and `generate-questions` below does the work. It has
+     *  to be this way — API Gateway holds a REST request for 29 seconds at the
+     *  very most, and a model reading a lesson's transcript takes longer than
+     *  that often enough for a synchronous route to be a route that fails on the
+     *  lessons worth generating from.
+     */
+    key: 'request-question-generation',
+    entry: 'src/functions/questions/request-question-generation.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: 'Queues an AI generation of quiz questions from a lesson',
+    http: [{"path":"contents/{contentId}/questions/generation","method":"POST","authorized":true},{"path":"contents/{contentId}/questions/generation","method":"DELETE","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'verify-questions',
+    entry: 'src/functions/questions/verify-questions.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: 'Verifies a batch of a quiz\'s questions',
+    http: [{"path":"contents/{contentId}/questions/verification","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'update-question',
+    entry: 'src/functions/questions/update-question.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"questions/{questionId}","method":"PATCH","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'delete-question',
+    entry: 'src/functions/questions/delete-question.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"questions/{questionId}","method":"DELETE","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    /**
+     *  A person saying a question is right, or taking that back.
+     *
+     *  One function, two routes: the same decision in two directions. `PUT`
+     *  records who verified it and when; `DELETE` removes the record, which is
+     *  what "nobody has checked this" is.
+     */
+    key: 'verify-question',
+    entry: 'src/functions/questions/verify-question.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"questions/{questionId}/verification","method":"PUT","authorized":true},{"path":"questions/{questionId}/verification","method":"DELETE","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'place-question',
+    entry: 'src/functions/questions/place-question.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"questions/{questionId}/placement","method":"PUT","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    /**
+     *  The worker that writes quiz questions, driven by the event
+     *  `request-question-generation` publishes.
+     *
+     *  Its timeout is the service's longest, because it is the one function whose
+     *  whole job is waiting on another service: a model reading a transcript and
+     *  writing twenty questions. A route could never give it that.
+     */
+    key: 'generate-questions',
+    entry: 'src/functions/questions/generate-questions.ts',
+    handlerExport: 'handler',
+    timeout: 120,
+    memorySize: 1024,
+    description: 'Writes a quiz\'s questions from a lesson, with Bedrock',
+    environment: {"BEDROCK_MODEL_ID":"us.amazon.nova-lite-v1:0"},
+    http: [],
+    s3: [],
+    eventBridge: [{"source":["play.questions"],"detailType":["Quiz Generation Requested"]}],
   },
   /**
    *  Learner state. Reading the content is all any of these needs: favouriting,

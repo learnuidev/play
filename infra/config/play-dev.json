@@ -21,6 +21,7 @@
       "OrganizationsTable": "play-backend-dev-OrganizationsTable-1L6WF13952N34",
       "PlaylistTable": "play-backend-dev-PlaylistTable-1O9535UURBMLI",
       "ProfilesTable": "play-backend-dev-ProfilesTable-XBAXJ9EO6628",
+      "QuestionsTable": "play-dev-questions-table",
       "RewardGrantsTable": "play-backend-dev-RewardGrantsTable-23QZFUDSV4E4",
       "SectionsTable": "play-backend-dev-SectionsTable-52MS6OFNVXIA",
       "SpaceMembersTable": "play-backend-dev-SpaceMembersTable-Q0I5M5O7F31B",

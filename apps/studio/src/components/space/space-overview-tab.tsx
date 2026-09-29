@@ -439,7 +439,6 @@ export function SpaceOverviewTab({ space, canEdit }: { space: Space; canEdit: bo
             label="Quizzes"
             value={stats?.quizzes}
             loading={isLoading}
-            hint="Quizzes are not part of a course yet."
           />
         </div>
         {isScheduled && (

@@ -4,7 +4,7 @@ import { countSectionsInSpace } from './sections';
 import { countSpaceStudents } from './space-members';
 import { buildSpaceThumbnailUrl } from './space-thumbnail';
 import { getSpace, listListedSpaces } from './spaces';
-import type { CatalogCourse, CatalogLesson, CatalogSection, Content, Space } from '../types';
+import type { CatalogCourse, CatalogLesson, CatalogSection, Content, ContentType, Space } from '../types';
 
 /**
  * What a listed course looks like from the outside.
@@ -110,7 +110,10 @@ export async function toCatalogCourses(spaces: Space[]): Promise<CatalogCourse[]
  */
 export function toCatalogSections(
   sections: { sectionId: string; title: string }[],
-  contentsBySection: Map<string, { contentId: string; title: string; videoId?: string }[]>,
+  contentsBySection: Map<
+    string,
+    { contentId: string; title: string; videoId?: string; type?: ContentType }[]
+  >,
 ): CatalogSection[] {
   return sections.map((section) => ({
     sectionId: section.sectionId,
@@ -120,6 +123,10 @@ export function toCatalogSections(
         contentId: content.contentId,
         title: content.title,
         hasVideo: Boolean(content.videoId),
+        // The kind travels so a syllabus can say a row is a quiz rather than
+        // leaving a reader to click it and find out — and so that "3 lessons"
+        // is not said over a section holding two lessons and a quiz.
+        ...(content.type === 'QUIZ' ? { type: content.type } : {}),
       }),
     ),
   }));

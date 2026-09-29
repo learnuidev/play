@@ -1023,6 +1023,16 @@ All endpoints require `Authorization: Bearer <Cognito ID token>`.
 | GET    | `/contents/{contentId}/files`                          | List its attachments, each with a signed URL                           |
 | GET    | `/contents/{contentId}/files/{fileId}`                 | Signed URL for one attachment                                          |
 | DELETE | `/contents/{contentId}/files/{fileId}`                 | Detach one attachment                                                  |
+| PUT    | `/contents/{contentId}/placement`                      | Move a lesson or quiz within or between sections (a drag)              |
+| GET    | `/contents/{contentId}/questions`                      | A quiz's questions, in order, with how many need verifying             |
+| POST   | `/contents/{contentId}/questions`                      | Write a question by hand                                               |
+| POST   | `/contents/{contentId}/questions/import`               | Import questions from .xlsx/.csv/.json (base64 in the body)             |
+| POST   | `/contents/{contentId}/questions/generation`           | Queue an AI generation from a lesson (`202`)                           |
+| POST   | `/contents/{contentId}/questions/verification`         | Verify a batch of questions (all unverified by default)                |
+| PATCH  | `/questions/{questionId}`                              | Edit a question (takes its verification away)                          |
+| DELETE | `/questions/{questionId}`                              | Delete a question                                                      |
+| PUT    | `/questions/{questionId}/verification`                 | Verify it (`DELETE` takes that back)                                   |
+| PUT    | `/questions/{questionId}/placement`                    | Move it inside its quiz                                                |
 | PUT    | `/contents/{contentId}/favourite`                      | Favourite it (any member)                                              |
 | DELETE | `/contents/{contentId}/favourite`                      | Unfavourite it                                                         |
 | PUT    | `/contents/{contentId}/playlist`                       | Add it to the caller's learning playlist                               |
@@ -1436,6 +1446,58 @@ and the parent row last, so a failure part way through leaves something visible
 and deletable rather than unreachable rows. Favourites and playlist entries aimed
 at deleted content are deliberately left alone: they are a learner's own
 pointers, and a pointer whose target is gone is skipped when their list is read.
+
+### Quizzes and questions
+
+A course can check what it taught. A **quiz** is content — a row in a section,
+beside the lessons and sorted with them — and what it holds is **questions**:
+true/false, or multiple choice with one right answer.
+
+```
+ContentsTable ─── QUIZ row ─┬─ QuizQuestion (QuestionsTable, ContentPositionIndex)
+                            └─ generation (the last AI run, on the same row)
+```
+
+**Questions live in their own table**, for the reason a lesson's attachments do:
+each one is written, verified, reordered and deleted on its own, so a list stored
+inside the content row would make every one of those a rewrite of the whole quiz
+— two authors would overwrite each other, and a long quiz would be 400 KB away
+from not saving at all.
+
+**A machine's question is a draft.** Anything generated or imported arrives
+`NEEDS_VERIFICATION`, and no parameter anywhere creates a verified question: a
+person reads it and verifies it (`PUT /questions/{id}/verification`, recording
+who and when), or deletes it. Editing what a question *asks* takes the
+verification away — somebody approved a sentence, and that sentence has changed.
+
+**Generation is queued, not awaited.** `POST
+/contents/{contentId}/questions/generation` writes the run onto the quiz, publishes
+an EventBridge event (`play.questions` / `Quiz Generation Requested`), and answers
+`202` with the quiz. `play-<stage>-generate-questions` reads the lesson's
+transcript and notes, calls Bedrock's model-agnostic `Converse` API, validates
+every question it gets back, and writes them `NEEDS_VERIFICATION`. The quiz page
+polls the content row until the run is `READY` or `FAILED`. A REST request cannot
+be held open long enough for a model to read a lesson, which is the whole reason
+for the event in the middle.
+
+**Import reads the file the author already has**: `.xlsx` (first sheet), `.csv`
+(delimiter sniffed) or `.json`, base64 inside a JSON body because API Gateway's
+REST integration has no multipart parser. Headings are matched by name and the
+type is inferred when absent, so a plain question/answer sheet imports as it was
+written; a row that cannot be read is reported with its line number rather than
+failing the file.
+
+**Moving is a place, not an order.** `PUT …/placement { index }` says *where* a
+row lands — the server renumbers from what the container currently holds — so a
+client that sends a stale view of a list cannot delete a row somebody else added
+while the drag was in flight.
+
+`QuestionsTable` is the first table added since the CDK migration, so it is the
+first one no deploy creates: `node
+infra/scripts/create-questions-table.mjs --yes` creates it once per stage and
+records its name in `infra/config/play-<stage>.json`. [docs/quizzes.md](docs/quizzes.md)
+is the full map — the model, the flows, the import format and what is deliberately
+not built yet (nobody takes a quiz; there are no attempts or scores).
 
 ### Learner state
 

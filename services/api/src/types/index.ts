@@ -366,15 +366,115 @@ export interface OrgMember {
 
 /**
  * What a piece of content *is*. One value today — a video from the
- * organization's library — with the notes beside it.
+ * organization's library — with the notes beside it, and `QUIZ`: a set of
+ * questions rather than footage.
  *
- * It is stored as a string rather than a number so a second kind (`TEXT`,
+ * It is stored as a string rather than a number so a third kind (`TEXT`,
  * `FILE`, `LIVE`) can be added later without migrating existing rows, and so an
  * unknown value read back by an older client is inert rather than nonsense.
  */
-export type ContentType = 'VIDEO';
+export type ContentType = 'VIDEO' | 'QUIZ';
 
-export const CONTENT_TYPES: ContentType[] = ['VIDEO'];
+export const CONTENT_TYPES: ContentType[] = ['VIDEO', 'QUIZ'];
+
+/**
+ * What a question asks, and therefore how it is answered.
+ *
+ * - `TRUE_FALSE`      — one statement, and whether it is true.
+ * - `MULTIPLE_CHOICE` — a prompt with two to six options and one right answer.
+ */
+export type QuestionType = 'TRUE_FALSE' | 'MULTIPLE_CHOICE';
+
+export const QUESTION_TYPES: QuestionType[] = ['TRUE_FALSE', 'MULTIPLE_CHOICE'];
+
+/**
+ * How far a question has got towards being usable.
+ *
+ * Everything a machine wrote — generated from a transcript, or read out of a
+ * spreadsheet — arrives `NEEDS_VERIFICATION`, and only a person who has read it
+ * and said it is right makes it `VERIFIED`. The default is the safe one because
+ * the failure it prevents is a learner being marked against a question nobody
+ * checked; the cost of getting it wrong the other way is that an author has to
+ * click one button per question they agree with.
+ *
+ * A question that is wrong is *deleted*, not marked: see `lib/questions.ts`.
+ */
+export type QuestionStatus = 'NEEDS_VERIFICATION' | 'VERIFIED';
+
+export const QUESTION_STATUSES: QuestionStatus[] = ['NEEDS_VERIFICATION', 'VERIFIED'];
+
+/** Where a question came from. Recorded so a reviewer knows what they are reading. */
+export type QuestionSource = 'AI' | 'IMPORT' | 'MANUAL';
+
+/** One answer a learner may choose. */
+export interface QuestionOption {
+  /**
+   * Short and stable: `a`…`f`, in the order the options were given.
+   *
+   * An answer is recorded against this rather than against an index, because an
+   * index is a position: removing the first option of a question would move
+   * every stored answer to it onto a different one.
+   */
+  id: string;
+  text: string;
+}
+
+/** One question of a quiz, as the table stores it. */
+export interface QuizQuestion {
+  /** ULID, the table key. */
+  questionId: string;
+  /** The quiz content this belongs to. */
+  contentId: string;
+  /** Denormalized from the content, so a question authorizes in one hop. */
+  spaceId: string;
+  organizationId: string;
+  type: QuestionType;
+  /** The statement to judge, or the question to answer. */
+  prompt: string;
+  /** Two to six options. Always present: true/false is two fixed ones. */
+  options: QuestionOption[];
+  /**
+   * The option(s) that answer it — exactly one today.
+   *
+   * Plural because that is the shape a second kind ("select all that apply")
+   * would need, so adding one is a change to validation rather than to storage.
+   */
+  correctOptionIds: string[];
+  /** Why the answer is the answer. Read by whoever verifies the question. */
+  explanation?: string;
+  status: QuestionStatus;
+  source: QuestionSource;
+  /** The lesson the question was written from, when it was written from one. */
+  sourceContentId?: string;
+  /** 1-based order inside the quiz. Sparse: gaps are legal. */
+  position: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  verifiedBy?: string;
+  verifiedAt?: number;
+}
+
+/**
+ * A generation run, as it is recorded on the quiz's content row.
+ *
+ * There is at most one per quiz — asking again replaces the record and starts a
+ * new run — because a quiz being written twice at once is two authors editing
+ * the same list, which is what `request-question-generation` refuses.
+ */
+export interface QuizGeneration {
+  status: 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
+  sourceContentId: string;
+  count: number;
+  types: QuestionType[];
+  requestedBy: string;
+  requestedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  created?: number;
+  error?: string;
+  model?: string;
+}
 
 /** A section of a space: the grouping its content is published under. */
 export interface Section {
@@ -430,6 +530,14 @@ export interface Content {
    * author-supplied markup is never handed to `dangerouslySetInnerHTML`.
    */
   notes?: Record<string, unknown>;
+  /**
+   * The last AI generation asked for against this content, on a quiz.
+   *
+   * Kept on the row because it is a fact about *this* quiz — what was asked
+   * for, and how it went — and because the page that asked for it is the page
+   * that polls it. Absent until somebody asks for one.
+   */
+  generation?: QuizGeneration;
   /** 1-based order inside the section. Sparse: gaps are legal. */
   position: number;
   /**
@@ -1027,6 +1135,12 @@ export interface CatalogLesson {
   contentId: string;
   title: string;
   hasVideo: boolean;
+  /**
+   * Which kind of row this is. Absent on a lesson, which is what almost every
+   * row is — the same "absent means the common case" the wire shape uses, so
+   * the field costs nothing on the rows that do not need it.
+   */
+  type?: ContentType;
 }
 
 export interface CatalogSection {

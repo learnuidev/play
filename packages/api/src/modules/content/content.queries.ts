@@ -75,6 +75,31 @@ export function useDeleteContent(spaceId?: string) {
 }
 
 /**
+ * Moving a lesson or a quiz where an author dropped it.
+ *
+ * One request per drop, however many rows the drop renumbered: the *order* is
+ * the section's, and it is the server that works it out. Nothing here sends a
+ * list of ids, which is what keeps two people arranging one course from
+ * overwriting each other's work with a stale copy of the list.
+ */
+export function usePlaceContent(spaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ contentId, ...placement }: { contentId: string } & Parameters<typeof api.placeContent>[1]) =>
+      api.placeContent(contentId, placement),
+    onSuccess: ({ content }) => {
+      // The row's own cache is written from the response, and the outline it
+      // appears in is refetched: both sections of a cross-section drag have
+      // changed, and only the outline knows about both.
+      qc.setQueryData(contentKeys.detail(content.contentId), (previous: { content: unknown } | undefined) =>
+        previous ? { ...previous, content } : previous,
+      );
+      qc.invalidateQueries({ queryKey: sectionKeys.outline(spaceId) });
+    },
+  });
+}
+
+/**
  * Attaches a file: the reservation goes through the API, the bytes go straight
  * to S3 with the URL it returns, and the listing is refetched once they land.
  */

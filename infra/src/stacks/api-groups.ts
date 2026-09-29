@@ -56,8 +56,8 @@ export interface ApiGroup {
 export const API_GROUPS: ApiGroup[] = [
   {
     id: 'Content',
-    description: 'What a course is made of: its videos, its sections and the content filed under them',
-    roots: ['videos', 'sections', 'contents'],
+    description: 'What a course is made of: its videos, its sections, the content filed under them, and the questions a quiz asks',
+    roots: ['videos', 'sections', 'contents', 'questions'],
   },
   {
     id: 'Courses',

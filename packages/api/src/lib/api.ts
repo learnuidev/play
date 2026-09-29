@@ -1,6 +1,7 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
   AudioResponse,
+  BatchVerificationResponse,
   CatalogCourseResponse,
   CohortResponse,
   Comment,
@@ -14,6 +15,7 @@ import type {
   CreateLoopPayload,
   CreateOrganizationPayload,
   CreateOrganizationResponse,
+  CreateQuestionPayload,
   CreateRewardPayload,
   CreateSectionPayload,
   CreateSpacePayload,
@@ -27,7 +29,10 @@ import type {
   CreateOAuthAppResponse,
   FavouriteResponse,
   FavouriteTargetType,
+  GenerateQuestionsPayload,
   GrantRewardPayload,
+  ImportQuestionsPayload,
+  ImportQuestionsResponse,
   InviteMemberPayload,
   InviteMemberResponse,
   InviteSpaceMemberPayload,
@@ -40,6 +45,7 @@ import type {
   ListCommentsResponse,
   ListContentFilesResponse,
   ListLoopsResponse,
+  ListQuestionsResponse,
   LoopLikeResponse,
   ListContentsResponse,
   ListFavouritesResponse,
@@ -65,6 +71,9 @@ import type {
   OAuthAuthorizationRequestResponse,
   OrgMemberResponse,
   OrgRole,
+  PlaceContentPayload,
+  QuestionResponse,
+  QuestionsResponse,
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
   PlaylistResponse,
@@ -88,6 +97,7 @@ import type {
   UpdateOAuthAppPayload,
   UpdateOAuthAppResponse,
   UpdateProfilePayload,
+  UpdateQuestionPayload,
   UpdateRewardPayload,
   UpdateSectionPayload,
   UpdateSpacePayload,
@@ -560,13 +570,110 @@ export const api = {
 
   deleteContent: (contentId: string) => request<void>(`/contents/${contentId}`, { method: 'DELETE' }),
 
+  /**
+   * Where a lesson or a quiz sits in its section — what a drag performs.
+   *
+   * `index` is a place in the target section, zero-based, and the order that
+   * results is the server's to work out: the page that drew the list cannot know
+   * what has been added to it since, so it says "third from the top" and the
+   * server makes that true.
+   */
+  placeContent: (contentId: string, payload: PlaceContentPayload) =>
+    request<ContentMutationResponse>(`/contents/${contentId}/placement`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * A quiz's questions, with how many are still waiting to be read.
+   *
+   * Read-only for the API's purposes — an author's screen is the only caller —
+   * and every question route is behind a *write* on the quiz, because what comes
+   * back carries the answer key. See `requireQuizAccess`.
+   */
+  listQuestions: (contentId: string) =>
+    request<ListQuestionsResponse>(`/contents/${contentId}/questions`),
+
+  createQuestion: (contentId: string, payload: CreateQuestionPayload) =>
+    request<QuestionResponse>(`/contents/${contentId}/questions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateQuestion: (questionId: string, patch: UpdateQuestionPayload) =>
+    request<QuestionResponse>(`/questions/${questionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteQuestion: (questionId: string) =>
+    request<void>(`/questions/${questionId}`, { method: 'DELETE' }),
+
+  /**
+   * A person saying a question is right — or taking that back.
+   *
+   * Two calls rather than one with a body, because it is one decision with two
+   * directions and there is no third state to set: a question is either read by
+   * somebody or it is not.
+   */
+  verifyQuestion: (questionId: string) =>
+    request<QuestionResponse>(`/questions/${questionId}/verification`, { method: 'PUT' }),
+
+  unverifyQuestion: (questionId: string) =>
+    request<QuestionResponse>(`/questions/${questionId}/verification`, { method: 'DELETE' }),
+
+  /**
+   * Verifying a batch. Without `questionIds` it is every question of the quiz
+   * that is still waiting, which is what an author who has just read a generated
+   * set means by it.
+   */
+  verifyQuestions: (contentId: string, questionIds?: string[]) =>
+    request<BatchVerificationResponse>(`/contents/${contentId}/questions/verification`, {
+      method: 'POST',
+      body: JSON.stringify(questionIds ? { questionIds } : {}),
+    }),
+
+  /** Where a question sits in its quiz — what a drag inside the list performs. */
+  placeQuestion: (questionId: string, index: number) =>
+    request<QuestionsResponse>(`/questions/${questionId}/placement`, {
+      method: 'PUT',
+      body: JSON.stringify({ index }),
+    }),
+
+  /**
+   * Imports questions from a file.
+   *
+   * The file travels base64 inside a JSON body because API Gateway's REST
+   * integration has no multipart parser; the rows that could not be read come
+   * back as `skipped`, each with the line it was on, rather than failing the
+   * whole import.
+   */
+  importQuestions: (contentId: string, payload: ImportQuestionsPayload) =>
+    request<ImportQuestionsResponse>(`/contents/${contentId}/questions/import`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * Asks AI to write questions from a lesson.
+   *
+   * It answers `202` with the quiz, not with questions: the run is queued,
+   * because a model reading a transcript takes longer than API Gateway will hold
+   * a request open. What comes back carries the run's state, and the quiz page
+   * polls it.
+   */
+  generateQuestions: (contentId: string, payload: GenerateQuestionsPayload) =>
+    request<ContentMutationResponse>(`/contents/${contentId}/questions/generation`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   /** Reserves an attachment and returns the presigned PUT the client uploads to. */
   uploadContentFile: (contentId: string, payload: UploadContentFilePayload) =>
     request<UploadContentFileResponse>(`/contents/${contentId}/files`, {
       method: 'PUT',
       body: JSON.stringify(payload),
     }),
-
   listContentFiles: (contentId: string) =>
     request<ListContentFilesResponse>(`/contents/${contentId}/files`),
 

@@ -4,6 +4,7 @@ import { getCohort } from './cohorts';
 import { getVideo } from './dynamodb';
 import { HttpError } from './http';
 import { getMembership } from './organizations';
+import { getQuestion } from './questions';
 import { getReward } from './rewards';
 import { getSection } from './sections';
 import { isSpaceMember } from './space-members';
@@ -15,6 +16,7 @@ import type {
   Content,
   OrgMember,
   OrgRole,
+  QuizQuestion,
   Section,
   Space,
   SpaceReward,
@@ -307,6 +309,43 @@ export async function requireContentAccess(
 
   await requireOrganizationAccess(userId, content.organizationId, 'write');
   return content;
+}
+
+/**
+ * Authorizes the caller against a quiz, as somebody who may change it.
+ *
+ * Every question route goes through this, including the ones that only read:
+ * a quiz's questions carry the answer key, and there is no reader of them who is
+ * not editing the quiz. A learner who may read the lesson a quiz sits in must
+ * not be able to fetch the answers out of it, and the day a quiz can be *taken*
+ * is the day a separate route hands out its questions without them — which is a
+ * route, and a decision, this one deliberately does not pre-empt.
+ *
+ * The type check is here rather than in each handler for the same reason: a
+ * question belongs to a quiz, and every route that touches one is reached with
+ * the id of the content it hangs off.
+ */
+export async function requireQuizAccess(contentId: string, userId: string): Promise<Content> {
+  const content = await requireContentAccess(contentId, userId, 'write');
+  if (content.type !== 'QUIZ') {
+    throw new HttpError(400, 'That content is a lesson, not a quiz');
+  }
+  return content;
+}
+
+/**
+ * Loads a question and authorizes the caller through the quiz it belongs to.
+ *
+ * A question carries its own quiz and organization, so this is one read plus the
+ * quiz's own rule rather than a second one — and it is the same rule, because
+ * whoever may change a quiz may change what it asks.
+ */
+export async function requireQuestionAccess(questionId: string, userId: string): Promise<QuizQuestion> {
+  const question = await getQuestion(questionId);
+  if (!question) throw new HttpError(404, 'Question not found');
+
+  await requireQuizAccess(question.contentId, userId);
+  return question;
 }
 
 /**

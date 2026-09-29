@@ -12,6 +12,7 @@ export const env = {
   spacesTableName: required('SPACES_TABLE', process.env.SPACES_TABLE),
   sectionsTableName: required('SECTIONS_TABLE', process.env.SECTIONS_TABLE),
   contentsTableName: required('CONTENTS_TABLE', process.env.CONTENTS_TABLE),
+  questionsTableName: required('QUESTIONS_TABLE', process.env.QUESTIONS_TABLE),
   contentFilesTableName: required('CONTENT_FILES_TABLE', process.env.CONTENT_FILES_TABLE),
   favouritesTableName: required('FAVOURITES_TABLE', process.env.FAVOURITES_TABLE),
   playlistTableName: required('PLAYLIST_TABLE', process.env.PLAYLIST_TABLE),
@@ -57,6 +58,21 @@ export const env = {
     process.env.CLOUDFRONT_PRIVATE_KEY_PARAM ?? '/play/cloudfront/private-key',
   mediaconvertRoleArn: required('MEDIACONVERT_ROLE_ARN', process.env.MEDIACONVERT_ROLE_ARN),
   transcribeRoleArn: required('TRANSCRIBE_ROLE_ARN', process.env.TRANSCRIBE_ROLE_ARN),
+
+  /**
+   * Which Bedrock model writes a quiz's questions, and where.
+   *
+   * A model id rather than an endpoint, because Bedrock is one API with many
+   * models behind it: `us.amazon.nova-lite-v1:0` is the default — an Amazon
+   * model, which needs no access request in the console, and a cross-region
+   * inference profile, which is what an `us.` prefix is — and swapping in a
+   * Claude or Llama model is this string and nothing else.
+   *
+   * It is read here with a default rather than required, so a deployment that
+   * never generates anything does not fail to start over it. Only the
+   * generation function is given it; see `infra/src/generated/service.ts`.
+   */
+  bedrockModelId: process.env.BEDROCK_MODEL_ID ?? 'us.amazon.nova-lite-v1:0',
   subtitleLanguage: process.env.SUBTITLE_LANGUAGE ?? 'en-US',
   streamTtlSeconds: Number(process.env.STREAM_URL_TTL_SECONDS ?? 900),
 

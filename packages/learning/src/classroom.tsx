@@ -14,6 +14,7 @@ import {
   PaperclipIcon,
   PencilIcon,
   RepeatIcon,
+  SparklesIcon,
   Trash2Icon,
   VideoOffIcon,
 } from "lucide-react";
@@ -66,6 +67,7 @@ import { NotesEditor } from "@learning/components/content/notes-editor";
 import { isEmptyNotes } from "@learning/components/content/notes";
 import { NotesView } from "@learning/components/content/notes-view";
 import { PlayingNext } from "@learning/components/content/playing-next";
+import { QuizPanel } from "@learning/components/quiz/quiz-panel";
 import {
   VideoPlayer,
   type SubtitleTrack,
@@ -74,9 +76,12 @@ import {
 import { VideoStatusBadge } from "@learning/components/video/status-badge";
 import {
   useContent,
+  useCreateContent,
   useDeleteContent,
+  usePlaceContent,
   useUpdateContent,
 } from "@api/modules/content/content.queries";
+import { useGenerateQuestions } from "@api/modules/question/question.queries";
 import { useToggleCompletion } from "@api/modules/content/completion.queries";
 import {
   useCreateLoop,
@@ -95,6 +100,19 @@ import { useStream, useVideo } from "@api/modules/video/video.queries";
 import { useSection, useSections } from "@api/modules/section/section.queries";
 import type { TranscriptLine } from "@learning/lib/transcript";
 import type { Content, ContentLoop, NotesDocument, Video } from "@play/types";
+
+/**
+ * How long a title this app may send.
+ *
+ * The API's own ceiling, repeated here for the one place a title is *built*
+ * rather than typed: a quiz made from a lesson is named after it, and a lesson
+ * already at the limit must produce a quiz rather than a refusal.
+ */
+const MAX_CONTENT_TITLE_LENGTH = 120;
+const QUIZ_TITLE_PREFIX = "Quiz: ";
+
+/** How many questions the lesson shortcut asks for. See the dialog's own default. */
+const QUESTIONS_PER_GENERATION = 10;
 
 /**
  * A lesson: its title, the video, and everything filed under it.
@@ -884,6 +902,57 @@ function ClassroomBody({
   const remove = useDeleteContent(spaceId);
   const completion = useToggleCompletion(contentId, spaceId);
 
+  /**
+   * Making a quiz out of the lesson being read.
+   *
+   * The shortcut the whole feature is for: an author watches a lesson, decides
+   * it should be checked, and does not want to go and create a quiz, find the
+   * lesson in a list, and pick it there. Three calls, in an order that matters:
+   * the quiz is created, moved to sit directly under the lesson it came from,
+   * and only then is the run asked for — a run that started first would be
+   * writing into a quiz that is still at the end of the section, which is where
+   * the reader would then be looking for it.
+   */
+  const createQuiz = useCreateContent(content?.sectionId ?? "", spaceId);
+  const placeQuiz = usePlaceContent(spaceId);
+  const startGeneration = useGenerateQuestions(spaceId);
+
+  async function generateQuiz() {
+    if (!content) return;
+
+    try {
+      const { content: quiz } = await createQuiz.mutateAsync({
+        // The API's ceiling for a title is 120 characters, and the prefix is
+        // part of the title: a lesson named to the limit gets a quiz named as
+        // much of itself as fits, rather than a refusal.
+        title: `Quiz: ${content.title.slice(0, MAX_CONTENT_TITLE_LENGTH - QUIZ_TITLE_PREFIX.length)}`,
+        type: "QUIZ",
+      });
+
+      // Straight after the lesson it was written from, which is where a reader
+      // expects the check on what they have just watched.
+      const section = outline?.sections.find((entry) => entry.sectionId === content.sectionId);
+      const index = (section?.contents.findIndex((entry) => entry.contentId === content.contentId) ?? -1) + 1;
+
+      if (index > 0) {
+        await placeQuiz.mutateAsync({ contentId: quiz.contentId, sectionId: content.sectionId, index });
+      }
+
+      await startGeneration.mutateAsync({
+        contentId: quiz.contentId,
+        sourceContentId: content.contentId,
+        count: QUESTIONS_PER_GENERATION,
+      });
+
+      toast.success("Quiz created", {
+        description: "Questions are being written from this lesson.",
+      });
+      router.push(routes.lesson(spaceId, quiz.contentId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not create the quiz");
+    }
+  }
+
   async function deleteContent() {
     if (!content) return;
     const confirmed = window.confirm(
@@ -922,6 +991,44 @@ function ClassroomBody({
 
   const section = sectionData?.section;
   const completed = data?.viewer.completed ?? false;
+
+  /**
+   * A quiz is not a lesson with a different picture.
+   *
+   * It is a list of questions to write and review, and none of what this page is
+   * built around — the player, the transcript, the loops, the moment-by-moment
+   * discussion — has anything to do with it. So it is rendered here rather than
+   * inside the lesson's layout: the quiz panel is shared with the studio's
+   * authoring page, and `canEdit` is the whole of the difference between what an
+   * author and a learner see.
+   *
+   * This branch sits below every hook in this component on purpose: a return
+   * above them would change the number of hooks between renders the moment
+   * somebody switched a content's kind.
+   */
+  if (content.type === "QUIZ") {
+    return (
+      <div className="grid gap-6 pb-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link
+            href={routes.course(spaceId)}
+            title={section ? `Back to ${section.title}` : "Back to your courses"}
+            className="inline-flex min-w-0 items-center gap-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronLeftIcon className="size-4 shrink-0" />
+            <h1 className="truncate">{content.title}</h1>
+          </Link>
+        </div>
+
+        <QuizPanel
+          contentId={content.contentId}
+          spaceId={spaceId}
+          canEdit={canEdit}
+          title={content.title}
+        />
+      </div>
+    );
+  }
 
   return (
     // Two rows on a desktop screen: the breadcrumb — which lesson this is, what
@@ -984,6 +1091,22 @@ function ClassroomBody({
                     <PencilIcon />
                     Edit details
                   </DropdownMenuItem>
+                  {/* A lesson is where an author notices it should be checked, so
+                      this is where making a quiz out of it belongs — and it is
+                      offered on a lesson only: a quiz has nothing to write
+                      questions from. */}
+                  {content.type === "VIDEO" && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={startGeneration.isPending || createQuiz.isPending}
+                        onSelect={() => void generateQuiz()}
+                      >
+                        <SparklesIcon />
+                        Generate a quiz
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"

@@ -124,6 +124,7 @@ dropped the player API the classroom uses.
 | A screen only one app has | that app's `src/app` and `src/components` |
 | A screen both apps have, with different URLs or data | `@play/learning`, with the differences as props |
 | A screen both apps have and neither varies — the sign-in | `@play/auth` |
+| A quiz's questions, and the routes that write them | `services/api/src/lib/questions.ts` + `functions/questions/*` — see [quizzes.md](quizzes.md) |
 | A credential somebody calls the API with, and the screens for it | `services/api` + the studio's `/api-keys` and `/oauth/*` |
 | A request, its cache key and its invalidation | `@play/api/modules/*/*.queries.ts` |
 | Anything a page renders that is not specific to a screen | `@play/ui` |

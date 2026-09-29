@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import Link from 'next/link';
-import { CheckIcon, ChevronLeftIcon } from 'lucide-react';
+import { CheckIcon, ChevronLeftIcon, HelpCircleIcon } from 'lucide-react';
 import { cn } from '@ui/lib/utils';
 import { useSpaceProgress } from '@api/modules/progress/progress.queries';
 import { useSections } from '@api/modules/section/section.queries';
@@ -117,6 +117,12 @@ export function CourseContents({
                         )}
                       >
                         <span className="min-w-0 flex-1 truncate">{content.title}</span>
+
+                        {/* A quiz is not a lesson, and a list that drew them the
+                            same way would leave a reader clicking to find out. */}
+                        {content.type === 'QUIZ' && (
+                          <HelpCircleIcon role="img" aria-label="Quiz" className="size-3.5 shrink-0 opacity-60" />
+                        )}
 
                         {/* Named for the reader who cannot see it: without the
                             label the row is simply a lesson, finished or not. */}

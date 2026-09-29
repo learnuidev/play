@@ -448,10 +448,7 @@ export interface SpaceStats {
   students: number;
   sections: number;
   contents: number;
-  /**
-   * Always zero today: nothing in this API is a quiz yet. The tile is here so
-   * the overview has its full shape when quizzes arrive.
-   */
+  /** How many of `contents` are quizzes rather than lessons. */
   quizzes: number;
 }
 
@@ -957,14 +954,161 @@ export interface ListMyRewardsResponse {
   rewards: MyReward[];
 }
 
-/** What a piece of content *is*. One value today, a union so more can join it. */
-export type ContentType = 'VIDEO';
+/**
+ * What a piece of content *is*.
+ *
+ * - `VIDEO` — a lesson: footage, and the notes that go with it.
+ * - `QUIZ`  — a set of questions. It has no video, and what it holds is in the
+ *   questions table rather than on the row, for the reason a lesson's
+ *   attachments have a table of their own: editing one question is one item
+ *   write that cannot race with an edit to the question beside it.
+ */
+export type ContentType = 'VIDEO' | 'QUIZ';
 
-export const CONTENT_TYPES: ContentType[] = ['VIDEO'];
+export const CONTENT_TYPES: ContentType[] = ['VIDEO', 'QUIZ'];
 
 export const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
   VIDEO: 'Video',
+  QUIZ: 'Quiz',
 };
+
+export const CONTENT_TYPE_DESCRIPTIONS: Record<ContentType, string> = {
+  VIDEO: 'A lesson: a video, its notes and the material around it.',
+  QUIZ: 'A set of questions, generated from a lesson or written by hand.',
+};
+
+/**
+ * What a question asks, and therefore how it is answered.
+ *
+ * - `TRUE_FALSE`       — one statement, and whether it is true.
+ * - `MULTIPLE_CHOICE`  — a prompt with two to six options and one right answer.
+ */
+export type QuestionType = 'TRUE_FALSE' | 'MULTIPLE_CHOICE';
+
+export const QUESTION_TYPES: QuestionType[] = ['TRUE_FALSE', 'MULTIPLE_CHOICE'];
+
+export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
+  TRUE_FALSE: 'True or false',
+  MULTIPLE_CHOICE: 'Multiple choice',
+};
+
+/**
+ * How far a question has got towards being usable.
+ *
+ * A question written by a machine is a *draft*: an AI can write ten plausible
+ * questions from a transcript and get one subtly wrong, and a question nobody
+ * has read is one a learner could be marked against. So everything generated or
+ * imported arrives as `NEEDS_VERIFICATION`, and only a person reading it and
+ * saying "this is right" makes it `VERIFIED`. A question that is wrong is
+ * deleted rather than marked — "rejected" and "not yet read" would both stop a
+ * question being asked, and only one of them can be told apart by a reader.
+ */
+export type QuestionStatus = 'NEEDS_VERIFICATION' | 'VERIFIED';
+
+export const QUESTION_STATUSES: QuestionStatus[] = ['NEEDS_VERIFICATION', 'VERIFIED'];
+
+export const QUESTION_STATUS_LABELS: Record<QuestionStatus, string> = {
+  NEEDS_VERIFICATION: 'Needs verification',
+  VERIFIED: 'Verified',
+};
+
+/** Where a question came from. A reader verifying one should know who wrote it. */
+export type QuestionSource = 'AI' | 'IMPORT' | 'MANUAL';
+
+export const QUESTION_SOURCE_LABELS: Record<QuestionSource, string> = {
+  AI: 'Generated',
+  IMPORT: 'Imported',
+  MANUAL: 'Written',
+};
+
+/** One answer a learner may choose. `id` is what the answer is recorded against. */
+export interface QuestionOption {
+  /**
+   * Short and stable: `a`…`f`, in the order the options were given.
+   *
+   * An answer is stored as an option id rather than an index because an index
+   * is a position: reordering or removing an option would silently move every
+   * stored answer to the question onto a different one.
+   */
+  id: string;
+  text: string;
+}
+
+/** One question of a quiz, as the API stores and hands it out. */
+export interface QuizQuestion {
+  /** ULID, the table key. */
+  questionId: string;
+  /** The quiz content this belongs to. */
+  contentId: string;
+  /** Denormalized from the content, so a question authorizes in one hop. */
+  spaceId: string;
+  organizationId: string;
+  type: QuestionType;
+  /** The statement to judge, or the question to answer. */
+  prompt: string;
+  /** Two to six options. Always present: true/false is two fixed options. */
+  options: QuestionOption[];
+  /**
+   * The option(s) that answer it. Exactly one today — a question with two right
+   * answers is a different kind ("select all that apply"), and nothing asks for
+   * one yet. The plural is deliberate: it is the shape a second kind would
+   * need, so adding one is a change to validation rather than to storage.
+   */
+  correctOptionIds: string[];
+  /** Why the answer is the answer. Shown to an author, not to a learner. */
+  explanation?: string;
+  status: QuestionStatus;
+  source: QuestionSource;
+  /**
+   * The lesson the question was generated from, when it was generated or
+   * imported from one. It is what lets the quiz page say where a question came
+   * from, and what the "from this lesson" bulk actions address.
+   */
+  sourceContentId?: string;
+  /** 1-based order inside the quiz. Sparse: gaps are legal. */
+  position: number;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Who read it and said it was right, and when. */
+  verifiedBy?: string;
+  verifiedAt?: number;
+}
+
+/**
+ * A generation the API was asked for, and how far it has got.
+ *
+ * AI generation does not fit in one request: API Gateway answers a REST request
+ * in 29 seconds at the very most, and a model writing ten questions from a
+ * lesson transcript routinely takes longer. So the request *starts* a job and
+ * answers at once, a worker does the work, and the page reads this to find out
+ * how it went — the same shape a video's `status` has while it is transcoding.
+ *
+ * It lives on the quiz's content row rather than in a table of its own: there is
+ * one live generation per quiz at most (asking twice replaces the first), and a
+ * job row nobody lists is a row that exists to be deleted.
+ */
+export type QuizGenerationStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
+
+export interface QuizGeneration {
+  status: QuizGenerationStatus;
+  /** The lesson the questions are being written from. */
+  sourceContentId: string;
+  /** How many were asked for, and which kinds. */
+  count: number;
+  types: QuestionType[];
+  /** Cognito `sub` of whoever asked. */
+  requestedBy: string;
+  requestedAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  /** How many questions the run actually wrote. Set on `READY`. */
+  created?: number;
+  /** Why it failed, in words a person reading the quiz page can act on. */
+  error?: string;
+  /** The Bedrock model that wrote them, for `READY` runs. */
+  model?: string;
+}
 
 /**
  * A section of a space: the heading its content is published under.
@@ -995,7 +1139,7 @@ export interface SectionWithContents extends Section {
  */
 export type NotesDocument = Record<string, unknown>;
 
-/** One piece of content in a section: a video and the material around it. */
+/** One piece of content in a section: a lesson, or a quiz. */
 export interface Content {
   contentId: string;
   sectionId: string;
@@ -1006,6 +1150,11 @@ export interface Content {
   /** The video this content plays. Absent while a lesson is still a draft. */
   videoId?: string;
   notes?: NotesDocument;
+  /**
+   * The state of the last AI generation run against this content, when it is a
+   * quiz. Absent until somebody asks for one.
+   */
+  generation?: QuizGeneration;
   position: number;
   fileCount: number;
   favouriteCount: number;
@@ -1078,6 +1227,120 @@ export interface UpdateContentPayload {
   /** `null` clears the notes. */
   notes?: NotesDocument | null;
   position?: number;
+}
+
+/**
+ * Where a lesson or quiz now sits: which section, and where in it.
+ *
+ * Dragging a row in the outline is one request rather than one per row moved,
+ * because the order is the *section's* — dropping something in the middle of
+ * forty lessons renumbers what follows it, and a client cannot be trusted to
+ * write that correctly or to write it once.
+ */
+export interface PlaceContentPayload {
+  /** The section it lands in. Omit to reorder within the section it is in. */
+  sectionId?: string;
+  /** Zero-based index inside that section's content, counting from the top. */
+  index: number;
+}
+
+/**
+ * A question as it is written or edited.
+ *
+ * The same shape is what an import produces, which is why `options` is a list of
+ * texts here rather than of `QuestionOption`: on the way *in* an option's id is
+ * its position, and the API assigns the ids.
+ */
+export interface QuestionInput {
+  type: QuestionType;
+  prompt: string;
+  /** Two to six option texts. Omitted for a true/false question, which has two. */
+  options?: string[];
+  /**
+   * Which option answers it: a zero-based index, or the option's own text.
+   *
+   * An index because that is what a spreadsheet column holds, and the text
+   * because that is what a person writes in one — a row whose answer column
+   * says "1789" should work whether 1789 is the third option or the whole of it.
+   */
+  answer?: number | string | boolean;
+  explanation?: string;
+  /** The lesson it was written from, when an importer knows. */
+  sourceContentId?: string;
+}
+
+/** One question as an import read it: the input, or the row that failed. */
+export interface ImportedQuestionRow {
+  /** 1-based row number in the file, so an error can be pointed at. */
+  row: number;
+  question?: QuestionInput;
+  error?: string;
+}
+
+export interface ImportQuestionsPayload {
+  /** `book.xlsx`, `questions.csv` or `questions.json` — the extension decides. */
+  fileName: string;
+  /** The file itself, base64. */
+  contentBase64: string;
+  /** The lesson the questions were written from, when the author names one. */
+  sourceContentId?: string;
+}
+
+export interface ImportQuestionsResponse {
+  /** The questions that were written. */
+  imported: QuizQuestion[];
+  /** The rows that were not, and why. */
+  skipped: ImportedQuestionRow[];
+  /** How many rows the file held, read and rejected together. */
+  rows: number;
+}
+
+export interface CreateQuestionPayload extends QuestionInput {}
+
+export interface UpdateQuestionPayload {
+  type?: QuestionType;
+  prompt?: string;
+  options?: string[];
+  answer?: number | string | boolean;
+  /** `null` clears the explanation. */
+  explanation?: string | null;
+}
+
+/**
+ * What asking for AI generation answers with.
+ *
+ * Not the questions: the run has only just been queued. This is the job, which
+ * is why it comes back on the content row and why the page polls it.
+ */
+export interface GenerateQuestionsPayload {
+  /** The lesson to write questions from. */
+  sourceContentId: string;
+  /** How many to write, 1–20. */
+  count?: number;
+  /** Which kinds to write. Defaults to both. */
+  types?: QuestionType[];
+}
+
+export interface ListQuestionsResponse {
+  questions: QuizQuestion[];
+  /** How many are still waiting for somebody to read them. */
+  needsVerification: number;
+}
+
+export interface QuestionResponse {
+  question: QuizQuestion;
+}
+
+/** A quiz's questions, as the routes that move or accept them answer. */
+export interface QuestionsResponse {
+  questions: QuizQuestion[];
+}
+
+/** What a batch verification did, and what the quiz looks like now. */
+export interface BatchVerificationResponse {
+  /** How many this call verified. */
+  verified: number;
+  questions: QuizQuestion[];
 }
 
 export interface UploadContentFilePayload {
@@ -1349,6 +1612,8 @@ export interface CatalogLesson {
   contentId: string;
   title: string;
   hasVideo: boolean;
+  /** `'QUIZ'` on a quiz. Absent on a lesson, which is what most rows are. */
+  type?: ContentType;
 }
 
 export interface CatalogSection {

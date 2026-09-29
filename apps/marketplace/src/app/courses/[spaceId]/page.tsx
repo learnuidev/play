@@ -11,6 +11,7 @@ import {
   CheckIcon,
   CirclePlayIcon,
   GiftIcon,
+  HelpCircleIcon,
   Loader2Icon,
   LockIcon,
   UsersIcon,
@@ -239,6 +240,25 @@ function Instructors({ instructors }: { instructors: PublicInstructor[] }) {
  * not in the course gets it unticked, which is what a course's contents are to
  * somebody still deciding.
  */
+/**
+ * What a section holds, said in each kind's own word.
+ *
+ * A section with a quiz in it is not "3 lessons": the row is marked as a quiz,
+ * and a count that called it a lesson would be the page disagreeing with itself
+ * one line above it.
+ */
+function sectionCountLabel(lessons: CatalogSection['lessons']): string {
+  const quizzes = lessons.filter((lesson) => lesson.type === 'QUIZ').length;
+  const videos = lessons.length - quizzes;
+
+  const parts = [
+    videos > 0 ? `${videos} lesson${videos === 1 ? '' : 's'}` : '',
+    quizzes > 0 ? `${quizzes} quiz${quizzes === 1 ? '' : 'zes'}` : '',
+  ].filter(Boolean);
+
+  return parts.join(' · ');
+}
+
 function Syllabus({
   sections,
   completedContentIds,
@@ -267,7 +287,7 @@ function Syllabus({
                 </span>
                 <span className="text-sm font-semibold">{section.title}</span>
                 <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                  {section.lessons.length} lesson{section.lessons.length === 1 ? '' : 's'}
+                  {sectionCountLabel(section.lessons)}
                 </span>
               </div>
 
@@ -277,7 +297,13 @@ function Syllabus({
                 <ul className="divide-y">
                   {section.lessons.map((lesson) => (
                     <li key={lesson.contentId} className="flex items-center gap-2.5 px-4 py-2.5">
-                      {lesson.hasVideo ? (
+                      {lesson.type === 'QUIZ' ? (
+                        <HelpCircleIcon
+                          role="img"
+                          aria-label="Quiz"
+                          className="size-3.5 shrink-0 text-muted-foreground/60"
+                        />
+                      ) : lesson.hasVideo ? (
                         <CirclePlayIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
                       ) : (
                         <BookOpenIcon className="size-3.5 shrink-0 text-muted-foreground/60" />

@@ -380,6 +380,43 @@ export class PlayApiStack extends Stack {
       }),
     );
 
+    // Bedrock, for writing quiz questions from a lesson.
+    //
+    // `Resource: '*'` is Bedrock's own doing: a model is not an ARN in the
+    // caller's account — it is a model id, some of which are cross-region
+    // inference profiles whose requests are served from another region
+    // altogether — and the API offers no resource-level permission for
+    // `InvokeModel`. What the grant can *do* is bounded by what the account has
+    // been granted access to in the Bedrock console, which is where model access
+    // is actually decided.
+    //
+    // `InvokeModel` covers models called with a request body of their own;
+    // `Converse` — which is what `lib/quiz-generation` uses, so that the model id
+    // is the only thing that differs between an Amazon, Anthropic or Meta model
+    // — is authorized by `bedrock:InvokeModel` as well, and both are named
+    // because a fallback to the model-specific API needs no infrastructure
+    // change.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
+        resources: ['*'],
+      }),
+    );
+
+    // Publishing the event that starts a question generation.
+    //
+    // The default bus, named as the default bus rather than by ARN, because the
+    // rule that consumes it is created in this same stack and an account's
+    // default bus has a fixed ARN shape the region already decides.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['events:PutEvents'],
+        resources: [
+          Arn.format({ service: 'events', resource: 'event-bus', resourceName: 'default' }, this),
+        ],
+      }),
+    );
+
     return role;
   }
 
