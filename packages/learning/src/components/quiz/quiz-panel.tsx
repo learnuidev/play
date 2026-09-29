@@ -445,7 +445,11 @@ export function QuizPanel({
     }
   }
 
-  if (!canEdit) return <QuizTaking contentId={contentId} spaceId={spaceId} />;
+  if (!canEdit) {
+    return (
+      <QuizTaking contentId={contentId} spaceId={spaceId} title={title ?? "This quiz"} />
+    );
+  }
 
   if (isLoading) {
     return (

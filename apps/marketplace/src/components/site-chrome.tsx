@@ -37,16 +37,13 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   if (lessonRoute(pathname)) {
-    // Full height rather than full width alone: the classroom splits itself into
-    // the video and the panel beside it and expects to be given the window to do
-    // it in, with its own scrolling inside.
-    return (
-      <div className="flex h-svh w-full flex-col overflow-hidden">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="h-full w-full px-4 py-4 lg:px-6 lg:py-5">{children}</div>
-        </div>
-      </div>
-    );
+    // The window, and nothing else done to it. A lesson arranges itself down the
+    // whole of it — the classroom's own reading layout draws the bar across the
+    // top, the card in the middle and the rail beside it — so the frame's job
+    // here is to get out of the way rather than to add a margin. The classroom
+    // brings its own padding, which is also what stops the two of them
+    // disagreeing about how much room the lesson has.
+    return <div className="flex h-svh w-full flex-col overflow-hidden">{children}</div>;
   }
 
   // The sign-in route is the screen and nothing else: the shared screen is a

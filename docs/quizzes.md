@@ -251,6 +251,7 @@ key never reaches a learner who has not answered.*
 | Method | Path | What it does |
 | --- | --- | --- |
 | GET | `/contents/{contentId}/quiz` | The questions without the answers, plus the caller's own sittings |
+| POST | `/contents/{contentId}/quiz/check` | Whether one answer is right — **records nothing** |
 | POST | `/contents/{contentId}/quiz/attempts` | Hands in a sheet, gets the marked attempt back |
 
 - **The paper is a shape, not a filtered row.** `QuizPaperQuestion` is a question
@@ -276,6 +277,32 @@ key never reaches a learner who has not answered.*
   re-marks the attempt nor leaves a blank where it was. It is the one place in
   this model that copies question text, and deliberately: a reference would make
   a term of attempts change meaning under the author's next edit.
+- **One answer can be checked on its own, and checking records nothing.** `POST
+  /contents/{contentId}/quiz/check` says whether the answer in hand is right,
+  which option was, and why — the moment a quiz teaches anything, and the reason
+  it is sat one question at a time. It writes no row: an attempt is one sitting,
+  recorded when a sheet is handed in, and a row per look would turn "how did I
+  do" into a log of keystrokes. So checking is free — a learner can check, be
+  wrong, think, and check the other option with no wrong answer kept anywhere.
+  Marking on the client was the alternative and is not one: it would mean sending
+  the key to the page.
+- **The options are dealt afresh on every sitting.** An author writes the right
+  option where it reads best — often first, and often first in every question —
+  and a quiz taken in that order can be passed by pattern rather than by knowing
+  anything. So the page deals each question's options itself, with a shuffle that
+  is *per sitting*: an order the API picked would be the same order on every
+  retake, which is a shuffle somebody can learn, and the point is that the answer
+  is not where it was last time. "Try again" deals a new hand.
+- **What was shown is sent back with the sheet.** The page is the only party that
+  saw the deal, so `POST …/quiz/attempts` takes an `order` — question id to the
+  option ids in display order — and records the attempt in it, which is what keeps
+  an attempt a record of the sitting that happened rather than of the author's
+  file. The API checks it is a permutation of that question's own options before
+  using it (`orderedOptions`) and falls back to the author's order if it is not:
+  a body that can only rearrange options is worth accepting, and the marking goes
+  by option id either way. A refetch is what would deal the options again under
+  somebody's hands, so the paper is not refetched in the background while it is
+  open.
 - **Handing in finishes the quiz.** Submitting writes the completion and checks
   the course's rewards in the same request, exactly as marking a lesson complete
   does, so the outline ticks the quiz and the course page's percentage moves. A
@@ -292,6 +319,17 @@ The two halves of the marketplace's screen are one component, `QuizPanel`, and
 everything that edits them, a learner gets `QuizTaking`. Nothing in the learner's
 component could mark a question, because the answers are not in the document it
 holds.
+
+**A learner sits a quiz one question at a time, in the lesson's own frame.**
+`LessonReaderFrame` is the bar, the card, the dock and the rail that a lesson is
+drawn in (see [workspace.md](workspace.md)), and a quiz puts one question in its
+card with `Back` and `Next` under it — a quiz in `skld-app` is a block on that
+same card, so a learner moving from a lesson to the quiz beside it is moving to
+the next thing in the course rather than to a different product. The bar counts
+answers while it is being sat and correct answers once it has been handed in, the
+question's own frame answers — green or red, where a lesson's stays grey because
+a video has nothing to be right about — and the rail holds the
+course's contents and the quiz's discussion.
 
 ## Deleting: what takes what
 

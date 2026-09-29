@@ -44,11 +44,16 @@ export function AppShell({
             {/* A lesson is split down the middle — the video on one side, the
                 tabs beside it — so it gets the window's width rather than the
                 reading measure the rest of the app is set to. Still bounded:
-                past this the two halves stop being a pair. */}
+                past this the two halves stop being a pair.
+
+                The padding is the classroom's rather than this div's, because
+                the same component draws a layout in the marketplace that has to
+                reach the window's own edge. A frame that padded every lesson is
+                a frame that would inset that one too. */}
             <div
               className={cn(
                 "mx-auto w-full",
-                lesson ? "h-full max-w-[1600px] p-4" : "max-w-5xl p-4",
+                lesson ? "h-full max-w-[1600px]" : "max-w-5xl p-4",
               )}
             >
               {children}

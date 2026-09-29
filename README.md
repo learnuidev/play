@@ -175,11 +175,87 @@ never with the outline.
 
 ## The classroom
 
-A lesson (`/o/{orgId}/spaces/{spaceId}/contents/{contentId}`) is where the shell
-gets out of the way. It is the one route that is _read_ rather than browsed, so
-it takes the whole window:
+A lesson is where the shell gets out of the way. It is the one route that is
+_read_ rather than browsed, so it takes the whole window — and it is drawn two
+ways, which is what `layout` chooses. **An author gets `panel`**, the studio's
+arrangement: the video beside a panel of tabs, both columns scrolling, everything
+the lesson holds on screen at once because the person looking at it is working on
+it. **A learner gets `reader`**, the marketplace's: one screen that does not
+scroll, arranged the way `skld-app` arranges its lesson player.
 
 ```
+reader — apps/marketplace
+         /courses/{spaceId}/lessons/{contentId}          (a lesson)
+         the same URL, for a quiz
+
+┌───────────────────────────────────────────────────────────────────┐
+│ ✕   ‹─── progress, one arrow each side ───›   ●●○●●  12   ☾       │
+├──────────────────────────────────────────────┬───┬──────────────┤
+│ ┌ card ────────────────────────────────────┐ │ ☰ │ ┌ rail ─────┐ │
+│ │            Why rhythm matters            │ │ 📝 │ │ Contents  │ │
+│ │        ┌────────────────────────┐        │ │ 📄 │ │ ────────  │ │
+│ │        │     video, playing     │        │ │ 🔁 │ │ 01 START  │ │
+│ │        └────────────────────────┘        │ │ 💬 │ │  ● Why…   │ │
+│ ├──────────────────────────────────────────┤ │   │ │ 02 LIGHT  │ │
+│ │            [ ✓ Complete lesson ]         │ │   │ └───────────┘ │
+│ └──────────────────────────────────────────┘ │   │               │
+└──────────────────────────────────────────────┴───┴──────────────┘
+   the lesson's own face                        dock  the material
+
+a quiz is the same frame, one question in the card:
+
+┌───────────────────────────────────────────────────────────────────┐
+│ ✕   ‹────── 3 of 8 answered ──────›                          5  ☾ │
+├──────────────────────────────────────────────┬───┬──────────────┤
+│ ┌ card ────────────────────────────────────┐ │ ☰ │ ┌ rail ─────┐ │
+│ │           Question 3 of 8                │ │ 💬 │ │ Contents  │ │
+│ │      What year did the cut land?         │ │   │ │ ────────  │ │
+│ │      ◉  1994      ○  1996                │ │   │ │ 01 START  │ │
+│ ├──────────────────────────────────────────┤ │   │ │ 02 LIGHT  │ │
+│ │         [ Back ]      [ Next › ]         │ │   │ └───────────┘ │
+│ └──────────────────────────────────────────┘ │   │               │
+└──────────────────────────────────────────────┴───┴──────────────┘
+```
+
+`LessonReaderFrame` is that arrangement, and **both kinds of content draw
+themselves in it**: a lesson puts its video in the card, a quiz puts one question
+there, and neither has to know how a bar, a card, a dock or a rail is put
+together. Everything about the reader arrangement follows from four decisions:
+
+- **The bar is progress through a sequence.** For a lesson that sequence is the
+  course, because a lesson is one video and a bar for it would fill once; the dots
+  beside it are the lessons one at a time and the arrows step between them. For a
+  quiz it is the questions: answered while it is being sat, right once it has been
+  handed in.
+- **One thing at a time in the card, and the card is framed rather than
+  coloured.** skld puts a block's heading and its task in a card whose border
+  says whether the answer was right; this puts a lesson's title and video there,
+  and, for a quiz, one question. The frame is grey and stays grey around a video,
+  which has nothing to be right or wrong about — whether a lesson is finished is
+  said by the pill under it, once. A marked *question* is the one thing here with
+  an answer, so it tints its own frame, which is the whole reason the frame has
+  states at all. The footer under the card is skld's: the screen's one decision
+  stretching across what is left, with quieter pills beside it.
+- **The dock is everything the content holds, stacked as icons against the right
+  edge.** skld does not have one, because its rail holds one thing and opens from
+  a pill on the card; a lesson here holds five or six, and a row of pills that
+  grew with the material was a row of pills. The dock never moves — the rail opens
+  to its left, so a column of controls that slid sideways every time a panel
+  opened is exactly what it is not. A quiz draws the same dock with what a quiz
+  has: the course's contents, and its discussion.
+- **The rail is the material, off the screen.** A column at the right-hand edge on
+  a wide screen and a panel under the dock on a narrow one, with the dock's own
+  icon putting it away again. A lesson's discussion is a tab here rather than a
+  section under the video: there is no column to put it under when the screen *is*
+  the picture.
+- **Waiting and failing happen inside the frame.** The bar, the card and the dock
+  are drawn at their real size from the first paint, and only the card's contents
+  change — a skeleton, a refusal, an empty state, a question. A shell that arrived
+  after the content did would move everything on the screen the moment it loaded.
+
+```
+panel — apps/studio, /o/{orgId}/spaces/{spaceId}/contents/{contentId}
+
 ┌───────────────────────────────────────────────────────────────────┐
 │ ‹ Why rhythm matters                            ✓ Complete lesson │
 ├───────────────────────────────────┬───────────────────────────────┤
@@ -198,6 +274,10 @@ it takes the whole window:
          the discussion                        under it, and the
          under it                              course it is in
 ```
+
+Everything below is the panel arrangement's, and most of it is shared: the two
+columns are two different frames around the same player, transcript, notes, files,
+loops, discussion and completion.
 
 - **No tab bar, no organization rail, no column beside it.** A row offering
   Home, Videos, Spaces and Members above a video is chrome nobody asked for, and
@@ -441,7 +521,7 @@ survives a refresh:
 | `/o/{orgId}/spaces`                                | The organization's spaces (courses)                                          |
 | `/o/{orgId}/spaces/new`                            | Create a space — type, colour, cover                                         |
 | `/o/{orgId}/spaces/{spaceId}`                      | Space detail — the course outline: its sections and the content under them   |
-| `/o/{orgId}/spaces/{spaceId}/contents/{contentId}` | The classroom — a lesson: video, animated transcript, notes, files, comments |
+| `/o/{orgId}/spaces/{spaceId}/contents/{contentId}` | The classroom — a lesson: video, animated transcript, notes, files, comments (the panel arrangement) |
 | `/o/{orgId}/members`                               | The roster, invitations not yet accepted, and the role reference             |
 | `/o/{orgId}/settings`                              | Organization details and your role                                           |
 | `/organizations`                                   | Every organization you belong to, and the invitations waiting for you        |
@@ -651,7 +731,7 @@ an account:
 | `/`                                      | The front page: what the marketplace is, what a lesson looks like, what learners say about it, and the newest courses — and nothing to press but **Discover courses** |
 | `/discover`                              | The catalog: every course its author has listed, with covers, lesson counts and how many people are taking it, and one box to search them with                        |
 | `/courses/{spaceId}`                     | One course — its syllabus, section by section — and the button that registers you for it                                                                              |
-| `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom, with no top bar and the whole window                                                                                         |
+| `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom in its reading arrangement, with no top bar and the whole window                                                              |
 | `/courses/{spaceId}/rewards`             | What this course has given you: the codes, what they are for, and how to use them                                                                                     |
 | `/my-courses`                            | The courses you are registered for, wherever they came from                                                                                                           |
 | `/favourites`                            | The lessons you have hearted, newest first, with the course each came from                                                                                            |
@@ -1044,6 +1124,7 @@ All endpoints require `Authorization: Bearer <Cognito ID token>`.
 | PUT    | `/contents/{contentId}/questions/placement`            | Move it in the quiz's order                                            |
 | POST   | `/contents/{contentId}/questions/verification`         | Verify a batch of the quiz's questions                                 |
 | GET    | `/contents/{contentId}/quiz`                           | A quiz as a learner is handed it: the questions without the answers    |
+| POST   | `/contents/{contentId}/quiz/check`                     | Whether one answer is right — records nothing                          |
 | POST   | `/contents/{contentId}/quiz/attempts`                  | Hand in an answer sheet and be marked (`201`)                          |
 | PUT    | `/contents/{contentId}/favourite`                      | Favourite it (any member)                                              |
 | DELETE | `/contents/{contentId}/favourite`                      | Unfavourite it                                                         |
@@ -1526,6 +1607,16 @@ completion and the course's rewards are written in the same request, exactly as
 marking a lesson complete does. Each attempt is a record of a moment — it carries
 the prompt, the options, the pick, what was right *then* and the explanation — so
 a question edited afterwards neither re-marks it nor leaves a blank where it was.
+A question can also be **checked on its own** while the quiz is being sat
+(`POST …/quiz/check`), which says whether the answer in hand is right and why:
+that is the moment a quiz teaches anything, and it records nothing — an attempt is
+one sitting, and a row per look would be a log of keystrokes. The options are
+**dealt afresh on every sitting** — a shuffle the API picked would be the same one
+on every retake, which is a shuffle somebody can learn — and the page sends the
+hand it was dealt back with the sheet, so the attempt records the options in the
+order they were answered. The API checks that order is a permutation of the
+question's own options before using it, and the marking goes by option id either
+way.
 
 A course's own page carries the third view of the same questions — a **Question
 banks** tab beside Content — which is every question about *this course's*

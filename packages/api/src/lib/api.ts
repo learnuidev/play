@@ -21,6 +21,7 @@ import type {
   CreateOAuthAppResponse,
   CreateOrganizationPayload,
   CreateOrganizationResponse,
+  CheckQuizAnswerPayload,
   CreateQuestionBankPayload,
   CreateQuestionPayload,
   CreateRewardPayload,
@@ -84,6 +85,7 @@ import type {
   QuestionsResponse,
   QuizAttemptResponse,
   QuizPaperResponse,
+  QuizCheckResponse,
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
   RevokeRewardGrantResponse,
@@ -773,6 +775,18 @@ export const api = {
    * completion and any reward it earned, as marking a lesson complete does.
    */
   getQuiz: (contentId: string) => request<QuizPaperResponse>(`/contents/${contentId}/quiz`),
+
+  /**
+   * Checking one answer while the quiz is being sat.
+   *
+   * Records nothing — see the route — and answers with what was right and why,
+   * which is the one thing the paper deliberately does not carry.
+   */
+  checkQuizAnswer: (contentId: string, payload: CheckQuizAnswerPayload) =>
+    request<QuizCheckResponse>(`/contents/${contentId}/quiz/check`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   submitQuizAttempt: (contentId: string, payload: SubmitQuizAttemptPayload) =>
     request<QuizAttemptResponse>(`/contents/${contentId}/quiz/attempts`, {

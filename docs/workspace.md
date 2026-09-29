@@ -142,10 +142,17 @@ to copy for the next one.
 
 A lesson is *read* rather than browsed, so both apps strip their frame for it —
 the studio's `AppShell` drops the rail, the community panel and the tab bar; the
-marketplace's `SiteChrome` drops the top bar and the `max-w-6xl` reading measure
-and hands the classroom the window. Each app decides that in one place, from its
-own `lessonRoute(pathname)`, so the frame and the page cannot disagree about
-which pages are lessons.
+marketplace's `SiteChrome` drops the top bar, the reading measure and its own
+padding, and hands the classroom the window. Each app decides that in one place,
+from its own `lessonRoute(pathname)`, so the frame and the page cannot disagree
+about which pages are lessons.
+
+Because a lesson route is handed the bare window, **the classroom owns its own
+padding**: the panel arrangement insets itself, the quiz page insets itself, and
+the reading arrangement draws its bar and its row flush against the window's own
+edge. That is deliberate rather than incidental — one component cannot be flush
+on one page and inset on another because two frames made different guesses about
+how much room it had.
 
 The studio makes one more exception, for the same reason: `OrgTabs` also stays
 out of a course's own page (`spaceRoute`), which brings a header and a strip of
@@ -154,19 +161,34 @@ tabs of its own — an organization bar above those would be a second answer to
 `lib/routes.ts` beside `lessonRoute`, not in the bar.
 
 `<Classroom spaceId contentId />` takes what it is showing, whether the reader may
-edit it (`canEdit`), the organization to pick videos from (`orgId`, studio only)
-and a `LearningRoutes` object that says where a course and a lesson live. It puts
-that object in a context, so the outline and the course list inside it draw their
-links without being told again:
+edit it (`canEdit`), the organization to pick videos from (`orgId`, studio only),
+which arrangement to draw (`layout`), and a `LearningRoutes` object that says
+where a course and a lesson live. It puts that object in a context, so the outline
+and the course list inside it draw their links without being told again:
 
 ```tsx
-// apps/studio
+// apps/studio — the authoring arrangement: the video beside a panel of tabs
 const routes = useMemo(() => studioLearningRoutes(orgId), [orgId]);
 <Classroom spaceId={spaceId} contentId={contentId} orgId={orgId} canEdit routes={routes} />
 
-// apps/marketplace
-<Classroom spaceId={spaceId} contentId={contentId} routes={marketplaceLearningRoutes} />
+// apps/marketplace — the reading arrangement: one screen, arranged like skld-app
+<Classroom
+  spaceId={spaceId}
+  contentId={contentId}
+  layout="reader"
+  routes={marketplaceLearningRoutes}
+/>
 ```
+
+`LessonReaderFrame` is that reading arrangement — the bar, the card, the dock and
+the rail — and **a quiz is drawn in the same one**, with one question in the card
+instead of a video. That is the point of the frame being a component of its own:
+a lesson and a quiz are two kinds of content in one screen, not two screens.
+
+`layout` is the app's decision and not the reader's, and it defaults to `panel`:
+the studio works on a lesson and the marketplace sits one, and neither wants what
+the other has. It is not derived from `canEdit` — a viewer in an organization may
+not edit a lesson and is still using the studio's screen.
 
 What the shared component must **not** do is assume a route, read an app's own
 `useParams`, or fetch something only one app's backend is allowed to serve.
@@ -393,7 +415,7 @@ from its first path segment:
 
 | Group | Path roots | What a change to it re-plans |
 | --- | --- | --- |
-| `Content` | `videos`, `sections`, `contents`, `questions`, `banks` | 410 resources |
+| `Content` | `videos`, `sections`, `contents`, `questions`, `banks` | 417 resources |
 | `Courses` | `spaces`, `cohorts`, `rewards`, `catalog` | 216 |
 | `People` | `organizations`, `me` | 184 |
 | `PublicApi` | `v1`, `oauth` | 191 |

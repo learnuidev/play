@@ -2146,6 +2146,17 @@ export const FUNCTIONS: FunctionSpec[] = [
     eventBridge: [],
   },
   {
+    key: 'check-quiz-answer',
+    entry: 'src/functions/quiz/check-quiz-answer.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: 'Says whether one answer is right, recording nothing',
+    http: [{"path":"contents/{contentId}/quiz/check","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
     key: 'submit-quiz-attempt',
     entry: 'src/functions/quiz/submit-quiz-attempt.ts',
     handlerExport: 'handler',

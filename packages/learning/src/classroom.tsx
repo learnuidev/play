@@ -9,6 +9,7 @@ import {
   ChevronLeftIcon,
   ListTreeIcon,
   Loader2Icon,
+  MessagesSquareIcon,
   MoreHorizontalIcon,
   NotebookPenIcon,
   PaperclipIcon,
@@ -19,6 +20,7 @@ import {
   VideoOffIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@ui/lib/utils";
 import { findNextWatchable } from "@learning/lib/course";
 import {
   linesInRange,
@@ -26,7 +28,7 @@ import {
   transcriptTextFor,
 } from "@learning/lib/transcript";
 import { useLoopPlayback } from "@learning/hooks/use-loop-playback";
-import { useLessonTab } from "@learning/hooks/use-lesson-tab";
+import { useLessonTab, type LessonPanelTab } from "@learning/hooks/use-lesson-tab";
 import { useRememberedScroll } from "@learning/hooks/use-remembered-scroll";
 import { useViewerId } from "@auth/hooks/use-viewer";
 import { usePlayingNext } from "@learning/hooks/use-playing-next";
@@ -67,6 +69,14 @@ import { NotesEditor } from "@learning/components/content/notes-editor";
 import { isEmptyNotes } from "@learning/components/content/notes";
 import { NotesView } from "@learning/components/content/notes-view";
 import { PlayingNext } from "@learning/components/content/playing-next";
+import {
+  LessonNavBar,
+  LessonPrimaryPill,
+  LessonReaderFrame,
+  LessonSecondaryPill,
+  type LessonMark,
+  type LessonMaterial,
+} from "@learning/components/content/lesson-reader";
 import { GenerateQuizDialog } from "@learning/components/quiz/generate-quiz-dialog";
 import { QuizPanel } from "@learning/components/quiz/quiz-panel";
 import {
@@ -81,6 +91,7 @@ import {
   useUpdateContent,
 } from "@api/modules/content/content.queries";
 import { useToggleCompletion } from "@api/modules/content/completion.queries";
+import { useSpaceProgress } from "@api/modules/progress/progress.queries";
 import {
   useCreateLoop,
   useLoops,
@@ -105,6 +116,18 @@ import type { Content, ContentLoop, NotesDocument, Video } from "@play/types";
  * The player is here rather than linked away to, because a lesson *is* the
  * video and the material around it — being sent to another page to watch it and
  * back again to read the notes is what made the two feel like separate things.
+ *
+ * **It is arranged two ways, and `layout` is which.** An author gets `panel`:
+ * the video beside a panel of tabs, both columns scrolling, everything the
+ * lesson holds on the screen at once because the person looking at it is
+ * working on it — that is the studio's lesson page, and it is unchanged. A
+ * learner gets `reader`: one screen that does not scroll, the video as the
+ * stage, a bar across the top saying where this lesson sits in its course, the
+ * pills a reader reaches for along the bottom, and the panel itself moved into a
+ * rail that slides in when one of them is asked for. The two are the same lesson
+ * through the same hooks — the same player, transcript, loops, discussion,
+ * completion — and only the frame around them differs, which is what makes this
+ * a prop rather than two pages that would have to be kept in step.
  *
  * Captions are deliberately not switched on for the player: the transcript tab
  * is the words, animated and seekable, and painting a second copy of the same
@@ -141,6 +164,18 @@ const QUIET_TAB =
  */
 const TAB_STRIP =
   "h-auto w-full justify-evenly gap-1 overflow-x-auto rounded-none border-b border-border/60 bg-transparent p-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+
+/**
+ * The same strip, in the rail.
+ *
+ * Six tabs in a 380px column do not spread: `justify-evenly` would put the
+ * overflow of the last one off the edge with no sign it is there. So they start
+ * at the left and run — and the row scrolls, with its bar hidden, for the same
+ * reason the column's does. No rule under them either: the rail's own head draws
+ * the line they sit on, and two hairlines a pixel apart is one too many.
+ */
+const RAIL_TAB_STRIP =
+  "h-auto min-w-0 flex-1 justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
 
 /**
  * A column that scrolls without saying so.
@@ -247,6 +282,65 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
       {children}
     </p>
   );
+}
+
+/**
+ * What the lesson's dock offers, in the order a reader reaches for it.
+ *
+ * Contents first, because it is the one that answers "where am I" rather than
+ * "what is in this", and the rest in the order they are reached for while the
+ * picture is running. Each is an icon with its own words as a hint, and the
+ * rail's head repeats the one that is open — an icon-only dock is a dock nobody
+ * can read without hovering.
+ *
+ * Files are offered only when something is attached: an icon that opens an empty
+ * list is worse than no icon, and the count is in its hint when there is one.
+ * Everything here exists for every lesson except the files, which is why this is
+ * a function of the content rather than a constant.
+ */
+function readerMaterials(content: Content): LessonMaterial[] {
+  return [
+    {
+      value: "course",
+      label: "Contents",
+      hint: "Every lesson in this course, in order — the one you are reading is marked.",
+      icon: <ListTreeIcon />,
+    },
+    {
+      value: "transcript",
+      label: "Transcript",
+      hint: "The video’s words, word by word — and where a loop is picked from.",
+      icon: <CaptionsIcon />,
+    },
+    {
+      value: "notes",
+      label: "Notes",
+      hint: "What the author wrote for this lesson.",
+      icon: <NotebookPenIcon />,
+    },
+    {
+      value: "loops",
+      label: "Loops",
+      hint: "Passages worth hearing again, kept under a name.",
+      icon: <RepeatIcon />,
+    },
+    ...(content.fileCount > 0
+      ? [
+          {
+            value: "files" as const,
+            label: "Files",
+            hint: `${content.fileCount} attachment${content.fileCount === 1 ? "" : "s"} for this lesson.`,
+            icon: <PaperclipIcon />,
+          },
+        ]
+      : []),
+    {
+      value: "discussion",
+      label: "Discussion",
+      hint: "What everybody reading this lesson has said about it.",
+      icon: <MessagesSquareIcon />,
+    },
+  ];
 }
 
 /** The video, playing where it is talked about. */
@@ -481,11 +575,25 @@ function NotesTab({
  * a lesson live in this app's URLs. The studio passes an author's answers and
  * the marketplace a learner's, and the lesson itself is identical either way.
  */
+/**
+ * How a lesson is arranged.
+ *
+ * - `panel`  — the video beside a panel of tabs, both columns scrolling. What
+ *              the studio's lesson page draws: an author is working on the
+ *              lesson, so everything it holds is on the screen at once.
+ * - `reader` — one screen, the video as the stage, a bar above it and a rail
+ *              beside it. What the marketplace draws: somebody is sitting the
+ *              lesson rather than editing it, and a column of material they are
+ *              not reading is width taken off the picture.
+ */
+export type ClassroomLayout = "panel" | "reader";
+
 export function Classroom({
   spaceId,
   contentId,
   orgId,
   canEdit = false,
+  layout = "panel",
   routes,
 }: {
   spaceId: string;
@@ -498,6 +606,12 @@ export function Classroom({
   orgId?: string;
   /** Whether this reader may edit the lesson: notes, files, details, deletion. */
   canEdit?: boolean;
+  /**
+   * Which arrangement to draw, and it is the *app's* decision rather than the
+   * reader's: the studio works on a lesson and the marketplace sits one. See the
+   * note above the component.
+   */
+  layout?: ClassroomLayout;
   routes: LearningRoutes;
 }) {
   return (
@@ -507,6 +621,7 @@ export function Classroom({
         contentId={contentId}
         orgId={orgId}
         canEdit={canEdit}
+        layout={layout}
       />
     </LearningRoutesProvider>
   );
@@ -518,11 +633,13 @@ function ClassroomBody({
   contentId,
   orgId,
   canEdit,
+  layout,
 }: {
   spaceId: string;
   contentId: string;
   orgId?: string;
   canEdit: boolean;
+  layout: ClassroomLayout;
 }) {
   const routes = useLearningRoutes();
   const router = useRouter();
@@ -568,8 +685,44 @@ function ClassroomBody({
   const [panelTab, choosePanelTab] = useLessonTab();
   const courseListRef = useRememberedScroll<HTMLDivElement>("course");
 
+  /**
+   * Whether the reading layout's rail is out.
+   *
+   * Closed when a lesson opens, and never remembered: what a reader wants first
+   * is the picture, and a panel that was left open on the last lesson is a
+   * panel opened for somebody who is not there yet. The tab it opens on *is*
+   * remembered, which is the half of it that is a preference.
+   */
+  const [railOpen, setRailOpen] = useState(false);
+
+  /**
+   * The dock's one gesture: the icon for what is open puts it away, and the icon
+   * for anything else brings that out. One handler rather than two, because the
+   * state it reads and writes is the state the dock draws.
+   */
+  const toggleMaterial = useCallback(
+    (value: LessonPanelTab) => {
+      if (railOpen && panelTab === value) {
+        setRailOpen(false);
+        return;
+      }
+      choosePanelTab(value);
+      setRailOpen(true);
+    },
+    [choosePanelTab, panelTab, railOpen],
+  );
+
   const { data, isLoading, isError, error } = useContent(contentId);
   const content = data?.content;
+
+  /**
+   * Which arrangement this is, known before anything is drawn.
+   *
+   * It is not a hook — it is a prop — and the guards below need it: waiting and
+   * failing are drawn inside the reading layout's frame and as a plain page in
+   * the authoring one.
+   */
+  const reader = layout === "reader";
 
   // The transcript drives itself off the player's own clock: it reads the
   // media element once a frame, which is smooth enough to fill a word letter by
@@ -672,6 +825,72 @@ function ClassroomBody({
     () => (outline ? findNextWatchable(outline.sections, contentId) : null),
     [outline, contentId],
   );
+
+  /**
+   * The course's own progress, for the bar across the top — read only by the
+   * reading layout.
+   *
+   * The authoring layout has the course list open in its panel, where the ticks
+   * beside each lesson are the same fact drawn where the reader is looking; this
+   * is the version of it for a screen that has no room for the list. Asking for
+   * it in the studio would be a request per lesson that nothing on the page
+   * reads, which is why `enabled` is the layout.
+   */
+  const { data: progress } = useSpaceProgress(spaceId, reader);
+
+  /**
+   * Where this lesson sits in its course, and which of the others are done.
+   *
+   * Every content the course publishes counts, quizzes included, because that is
+   * what the course page's percentage and its outline tick against: a bar here
+   * that counted differently would disagree with the page the reader came from.
+   */
+  const lessonMarks = useMemo<LessonMark[]>(() => {
+    const finished = new Set(progress?.completedContentIds ?? []);
+    return (outline?.sections ?? [])
+      .flatMap((section) => section.contents)
+      .map((entry) => ({ contentId: entry.contentId, done: finished.has(entry.contentId) }));
+  }, [outline, progress]);
+
+  /**
+   * The lessons either side of this one, which the bar's two arrows walk.
+   *
+   * Any content counts, a quiz included: the arrows move through the course in
+   * the order the course is read in, which is the order the dots draw. That is
+   * deliberately not `next` above, which is the next thing that can be *played*
+   * and is what the playing-next card counts down to — one is a reader stepping
+   * through a course, the other is a video about to end.
+   */
+  const lessonAt = lessonMarks.findIndex((mark) => mark.contentId === contentId);
+  const previousLesson = lessonAt > 0 ? lessonMarks[lessonAt - 1].contentId : undefined;
+  const followingLesson =
+    lessonAt >= 0 && lessonAt < lessonMarks.length - 1
+      ? lessonMarks[lessonAt + 1].contentId
+      : undefined;
+
+  /**
+   * Putting the rail away with the key everybody reaches for.
+   *
+   * Not while the reader is typing in it: the discussion's composer is a
+   * textarea inside the rail, and a key that throws away a half-written comment
+   * is a key that costs somebody their words. The same guard the composer
+   * deserves everywhere else, in the one place the reading layout listens for
+   * keys at all.
+   */
+  useEffect(() => {
+    if (!reader || !railOpen) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      setRailOpen(false);
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [reader, railOpen]);
 
   /**
    * A link that opens this lesson on this passage.
@@ -926,15 +1145,61 @@ function ClassroomBody({
     }
   }
 
-  if (isError) {
-    return (
-      <p className="text-sm text-destructive">
-        {error instanceof Error ? error.message : "Failed to load this content"}
-      </p>
-    );
-  }
+  /**
+   * Waiting, and failing, both happen *inside* the reading layout's frame.
+   *
+   * The frame is what a reader is looking at while a lesson loads, and a frame
+   * that arrived after the lesson did would move the bar, the card and the dock
+   * on the screen the moment it turned up. So the shell is drawn at its real
+   * size from the first paint and only the card's contents change — the same
+   * thing the quiz does with the same frame.
+   */
+  if (isError || isLoading || !content) {
+    if (reader) {
+      return (
+        <LessonReaderFrame
+          bar={
+            <LessonNavBar
+              exitHref={routes.course(spaceId)}
+              exitLabel="Leave the lesson, back to the course"
+              exitTitle="Back to the course"
+              progress={{ done: 0, total: 0, label: "Course progress", text: "Loading the course" }}
+              stepLabel="lesson"
+            />
+          }
+          card={
+            isError ? (
+              <p className="text-sm text-destructive">
+                {error instanceof Error ? error.message : "Failed to load this content"}
+              </p>
+            ) : (
+              <div className="grid w-full max-w-3xl gap-4">
+                <Skeleton className="mx-auto h-7 w-1/2 rounded-full" />
+                <Skeleton className="aspect-video w-full rounded-2xl" />
+              </div>
+            )
+          }
+          materials={[]}
+          activeMaterial={null}
+          onToggleMaterial={() => {}}
+          dockLabel="What the lesson carries"
+          railOpen={false}
+          railTitle="The lesson"
+          onCloseRail={() => {}}
+          rail={null}
+          footer={<Skeleton className="h-12 w-48 max-w-full rounded-full" />}
+        />
+      );
+    }
 
-  if (isLoading || !content) {
+    if (isError) {
+      return (
+        <p className="text-sm text-destructive">
+          {error instanceof Error ? error.message : "Failed to load this content"}
+        </p>
+      );
+    }
+
     return (
       <div className="grid gap-6 pb-4">
         <Skeleton className="h-8 w-72" />
@@ -946,6 +1211,40 @@ function ClassroomBody({
 
   const section = sectionData?.section;
   const completed = data?.viewer.completed ?? false;
+
+  /**
+   * Marking the lesson done, or taking that back.
+   *
+   * One function for both arrangements: the reading layout's pill and the
+   * authoring layout's button are the same decision, and the toasts that answer
+   * it — including what a milestone just paid out — are the same sentence
+   * wherever it is pressed.
+   */
+  function toggleCompletion() {
+    completion.mutate(completed, {
+      onSuccess: ({ completed: nowComplete, earned }) => {
+        if (nowComplete) toast.success("Lesson marked as complete");
+
+        // What the milestone check issued, said out loud: a reward nobody is
+        // told about is not a reward, and the tab it lives on is not where
+        // somebody finishing a lesson is looking.
+        if (earned && earned.length > 0) {
+          toast.success(
+            earned.length === 1 ? "You earned a reward" : `You earned ${earned.length} rewards`,
+            {
+              description: earned
+                .map((grant) => grant.code ?? "A reward to claim")
+                .join(" · "),
+            },
+          );
+        }
+      },
+      onError: (err) =>
+        toast.error(
+          err instanceof Error ? err.message : "Could not save your progress",
+        ),
+    });
+  }
 
   /**
    * A quiz is not a lesson with a different picture.
@@ -962,27 +1261,356 @@ function ClassroomBody({
    * somebody switched a content's kind.
    */
   if (content.type === "QUIZ") {
-    return (
-      <div className="grid gap-6 pb-4">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Link
-            href={routes.course(spaceId)}
-            title={section ? `Back to ${section.title}` : "Back to your courses"}
-            className="inline-flex min-w-0 items-center gap-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ChevronLeftIcon className="size-4 shrink-0" />
-            <h1 className="truncate">{content.title}</h1>
-          </Link>
-        </div>
-
+    /**
+     * A learner's quiz is the same frame a lesson is drawn in, and it brings its
+     * own bar, card, dock and rail — so it is *not* wrapped in a page here. A
+     * page around it would be a second bar over the first, two lots of padding,
+     * and a card that changed size the moment somebody switched from the lesson
+     * beside it to the quiz; that is the whole reason the frame exists.
+     *
+     * An author's quiz is the authoring panel, which is a page: a list of
+     * questions to write and review, with the title over it.
+     */
+    if (!canEdit) {
+      return (
         <QuizPanel
           contentId={content.contentId}
           spaceId={spaceId}
           orgId={orgId}
-          canEdit={canEdit}
+          canEdit={false}
           title={content.title}
         />
+      );
+    }
+
+    return (
+      <div className="h-full overflow-y-auto p-4">
+        <div className="grid gap-6">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Link
+              href={routes.course(spaceId)}
+              title={section ? `Back to ${section.title}` : "Back to your courses"}
+              className="inline-flex min-w-0 items-center gap-0.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ChevronLeftIcon className="size-4 shrink-0" />
+              <h1 className="truncate">{content.title}</h1>
+            </Link>
+          </div>
+
+          <QuizPanel
+            contentId={content.contentId}
+            spaceId={spaceId}
+            orgId={orgId}
+            canEdit
+            title={content.title}
+          />
+        </div>
       </div>
+    );
+  }
+
+  /**
+   * What the lesson carries, as one element both arrangements place.
+   *
+   * Built once rather than written twice, because it is one panel: the tabs, the
+   * course list and its remembered scroll, the transcript that follows the
+   * playhead, the notes, the files, the loops. In `panel` it is the column
+   * beside the video; in `reader` it is what the rail slides out. The only
+   * difference the element itself knows about is which of the two is asking —
+   * a column's frame is drawn here, and the rail draws its own.
+   *
+   * The discussion is the one thing that moves between them. It is a section
+   * under the picture where there is a column to put it under, and a sixth tab
+   * where the screen is the picture: what it must not become is material a
+   * reader has to leave the lesson to find.
+   */
+  const tabStrip = (
+    <TabsList className={reader ? RAIL_TAB_STRIP : TAB_STRIP}>
+      <LessonTab
+        value="course"
+        icon={<ListTreeIcon />}
+        label="Course"
+        hint="Every lesson in this course, in order — the one you are reading is marked."
+      />
+      <LessonTab
+        value="transcript"
+        icon={<CaptionsIcon />}
+        label="Transcript"
+        hint="The video’s words, word by word — and where a loop is picked from."
+      />
+      <LessonTab
+        value="notes"
+        icon={<NotebookPenIcon />}
+        label="Notes"
+        hint="What the author wrote for this lesson."
+      />
+      <LessonTab
+        value="files"
+        icon={<PaperclipIcon />}
+        label="Files"
+        hint={
+          content.fileCount > 0
+            ? `${content.fileCount} attachment${content.fileCount === 1 ? "" : "s"} for this lesson.`
+            : "Nothing attached to this lesson yet."
+        }
+      />
+      <LessonTab
+        value="loops"
+        icon={<RepeatIcon />}
+        label="Loops"
+        hint="Passages worth hearing again, kept under a name."
+      />
+      {reader && (
+        <LessonTab
+          value="discussion"
+          icon={<MessagesSquareIcon />}
+          label="Discussion"
+          hint="What everybody reading this lesson has said about it."
+        />
+      )}
+    </TabsList>
+  );
+
+  /**
+   * Breathing room for the panel's contents, in the one layout that needs it.
+   *
+   * The column draws its own frame — a border, a card, `p-5` — so its tabs need
+   * no margin of their own. The rail draws the frame around the panel instead,
+   * so the contents keep their distance from the rail's edges here.
+   */
+  const contentPad = reader ? "px-4 pb-6" : "";
+
+  const panel = (
+    <Tabs
+      value={panelTab}
+      // Radix hands back a bare string — a tab's value is a string to it — and
+      // the six this panel puts in are the six the union names, which is the one
+      // place the two have to be reconciled.
+      onValueChange={(value) => choosePanelTab(value as LessonPanelTab)}
+      className={
+        reader
+          ? "flex h-full min-h-0 flex-col"
+          : "flex min-h-0 flex-col lg:rounded-2xl lg:border lg:bg-card lg:p-5"
+      }
+    >
+      {/* The strip is the column's, and only the column's: in the rail the dock
+          is the switch, and the rail's own head says which of the six is open. */}
+      {reader ? null : tabStrip}
+
+      {/* The course leads the strip, and the transcript stays what the panel
+          opens on. The order is a claim about the panel, not about the
+          lesson: what you reach for while watching is the transcript, and
+          what you reach for while wondering where this fits is the course —
+          which used to be a column that was always in the way and is now the
+          first thing on the bar. */}
+      <TabsContent
+        value="course"
+        ref={courseListRef}
+        className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR} ${contentPad}`}
+      >
+        <CourseContents spaceId={spaceId} contentId={contentId} heading={!reader} />
+      </TabsContent>
+
+      {/* The transcript owns its own scroll — the sheet follows the playhead
+          itself — so the panel must not scroll it a second time. Everything
+          else is read top to bottom and scrolls here. */}
+      <TabsContent
+        value="transcript"
+        className={`mt-4 min-h-0 flex-1 overflow-hidden ${contentPad}`}
+      >
+        <TranscriptTab
+          videoId={content.videoId}
+          lines={lines}
+          video={video}
+          getTime={getTime}
+          onSeek={playFrom}
+          selection={draft}
+          selectionColor={editingLoop ? loopColor(editingLoop) : "#6366f1"}
+          onSelectLine={draft ? selectLine : undefined}
+          canEdit={canEdit}
+        />
+      </TabsContent>
+
+      <TabsContent
+        value="notes"
+        className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR} ${contentPad}`}
+      >
+        <NotesTab content={content} spaceId={spaceId} canEdit={canEdit} />
+      </TabsContent>
+
+      <TabsContent
+        value="files"
+        className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR} ${contentPad}`}
+      >
+        <ContentFiles contentId={content.contentId} canEdit={canEdit} />
+      </TabsContent>
+
+      <TabsContent
+        value="loops"
+        className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR} ${contentPad}`}
+      >
+        <ContentLoops
+          contentId={content.contentId}
+          lines={lines}
+          activeLoopId={activeLoop?.loopId ?? null}
+          onActivate={(loop) => {
+            setPreviewing(false);
+            setActiveLoop(loop);
+          }}
+          onDeactivate={() => setActiveLoop(null)}
+          onStartSelection={() => openPicker()}
+          onMoveRange={(loop) => openPicker(loop)}
+          onShare={(loop) => void shareLoop(loop)}
+          viewerId={viewerId}
+          onSeek={playFrom}
+          canEdit={canEdit}
+        />
+      </TabsContent>
+
+      {/* Rendered only by the reading layout, where the discussion has no column
+          to sit under. */}
+      {reader && (
+        <TabsContent
+          value="discussion"
+          className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR} ${contentPad}`}
+        >
+          <ContentComments
+            contentId={content.contentId}
+            viewerId={viewerId}
+            canModerate={canEdit}
+            onSeek={content.videoId ? playFrom : undefined}
+          />
+        </TabsContent>
+      )}
+    </Tabs>
+  );
+
+  /** What this lesson's dock offers, and what the rail calls the one that is open. */
+  const materials = readerMaterials(content);
+
+  /**
+   * The reading layout: the frame, with this lesson in its card.
+   *
+   * Everything about how the bar, the dock, the rail and the footer are arranged
+   * is `LessonReaderFrame`'s — the same frame a quiz draws itself in, which is
+   * what keeps a lesson and a question looking like two things in one product.
+   * What is here is only what a *lesson* puts in it: the course's progress in
+   * the bar, its video in the card, and the material a lesson holds in the dock.
+   */
+  if (reader) {
+    return (
+      <LessonReaderFrame
+        bar={
+          <LessonNavBar
+            exitHref={routes.course(spaceId)}
+            exitLabel={section ? `Leave the lesson, back to ${section.title}` : "Leave the lesson"}
+            exitTitle={section ? `Back to ${section.title}` : "Back to your courses"}
+            progress={{
+              done: lessonMarks.filter((mark) => mark.done).length,
+              total: lessonMarks.length,
+              label: "Course progress",
+              text: `${lessonMarks.filter((mark) => mark.done).length} of ${lessonMarks.length} lessons done`,
+            }}
+            stepLabel="lesson"
+            marks={lessonMarks}
+            currentId={content.contentId}
+            tally={{
+              count: lessonMarks.filter((mark) => mark.done).length,
+              title: `${lessonMarks.filter((mark) => mark.done).length} of ${lessonMarks.length} lessons done`,
+              srLabel: `of ${lessonMarks.length} lessons done`,
+            }}
+            arrows={{
+              onPrevious: () =>
+                previousLesson && router.push(routes.lesson(spaceId, previousLesson)),
+              onNext: () => followingLesson && router.push(routes.lesson(spaceId, followingLesson)),
+              previousDisabled: !previousLesson,
+              nextDisabled: !followingLesson,
+            }}
+          />
+        }
+        card={
+          <>
+            <h1 className="max-w-3xl text-center text-lg font-semibold tracking-tight sm:text-xl">
+              {content.title}
+            </h1>
+
+            {/* As wide as the height it has allows, and no wider. A video's
+                shape is fixed, so a stage sized only by width would letterbox
+                itself on a short window or push the footer off a tall one; the
+                cap keeps the picture whole and the row where it belongs, and
+                `max-h-full` is the belt to that braces, so a window this
+                arithmetic got wrong clips nothing. */}
+            <div className="relative mt-4 w-full max-h-full max-w-[min(64rem,calc((100svh_-_19rem)*16_/_9))]">
+              {content.videoId ? (
+                // Opened, and playing: a lesson is a thing you came to watch, and
+                // having to press play on the thing you just asked for is a step
+                // that only ever stood between the reader and the lesson. The
+                // browser gets to refuse an unmuted page starting itself, and the
+                // player answers that by starting muted rather than not at all.
+                <LessonVideo
+                  videoId={content.videoId}
+                  playerRef={playerRef}
+                  autoPlay
+                  tracks={tracks}
+                  onActiveTrackChange={followCaptionsLanguage}
+                >
+                  <div className="mt-4">
+                    {draft && (
+                      <LoopBar
+                        durationMs={getDuration()}
+                        getTimeMs={getTime}
+                        seekTo={handleSeek}
+                        initialRange={draft}
+                        accentColor={editingLoop ? loopColor(editingLoop) : "#6366f1"}
+                        lines={lines}
+                        selectedLines={linesInRange(lines, draft.startMs, draft.endMs).length}
+                        selectedText={transcriptTextFor(lines, draft.startMs, draft.endMs)}
+                        editingName={editingLoop?.name}
+                        previewing={previewing}
+                        onTogglePreview={togglePreview}
+                        onSave={saveLoop}
+                        onCancel={closePicker}
+                      />
+                    )}
+                  </div>
+                </LessonVideo>
+              ) : (
+                <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 text-center">
+                  <VideoOffIcon className="size-5 text-muted-foreground/60" />
+                  <p className="text-sm text-muted-foreground">This lesson has no video yet.</p>
+                </div>
+              )}
+
+              {/* Inside the card rather than floating over the page: the card
+                  counts down to what plays next, so it belongs on the picture
+                  that is about to change — and at the page's own corner it would
+                  sit over the footer. */}
+              {next && upNext.seconds !== null && (
+                <PlayingNext
+                  title={next.title}
+                  seconds={upNext.seconds}
+                  total={upNext.total}
+                  onPlayNow={upNext.playNow}
+                  onCancel={upNext.cancel}
+                />
+              )}
+            </div>
+          </>
+        }
+        materials={materials}
+        activeMaterial={railOpen ? panelTab : null}
+        onToggleMaterial={toggleMaterial}
+        dockLabel="What the lesson carries"
+        railOpen={railOpen}
+        railTitle={materials.find((item) => item.value === panelTab)?.label ?? "The lesson"}
+        onCloseRail={() => setRailOpen(false)}
+        rail={panel}
+        footer={
+          <LessonPrimaryPill busy={completion.isPending} onClick={toggleCompletion}>
+            {completed ? "Completed" : "Complete lesson"}
+          </LessonPrimaryPill>
+        }
+      />
     );
   }
 
@@ -992,7 +1620,12 @@ function ClassroomBody({
     // left. `minmax(0, 1fr)` rather than `1fr` so the split can be shorter than
     // its contents, which is what lets the columns scroll inside themselves
     // instead of the page scrolling as a whole.
-    <div className="grid gap-x-4 gap-y-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-4">
+    //
+    // It carries its own `p-4` because the app hands the classroom the window
+    // rather than a padded box: the reading layout above has to start at the
+    // window's own edge, and one component cannot be flush on one page and
+    // inset on another because two frames made different guesses.
+    <div className="grid gap-x-4 gap-y-4 p-4 lg:h-full lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-4">
       {/* A breadcrumb, not a heading: one quiet line saying which lesson this
           is, in the same voice as the way back on a course's own page. The way
           back *is* that line — the lesson's name is the one thing up here worth
@@ -1121,35 +1754,7 @@ function ClassroomBody({
                 ? "shrink-0 gap-1.5 rounded-full border-emerald-600/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 hover:text-emerald-800 dark:border-emerald-400/40 dark:text-emerald-300 dark:hover:text-emerald-200"
                 : "shrink-0 gap-1.5 rounded-full"
             }
-            onClick={() =>
-              completion.mutate(completed, {
-                onSuccess: ({ completed: nowComplete, earned }) => {
-                  if (nowComplete) toast.success("Lesson marked as complete");
-
-                  // What the milestone check issued, said out loud: a reward
-                  // nobody is told about is not a reward, and the tab it lives on
-                  // is not where somebody finishing a lesson is looking.
-                  if (earned && earned.length > 0) {
-                    toast.success(
-                      earned.length === 1
-                        ? "You earned a reward"
-                        : `You earned ${earned.length} rewards`,
-                      {
-                        description: earned
-                          .map((grant) => grant.code ?? "A reward to claim")
-                          .join(" · "),
-                      },
-                    );
-                  }
-                },
-                onError: (err) =>
-                  toast.error(
-                    err instanceof Error
-                      ? err.message
-                      : "Could not save your progress",
-                  ),
-              })
-            }
+            onClick={toggleCompletion}
             disabled={completion.isPending}
           >
             {completion.isPending ? (
@@ -1294,118 +1899,7 @@ function ClassroomBody({
 
         {/* Controlled rather than defaulted: the tab is a place the reader is
             in, and it has to outlive the lesson they are in it on. */}
-        <Tabs
-          value={panelTab}
-          onValueChange={choosePanelTab}
-          className="flex min-h-0 flex-col lg:rounded-2xl lg:border lg:bg-card lg:p-5"
-        >
-          <TabsList className={TAB_STRIP}>
-            <LessonTab
-              value="course"
-              icon={<ListTreeIcon />}
-              label="Course"
-              hint="Every lesson in this course, in order — the one you are reading is marked."
-            />
-            <LessonTab
-              value="transcript"
-              icon={<CaptionsIcon />}
-              label="Transcript"
-              hint="The video’s words, word by word — and where a loop is picked from."
-            />
-            <LessonTab
-              value="notes"
-              icon={<NotebookPenIcon />}
-              label="Notes"
-              hint="What the author wrote for this lesson."
-            />
-            <LessonTab
-              value="files"
-              icon={<PaperclipIcon />}
-              label="Files"
-              hint={
-                content.fileCount > 0
-                  ? `${content.fileCount} attachment${content.fileCount === 1 ? "" : "s"} for this lesson.`
-                  : "Nothing attached to this lesson yet."
-              }
-            />
-            <LessonTab
-              value="loops"
-              icon={<RepeatIcon />}
-              label="Loops"
-              hint="Passages worth hearing again, kept under a name."
-            />
-          </TabsList>
-
-          {/* The course leads the strip, and the transcript stays what the panel
-              opens on. The order is a claim about the panel, not about the
-              lesson: what you reach for while watching is the transcript, and
-              what you reach for while wondering where this fits is the course —
-              which used to be a column that was always in the way and is now the
-              first thing on the bar. */}
-          <TabsContent
-            value="course"
-            ref={courseListRef}
-            className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR}`}
-          >
-            <CourseContents spaceId={spaceId} contentId={contentId} />
-          </TabsContent>
-
-          {/* The transcript owns its own scroll — the sheet follows the playhead
-              itself — so the panel must not scroll it a second time. Everything
-              else is read top to bottom and scrolls here. */}
-          <TabsContent
-            value="transcript"
-            className="mt-4 min-h-0 flex-1 overflow-hidden"
-          >
-            <TranscriptTab
-              videoId={content.videoId}
-              lines={lines}
-              video={video}
-              getTime={getTime}
-              onSeek={playFrom}
-              selection={draft}
-              selectionColor={editingLoop ? loopColor(editingLoop) : "#6366f1"}
-              onSelectLine={draft ? selectLine : undefined}
-              canEdit={canEdit}
-            />
-          </TabsContent>
-
-          <TabsContent
-            value="notes"
-            className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR}`}
-          >
-            <NotesTab content={content} spaceId={spaceId} canEdit={canEdit} />
-          </TabsContent>
-
-          <TabsContent
-            value="files"
-            className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR}`}
-          >
-            <ContentFiles contentId={content.contentId} canEdit={canEdit} />
-          </TabsContent>
-
-          <TabsContent
-            value="loops"
-            className={`mt-4 min-h-0 flex-1 overflow-y-auto ${NO_SCROLLBAR}`}
-          >
-            <ContentLoops
-              contentId={content.contentId}
-              lines={lines}
-              activeLoopId={activeLoop?.loopId ?? null}
-              onActivate={(loop) => {
-                setPreviewing(false);
-                setActiveLoop(loop);
-              }}
-              onDeactivate={() => setActiveLoop(null)}
-              onStartSelection={() => openPicker()}
-              onMoveRange={(loop) => openPicker(loop)}
-              onShare={(loop) => void shareLoop(loop)}
-              viewerId={viewerId}
-              onSeek={playFrom}
-              canEdit={canEdit}
-            />
-          </TabsContent>
-        </Tabs>
+        {panel}
       </div>
     </div>
   );

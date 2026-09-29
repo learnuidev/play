@@ -17,9 +17,26 @@ import { useCallback, useState } from 'react';
  * view and not a setting: opening the app afresh should open on the transcript,
  * which is the tab a lesson is watched with.
  */
-const DEFAULT_TAB = 'transcript';
+/**
+ * Which of the lesson's tabs is showing.
+ *
+ * A union rather than a bare string, because three lists have to agree about the
+ * same six things: the strip, the reading layout's pills, and the panel that
+ * draws whatever is chosen. It lives beside the hook because the hook is what
+ * remembers the answer — and `discussion` is only ever a tab in the reading
+ * layout, where the discussion has no column of its own to sit under.
+ */
+export type LessonPanelTab =
+  | 'course'
+  | 'transcript'
+  | 'notes'
+  | 'files'
+  | 'loops'
+  | 'discussion';
 
-let lastTab = DEFAULT_TAB;
+const DEFAULT_TAB: LessonPanelTab = 'transcript';
+
+let lastTab: LessonPanelTab = DEFAULT_TAB;
 
 /**
  * The remembered tab, and the way to change it.
@@ -29,9 +46,9 @@ let lastTab = DEFAULT_TAB;
  * mount is the whole of what is needed.
  */
 export function useLessonTab() {
-  const [tab, setTab] = useState(lastTab);
+  const [tab, setTab] = useState<LessonPanelTab>(lastTab);
 
-  const chooseTab = useCallback((value: string) => {
+  const chooseTab = useCallback((value: LessonPanelTab) => {
     lastTab = value;
     setTab(value);
   }, []);

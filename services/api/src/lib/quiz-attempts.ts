@@ -113,6 +113,39 @@ export async function deleteAttemptsForQuiz(contentId: string): Promise<number> 
 }
 
 /**
+ * One question's options, in the order the learner was shown them.
+ *
+ * The order is the *client's*, because the client is the only party that knows
+ * it: each sitting deals the options afresh so that the answer is not where it
+ * was written — an author puts the right option wherever it reads best, often
+ * first and often first in every question, and a quiz taken in that order can be
+ * passed by pattern rather than by knowing anything. A deal that were chosen here
+ * instead would be a deal the learner could not send back, and the attempt would
+ * then record an order nobody saw.
+ *
+ * What the client sends is checked rather than trusted, though what it can do
+ * with it is only cosmetic: an order that is not a permutation of the question's
+ * own options is the author's order, and the marking goes by option id either
+ * way. A body that could change an answer would be worth refusing; a body that
+ * can only rearrange one is worth accepting, because it is a record of what
+ * somebody was looking at when they answered.
+ */
+export function orderedOptions(question: QuizQuestion, order: unknown): QuizQuestion['options'] {
+  if (!Array.isArray(order)) return question.options;
+
+  const ids = order.filter((entry): entry is string => typeof entry === 'string');
+  const known = new Set(question.options.map((option) => option.id));
+  const isPermutation =
+    ids.length === question.options.length &&
+    new Set(ids).size === ids.length &&
+    ids.every((id) => known.has(id));
+
+  if (!isPermutation) return question.options;
+
+  return ids.map((id) => question.options.find((option) => option.id === id)!);
+}
+
+/**
  * A question as a learner is handed it: the answer key removed.
  *
  * Written as a function rather than done inline at each call site, because
@@ -155,11 +188,13 @@ export function toAttemptSummary(attempt: QuizAttempt): QuizAttemptSummary {
 export function toAttemptAnswer(
   question: QuizQuestion,
   optionId: string | undefined,
+  order: unknown,
 ): QuizAttemptAnswer {
   return {
     questionId: question.questionId,
     prompt: question.prompt,
-    options: question.options,
+    // The order the learner was shown, not the one the author wrote it in.
+    options: orderedOptions(question, order),
     ...(optionId !== undefined ? { optionId } : {}),
     correctOptionIds: question.correctOptionIds,
     correct: optionId !== undefined && question.correctOptionIds.includes(optionId),

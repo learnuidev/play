@@ -18,9 +18,15 @@ import { marketplaceLearningRoutes } from '@/lib/routes';
  * around it here is the marketplace's: which URLs its outline links to, and who
  * is allowed in.
  *
- * `canEdit` is absent on purpose. A learner reads a lesson; the authoring
- * controls belong to the studio, where the person looking at them is the person
- * who wrote the course.
+ * `layout="reader"` is the marketplace's half of a decision the classroom makes
+ * once: a learner gets one screen with the video as the stage, a bar saying
+ * where the lesson sits in the course, and the material a rail away; an author
+ * in the studio gets the columns and the panel, because they are working on the
+ * lesson rather than sitting it.
+ *
+ * `canEdit` is absent on purpose, for the same reason: a learner reads a lesson,
+ * and the authoring controls belong to the studio, where the person looking at
+ * them is the person who wrote the course.
  */
 export default function LessonPage() {
   const { spaceId, contentId } = useParams<{ spaceId: string; contentId: string }>();
@@ -37,7 +43,7 @@ export default function LessonPage() {
    */
   if (status === 'configuring' || (status === 'authenticated' && isLoading)) {
     return (
-      <div className="grid gap-5">
+      <div className="grid gap-5 p-4 lg:px-6 lg:py-5">
         <Skeleton className="aspect-video w-full rounded-2xl" />
         <Skeleton className="h-8 w-64" />
       </div>
@@ -74,7 +80,14 @@ export default function LessonPage() {
     );
   }
 
-  return <Classroom spaceId={spaceId} contentId={contentId} routes={marketplaceLearningRoutes} />;
+  return (
+    <Classroom
+      spaceId={spaceId}
+      contentId={contentId}
+      layout="reader"
+      routes={marketplaceLearningRoutes}
+    />
+  );
 }
 
 /** What a lesson page shows instead of a lesson, to somebody who cannot open it. */
@@ -90,7 +103,9 @@ function Gate({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[60svh] flex-col items-center justify-center gap-3 text-center">
+    // It keeps its own measures because the frame no longer supplies them: a
+    // lesson route is handed the window, and this is not the classroom.
+    <div className="flex h-full min-h-[60svh] flex-col items-center justify-center gap-3 p-4 text-center lg:px-6 lg:py-5">
       {icon}
       <h1 className="text-lg font-semibold">{title}</h1>
       <p className="max-w-md text-sm leading-relaxed text-muted-foreground">{description}</p>

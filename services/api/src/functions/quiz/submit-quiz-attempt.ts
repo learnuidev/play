@@ -12,6 +12,23 @@ import type { QuizAttemptAnswer, RewardGrant } from '../../types';
 interface SubmitQuizAttemptBody {
   /** One entry per question answered. A question left out is one they skipped. */
   answers?: unknown;
+  /**
+   * The order each question's options were shown in, by question id.
+   *
+   * The options are dealt afresh on every sitting so the answer is not where the
+   * author wrote it, and only the client saw the hand it was dealt. It is
+   * recorded rather than re-derived, so the attempt reads in the order it was
+   * sat — and it is checked before it is used (`orderedOptions`), because a
+   * record of what somebody was shown is worth having exactly when it is what
+   * they were shown.
+   */
+  order?: unknown;
+}
+
+/** The submitted order, as a map from question to the option ids in display order. */
+function readOrder(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return raw as Record<string, unknown>;
 }
 
 /**
@@ -101,7 +118,9 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   const contentId = pathParam(event, 'contentId');
 
   const quiz = await requireQuizReadAccess(contentId, userId);
-  const sheet = readAnswerSheet(jsonBody<SubmitQuizAttemptBody>(event).answers);
+  const body = jsonBody<SubmitQuizAttemptBody>(event);
+  const sheet = readAnswerSheet(body.answers);
+  const order = readOrder(body.order);
 
   // A sheet of nothing but skips is an empty sheet: the guard is about how many
   // questions were *answered*, not about how many entries were sent, or a
@@ -130,7 +149,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
       );
     }
 
-    answers.push(toAttemptAnswer(question, optionId));
+    answers.push(toAttemptAnswer(question, optionId, order[question.questionId]));
   }
 
   const submittedAt = Date.now();

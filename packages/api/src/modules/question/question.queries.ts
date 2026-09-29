@@ -5,7 +5,7 @@ import { contentKeys } from '@api/modules/content/content.queries';
 import { progressKeys } from '@api/modules/progress/progress.queries';
 import { rewardKeys } from '@api/modules/reward/reward.queries';
 import { spaceKeys } from '@api/modules/space/space.queries';
-import type { QuizGeneration } from '@play/types';
+import type { QuizGeneration, QuizPaperResponse } from '@play/types';
 
 /**
  * The banks, the questions in them, what a quiz asks of them, and what happens
@@ -418,11 +418,61 @@ export const quizPaperKeys = {
   paper: (contentId: string) => ['quiz-paper', contentId] as const,
 };
 
+/**
+ * The paper as it is dealt: every question's options in an order of their own.
+ *
+ * Fisher-Yates over a copy, with `Math.random` — and this is the one place in
+ * the client that decides something the server used to. The options are dealt
+ * here because a deal is per *sitting*: an order the server picked would be the
+ * same order on every retake, which is a shuffle somebody can learn, and the
+ * point is that the answer is not where it was last time. What the page was
+ * shown is sent back with the sheet (`SubmitQuizAttemptPayload.order`) so the
+ * attempt still records the sitting that happened.
+ */
+function dealPaper(paper: QuizPaperResponse): QuizPaperResponse {
+  return {
+    ...paper,
+    questions: paper.questions.map((question) => ({
+      ...question,
+      options: shuffled(question.options),
+    })),
+  };
+}
+
+function shuffled<T>(items: T[]): T[] {
+  const dealt = [...items];
+  for (let index = dealt.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(Math.random() * (index + 1));
+    [dealt[index], dealt[swap]] = [dealt[swap], dealt[index]];
+  }
+  return dealt;
+}
+
 export function useQuizPaper(contentId: string, enabled = true) {
   return useQuery({
     queryKey: quizPaperKeys.paper(contentId),
-    queryFn: () => api.getQuiz(contentId),
+    queryFn: async () => dealPaper(await api.getQuiz(contentId)),
     enabled: Boolean(contentId) && enabled,
+    // The deal is fixed for the sitting. A background refetch — a tab left and
+    // come back to — would deal the options again under the reader's hands, and
+    // the paper is only ever refetched deliberately: "Try again" deals a new
+    // hand, and handing in writes the attempt into this cache itself.
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
+  });
+}
+
+/**
+ * Checking one answer while the quiz is being sat.
+ *
+ * No cache to touch and nothing to invalidate: it records nothing, and the paper
+ * it belongs to has not changed. The answer comes straight back to the caller,
+ * which is the question in hand.
+ */
+export function useCheckQuizAnswer(contentId: string) {
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof api.checkQuizAnswer>[1]) =>
+      api.checkQuizAnswer(contentId, payload),
   });
 }
 

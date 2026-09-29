@@ -19,8 +19,13 @@ import { useLearningRoutes } from '@learning/lib/learning-routes';
  * open, while the course is consulted and then left. As a tab it is a click
  * away and out of the way in between, and the lesson gets the whole window.
  *
- * The header still goes back to the course page, where the community's own
- * navigation is waiting — the tab replaced the column, not the way out of it.
+ * **Whether it says which course it is depends on who is drawing it.** As the
+ * authoring column it opens with a header — the course's name, its picture, how
+ * many lessons it holds, and the way back to it — because a column of navigation
+ * is somewhere a reader arrives without having asked, and it should say what it
+ * is. In the reading layout's rail it does not: the rail's own head already says
+ * "Contents", the bar's ✕ already goes back to the course, and the name and the
+ * count above a list the reader opened on purpose is the same fact three times.
  *
  * Every lesson already finished carries a tick, which is what turns this from a
  * table of contents into a record of what is left: the reader who opens it is
@@ -29,13 +34,19 @@ import { useLearningRoutes } from '@learning/lib/learning-routes';
 export function CourseContents({
   spaceId,
   contentId,
+  heading = true,
 }: {
   spaceId: string;
   /** The lesson being read, marked in the list. */
   contentId: string;
+  /** Whether to open with the course's own name, count and way back. */
+  heading?: boolean;
 }) {
   const routes = useLearningRoutes();
-  const { data: spaceData } = useSpace(spaceId);
+  // Asked for only when it is drawn: the header is the only thing here that
+  // needs the course itself, and a rail that shows no header should not be
+  // fetching one.
+  const { data: spaceData } = useSpace(heading ? spaceId : '');
   const space = spaceData?.space;
 
   const { data: outline, isLoading } = useSections(spaceId);
@@ -50,28 +61,30 @@ export function CourseContents({
 
   return (
     <div className="grid gap-4">
-      <div className="flex items-center gap-3 border-b border-border/60 pb-3">
-        <Link
-          href={routes.course(spaceId)}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 transition-colors hover:text-foreground"
-        >
-          <ChevronLeftIcon className="size-4 shrink-0 text-muted-foreground" />
-          {space ? (
-            <SpaceAvatar space={space} size="sm" />
-          ) : (
-            <Skeleton className="size-6 rounded-md" />
-          )}
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-            {space?.title ?? 'Course'}
-          </span>
-        </Link>
+      {heading && (
+        <div className="flex items-center gap-3 border-b border-border/60 pb-3">
+          <Link
+            href={routes.course(spaceId)}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 transition-colors hover:text-foreground"
+          >
+            <ChevronLeftIcon className="size-4 shrink-0 text-muted-foreground" />
+            {space ? (
+              <SpaceAvatar space={space} size="sm" />
+            ) : (
+              <Skeleton className="size-6 rounded-md" />
+            )}
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+              {space?.title ?? 'Course'}
+            </span>
+          </Link>
 
-        {lessons > 0 && (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {lessons} lesson{lessons === 1 ? '' : 's'}
-          </span>
-        )}
-      </div>
+          {lessons > 0 && (
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+              {lessons} lesson{lessons === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid gap-2 px-2.5">

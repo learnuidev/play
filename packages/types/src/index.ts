@@ -1211,6 +1211,34 @@ export interface QuizPaperResponse {
   lastAttempt?: QuizAttempt;
 }
 
+/**
+ * One answer, checked on its own rather than handed in with the rest.
+ *
+ * The paper is handed in once, at the end, and that is what records an attempt;
+ * a check is a look at one question while it is still on the card, and it
+ * records nothing. See `QuizCheckResponse`.
+ */
+export interface CheckQuizAnswerPayload {
+  questionId: string;
+  optionId: string;
+}
+
+/**
+ * What checking one answer answers with.
+ *
+ * The right option's id and the explanation, which are the parts of the key a
+ * learner is entitled to the moment they have answered — and the reason checking
+ * happens on the server: a page that could say "correct" on its own would have
+ * to have been given the key first.
+ */
+export interface QuizCheckResponse {
+  questionId: string;
+  optionId: string;
+  correct: boolean;
+  correctOptionIds: string[];
+  explanation?: string;
+}
+
 /** One answer on a sheet being handed in. */
 export interface QuizAttemptSubmission {
   questionId: string;
@@ -1221,6 +1249,16 @@ export interface QuizAttemptSubmission {
 export interface SubmitQuizAttemptPayload {
   /** A question left out of the list is one they skipped. */
   answers: QuizAttemptSubmission[];
+  /**
+   * The order each question's options were shown in, by question id.
+   *
+   * The options are dealt afresh on every sitting — the answer should not be
+   * where the author wrote it — and the page is the only party that saw the hand
+   * it was dealt. Sending it back is what lets the recorded attempt read in the
+   * order it was sat; leave it out and the attempt falls back to the author's
+   * order, which is a worse record and no less correct.
+   */
+  order?: Record<string, string[]>;
 }
 
 /**
