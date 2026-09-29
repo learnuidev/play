@@ -13,6 +13,8 @@ import {
   configFile,
   configProblems,
   listStages,
+  ownershipOf,
+  ownsEverything,
   readConfig,
   stageOutputs,
   type StageConfig,
@@ -390,26 +392,38 @@ export function buildPlan(stage: string): PlanStep[] {
    * The config file, and the one step that makes "a new environment" mean
    * something.
    *
-   * A stage that already has a file skips this. A stage that does not gets one
-   * two ways, and which one applies is not a preference:
+   * A stage that already has a file skips this. For a stage that does not there
+   * are exactly two cases, and they are not interchangeable:
    *
-   * - If the legacy Serverless stack `play-backend-<stage>` is still there, the
-   *   documented path works — `import-state.mjs` reads the real resources out
-   *   of AWS and writes what it found. It is read-only, and it merges rather
-   *   than overwrites.
-   * - If it is not — which is the case for every stage that did not exist
-   *   before the CDK migration, and for `dev` since the legacy stack was torn
-   *   down — there is nothing to discover, and the file is seeded from a stage
-   *   that already has one. **That is the honest answer, not a shortcut**: what
-   *   a stage imports is the same tables, the same bucket, the same
-   *   distribution and the same user pool, because those are shared. A stage
-   *   creates its own API, its own media roles and its own pre sign-up trigger,
-   *   and nothing that holds data.
+   * - **The legacy Serverless stack `play-backend-<stage>` is still there.** The
+   *   stage predates the CDK migration and its data is real, so the documented
+   *   path applies: `import-state.mjs` reads the deployed resources out of AWS
+   *   and writes their physical names. This is what `dev` did, and it is the
+   *   only case in which a stage imports anything.
+   *
+   * - **There is no legacy stack.** The stage is new, so there is nothing to
+   *   discover and nothing to import. The file is written with `ownership` set
+   *   for all three groups, which is what tells the stacks to **create** the
+   *   tables, the bucket, the distribution and the user pool rather than reach
+   *   for somebody else's. Everything created is named after the stage, is
+   *   empty, and is retained if the stack is deleted.
+   *
+   * The difference between the two is the difference between *a second
+   * deployment of dev's data* and *a new environment*. Seeding a new stage from
+   * `play-dev.json` would copy `ownership: false` and dev's 27 physical table
+   * names along with it — which reads like a new environment and behaves like a
+   * second front door to the same database. This step does not do that.
+   *
+   * What *is* carried over is the settings that are product configuration rather
+   * than per-environment state: the mail addresses, the Google client id, the
+   * callback URLs, and the CloudFront signing key. Those are the same product in
+   * every environment, and a stage that invented its own would be a stage whose
+   * Google sign-in does not work.
    */
   const config: PlanStep = {
     id: "config",
     title: "The environment's resources are named",
-    detail: `\`${stageConfigPath}\` is what the stacks stand on: the physical name of every table, the videos bucket, the CloudFront distribution and the Cognito user pool, all of which are imported rather than created. A stage without it cannot synthesize at all.`,
+    detail: `\`${stageConfigPath}\` is what the stacks stand on. A stage that exists already imports the tables, bucket, distribution and pool by physical name; a **new** stage has no such names and is written to create all of them instead, named \`play-<stage>-*\`. Either way a stage without this file cannot synthesize at all.`,
     satisfiedLabel: "On disk",
     check: async (ctx) => {
       const loaded = readConfig(ctx.stage);
@@ -424,10 +438,16 @@ export function buildPlan(stage: string): PlanStep[] {
           note: `${stageConfigPath} names account ${loaded!.account}, this profile is ${identity.account}`,
         };
       }
+      if (ownsEverything(loaded)) {
+        return {
+          satisfied: true,
+          note: `${stageConfigPath} — a new environment, creating its own tables, media and pool`,
+        };
+      }
       const tables = Object.keys(loaded!.existing?.tables ?? {}).length;
       return {
         satisfied: true,
-        note: `${tables} tables · bucket ${loaded!.existing?.videosBucket} · pool ${loaded!.existing?.userPoolId}`,
+        note: `${tables} tables imported · bucket ${loaded!.existing?.videosBucket} · pool ${loaded!.existing?.userPoolId}`,
       };
     },
     apply: async (ctx) => {
@@ -457,7 +477,7 @@ export function buildPlan(stage: string): PlanStep[] {
           throw new Error(`import-state wrote a file that is still incomplete: ${problems.join("; ")}`);
         }
         return {
-          note: `discovered from play-backend-${ctx.stage} · ${Object.keys(loaded!.existing?.tables ?? {}).length} tables`,
+          note: `discovered from play-backend-${ctx.stage} · ${Object.keys(loaded!.existing?.tables ?? {}).length} tables imported`,
         };
       }
 
@@ -465,36 +485,46 @@ export function buildPlan(stage: string): PlanStep[] {
       if (!seedStage) {
         throw new Error(
           `No legacy stack 'play-backend-${ctx.stage}' to discover from, and no other stage's ` +
-            `config to seed from. Write ${stageConfigPath} by hand — it is the file that says which ` +
-            "tables, bucket, distribution and user pool this environment imports.",
+            `config to take the product settings from. Write ${stageConfigPath} by hand — it is ` +
+            "the file that says what this environment creates or imports.",
         );
       }
 
       const seed = readConfig(seedStage)!;
-      ctx.progress(`seeding from ${seedStage}`);
+      const identity = ctx.data.identity as { account?: string } | undefined;
+
+      ctx.progress(`writing a new environment`);
       ctx.log(
         "note",
-        `No 'play-backend-${ctx.stage}' stack to read — seeding ${stageConfigPath} from play-${seedStage}.json.`,
+        `No 'play-backend-${ctx.stage}' stack to read, so ${ctx.stage} is a **new environment**: it creates its own tables, videos bucket, CloudFront distribution and Cognito user pool, all named play-${ctx.stage}-* and all empty.`,
       );
       ctx.log(
         "note",
-        "What is imported is shared, so the tables, the bucket, the distribution and the pool carry over unchanged; this stage creates its own API, media roles and pre sign-up trigger.",
+        `It imports nothing, so it cannot read or write another environment's data. The product settings — mail, the Google client id, the callback URLs and the CloudFront signing key — are copied from play-${seedStage}.json, because they are the same product in every environment.`,
       );
 
       const seeded: StageConfig = {
-        ...seed,
         stage: ctx.stage,
-        account: seed.account,
-        region: seed.region,
+        account: identity?.account ?? seed.account,
+        region: ctx.region ?? seed.region,
+        // The whole of the difference. Three `true`s is what makes the stacks
+        // build the stateful resources instead of importing them, and there is
+        // deliberately no `existing` block: there is nothing to name.
+        ownership: { tables: true, media: true, auth: true },
+        ...(seed.mail ? { mail: seed.mail } : {}),
+        ...(seed.auth ? { auth: seed.auth } : {}),
+        ...(seed.cloudFrontPrivateKeyParam
+          ? { cloudFrontPrivateKeyParam: seed.cloudFrontPrivateKeyParam }
+          : {}),
+        ...(seed.cloudFrontPublicKeyParam
+          ? { cloudFrontPublicKeyParam: seed.cloudFrontPublicKeyParam }
+          : {}),
       };
-      // The mail settings name the local frontends, which move with the port
-      // rather than with the stage — so they are carried over as they are, and
-      // the note says so rather than leaving it to be noticed.
       fs.mkdirSync(path.dirname(configFile(ctx.stage)), { recursive: true });
       fs.writeFileSync(configFile(ctx.stage), `${JSON.stringify(seeded, null, 2)}\n`);
 
       return {
-        note: `seeded from ${seedStage} · ${Object.keys(seeded.existing?.tables ?? {}).length} tables, pool ${seeded.existing?.userPoolId}`,
+        note: `new environment written · it creates its own tables, media and user pool`,
       };
     },
   };
@@ -646,10 +676,17 @@ export function buildPlan(stage: string): PlanStep[] {
     id: "handover",
     title: "The videos bucket has one owner",
     detail:
-      "The bucket is imported and can notify one function for `uploads/`, so two stages cannot both process uploads. Handing it over is what lets this stage's deploy add its own rule — and it **takes video processing away from whichever stage holds it**, until you hand it back. Uploads are not processed between this step and the deploy that follows.",
+      "Only matters when the bucket is **imported**: one bucket can notify one function for `uploads/`, so two stages cannot both process uploads, and handing it over **takes video processing away from whichever stage held it**. An environment that creates its own bucket has no one to hand anything to — this step is a check mark and nothing happens.",
     satisfiedLabel: "One owner",
     timeoutMs: 5 * 60_000,
     check: async (ctx) => {
+      if (ownershipOf(readConfig(ctx.stage)).media) {
+        return {
+          satisfied: true,
+          note: `this environment creates its own bucket — no other stage notifies it`,
+        };
+      }
+
       const result = await exec(
         ctx,
         "node",
@@ -680,6 +717,10 @@ export function buildPlan(stage: string): PlanStep[] {
       };
     },
     apply: async (ctx) => {
+      if (ownershipOf(readConfig(ctx.stage)).media) {
+        return { note: "nothing to hand over — this environment's bucket is its own" };
+      }
+
       const result = await exec(
         ctx,
         "node",
@@ -700,6 +741,76 @@ export function buildPlan(stage: string): PlanStep[] {
           ? `video processing moved off ${removed.join(", ")}; this stage's deploy adds its own rule`
           : "the colliding rules were removed; this stage's deploy adds its own",
       };
+    },
+  };
+
+  /**
+   * The Google client secret, in Secrets Manager — for a pool this stage creates.
+   *
+   * **Only matters when the pool is created.** CloudFormation refuses an SSM
+   * Secure reference in `AWS::Cognito::UserPoolIdentityProvider`'s
+   * `ProviderDetails.client_secret` —
+   *
+   *   SSM Secure reference is not supported in:
+   *   [AWS::Cognito::UserPoolIdentityProvider/Properties/ProviderDetails/client_secret]
+   *
+   * — and refuses it in `AWS::SecretsManager::Secret`'s own `SecretString` too,
+   * so the value cannot be moved across declaratively either. A
+   * `secretsmanager` reference *is* accepted in that property, so the value has
+   * to be in Secrets Manager before the auth stack deploys, and
+   * `provision-google-secret.mjs` is what puts it there.
+   *
+   * An imported pool already has its Google provider attached — attached by
+   * hand, years ago — and no deploy touches it, so `dev` never needs this.
+   */
+  const providerSecret: PlanStep = {
+    id: "secret",
+    title: "The Google client secret can be read at deploy",
+    detail:
+      "`AWS::Cognito::UserPoolIdentityProvider` **cannot take an SSM Secure string** — CloudFormation rejects `{{resolve:ssm-secure:…}}` in `ProviderDetails.client_secret`, and rejects it in a Secrets Manager secret's own `SecretString` as well, so the value cannot be moved declaratively. `provision-google-secret.mjs` mirrors the parameter into Secrets Manager and the stack reads it from there. Only matters when this environment **creates** its pool; an imported pool already has its provider attached.",
+    satisfiedLabel: "In Secrets Manager",
+    timeoutMs: 2 * 60_000,
+    check: async (ctx) => {
+      if (!ownershipOf(readConfig(ctx.stage)).auth) {
+        return {
+          satisfied: true,
+          note: "this environment's pool is imported — its Google provider is already attached",
+        };
+      }
+
+      const result = await exec(
+        ctx,
+        "node",
+        [
+          "infra/scripts/provision-google-secret.mjs",
+          `--profile=${ctx.profile}`,
+          `--region=${ctx.region}`,
+          "--plan",
+        ],
+        { cwd: ctx.root, timeoutMs: 60_000 },
+      );
+      if (result.code !== 0) return { satisfied: false, note: failureNote(result) };
+      if (/Secret exists:\s+no/i.test(result.stdout)) {
+        return {
+          satisfied: false,
+          note: "not in Secrets Manager yet — the deploy would fail on the Google provider",
+        };
+      }
+      return { satisfied: true, note: "play/auth/google-client-secret is readable as a dynamic reference" };
+    },
+    apply: async (ctx) => {
+      const result = await exec(
+        ctx,
+        "node",
+        [
+          "infra/scripts/provision-google-secret.mjs",
+          `--profile=${ctx.profile}`,
+          `--region=${ctx.region}`,
+        ],
+        { cwd: ctx.root, timeoutMs: 2 * 60_000 },
+      );
+      assertOk(result, "provision-google-secret.mjs", 2 * 60_000);
+      return { note: "the Google client secret is in Secrets Manager" };
     },
   };
 
@@ -971,10 +1082,11 @@ export function buildPlan(stage: string): PlanStep[] {
   /**
    * The pre sign-up trigger — the one step the console reports instead of doing.
    *
-   * The pool is imported, so no deploy can set `LambdaConfig.PreSignUp`. Every
-   * stage deploys its own `link-federated-user`, and **the pool can only call
-   * one of them** — so repointing it is not a step toward a working deploy, it
-   * is a decision about which stage owns federated sign-up for everybody.
+   * **Only relevant when the pool is imported.** An imported pool's
+   * `LambdaConfig.PreSignUp` cannot be set from CDK, so every stage deploys its
+   * own `link-federated-user` and **the pool can only call one of them** —
+   * repointing it is not a step toward a working deploy, it is a decision about
+   * which stage owns federated sign-up for everybody.
    *
    * That is why this is `manual: true` rather than merely optional. An optional
    * step that applied itself would, on a staging run, quietly take sign-up away
@@ -982,12 +1094,16 @@ export function buildPlan(stage: string): PlanStep[] {
    * pressed a button labelled "deploy this environment". The check still runs
    * and still says whose the trigger is; the command to change it is printed
    * beside that, for whoever decides it should be.
+   *
+   * An environment that creates its own pool has none of this: the pool is built
+   * with `preSignUp` already pointing at its own function, so the step passes
+   * without anybody deciding anything.
    */
   const trigger: PlanStep = {
     id: "trigger",
     title: "The pool's pre sign-up trigger points here",
     detail:
-      "The pool is imported, so nothing deployed can set `LambdaConfig.PreSignUp` — `adopt-cognito.mjs` calls `UpdateUserPool` instead, reading the pool first because that call replaces every setting it is not given. One pool, one trigger: repointing it takes federated sign-up away from whichever stage had it, so this is reported rather than done.",
+      "Only matters when the pool is **imported**: nothing deployed can set `LambdaConfig.PreSignUp` on someone else's pool, so `adopt-cognito.mjs` calls `UpdateUserPool` instead, reading the pool first because that call replaces every setting it is not given. One pool, one trigger — repointing it takes federated sign-up away from whichever stage had it, so this is reported rather than done. An environment that creates its own pool wires the trigger at deploy time and this is a check mark.",
     optional: true,
     manual: true,
     satisfiedLabel: "Already points here",
@@ -1002,6 +1118,13 @@ export function buildPlan(stage: string): PlanStep[] {
     timeoutMs: 3 * 60_000,
     check: async (ctx) => {
       const loaded = readConfig(ctx.stage);
+      if (ownershipOf(loaded).auth) {
+        return {
+          satisfied: true,
+          note: `this environment's own pool, wired to play-${ctx.stage}-link-federated-user at deploy`,
+        };
+      }
+
       const poolId = loaded?.existing?.userPoolId;
       if (!poolId) return { satisfied: false, note: "the config names no user pool" };
 
@@ -1049,6 +1172,7 @@ export function buildPlan(stage: string): PlanStep[] {
     bundle,
     synth,
     handover,
+    providerSecret,
     deploy,
     verify,
     point,

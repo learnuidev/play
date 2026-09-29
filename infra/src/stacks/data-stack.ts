@@ -3,6 +3,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import type { Construct } from 'constructs';
 
 import type { PlayConfig } from '../config';
+import { importedResources } from '../config';
 import { kebab } from '../naming';
 import { TABLES } from '../generated/service';
 import type { KeySchemaEntry, TableSpec } from '../types';
@@ -12,31 +13,34 @@ export interface PlayDataStackProps extends StackProps {
 }
 
 /**
- * The 23 DynamoDB tables.
+ * The DynamoDB tables — created for a new environment, imported for `dev`.
  *
- * **This stack creates nothing by default, and that is the whole design.**
- * Every table already exists and holds the product: courses, lessons,
- * memberships, comments, credentials. Creating a table with one of these names
- * to "adopt" it fails the deploy with `already exists` — or, worse, replaces it,
+ * ## Which of the two is `ownership.tables`
+ *
+ * **`true` — a new environment.** Every table is created, named
+ * `play-<stage>-<table>`, empty, on-demand, with point-in-time recovery on from
+ * the first write and `RETAIN` so a stack delete does not take the data. This is
+ * what deploying a stage that has never existed does, and it is the default the
+ * deploy console writes.
+ *
+ * **`false` — `dev`, and only `dev`.** Every table is imported with
+ * `Table.fromTableName`. An imported table is *unmanaged*: CloudFormation does
+ * not put it in this stack's template, will not change its properties, and will
+ * not delete it. The tables are the product — courses, memberships, comments,
+ * credentials — and they already exist, so creating one with an existing name to
+ * "adopt" it would fail the deploy with `already exists` or, worse, replace it,
  * and a replaced table is an empty table.
  *
- * So each one is imported with `Table.fromTableName`. An imported table is
- * *unmanaged*: CloudFormation does not put it in this stack's template, will not
- * change its properties, and will not delete it. `cdk deploy PlayDataStack-dev`
- * on a fresh checkout is a no-op that proves the account, the region and the
- * names all line up — which is a useful thing to be able to run.
+ * That is why `cdk deploy PlayDataStack-dev` on a fresh checkout is a no-op that
+ * proves the account, the region and the names all line up — a useful thing to
+ * be able to run. It is also why a new stage must **not** copy `dev`'s config:
+ * `false` plus dev's table names is not a new environment, it is a second front
+ * door to dev's database.
  *
- * The alternative — `cdk import`, which puts the real resource under
- * CloudFormation's management — is deliberately not used yet: it cannot be done
- * while the legacy stack still owns these tables, and doing it wrong is how a
- * table gets replaced.
- *
- * Phase E of `docs/migration.md` is the day that changes. Setting
- * `ownership.tables` to `true` in `infra/config/play-<stage>.json` makes this
- * stack create the tables instead — from the key schemas in
- * `src/generated/service.ts`, which is what preserved them — and the way to use
- * that is to create new tables under new names and copy the data across, not to
- * point it at the existing ones.
+ * The alternative to importing — `cdk import`, which puts the real resource
+ * under CloudFormation's management — is deliberately not used yet: it cannot be
+ * done while the legacy stack still owns these tables, and doing it wrong is how
+ * a table gets replaced. Phase E of `docs/migration.md` is the day that changes.
  */
 export class PlayDataStack extends Stack {
   /** Every table, keyed by the legacy logical id and by environment variable. */
@@ -50,7 +54,7 @@ export class PlayDataStack extends Stack {
 
     for (const spec of TABLES) {
       if (!config.ownership.tables) {
-        const name = config.existing.tables[spec.id];
+        const name = importedResources(config).tables[spec.id];
         if (!name) {
           throw new Error(
             `No physical name for ${spec.id} in infra/config/play-${config.stage}.json. ` +

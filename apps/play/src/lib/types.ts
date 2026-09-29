@@ -144,8 +144,11 @@ export interface EnvironmentView {
   hasConfig: boolean;
   account: string | null;
   region: string | null;
+  /** Tables this environment *imports*. Zero when it creates its own. */
   tables: number;
   ownership: { tables: boolean; media: boolean; auth: boolean } | null;
+  /** True when this environment creates the tables, media and pool itself. */
+  ownsEverything: boolean;
   stacks: StackSummary[];
   /** Every one of the four root stacks is `*_COMPLETE`. */
   deployed: boolean;

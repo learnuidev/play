@@ -14,6 +14,7 @@ import type { Construct } from 'constructs';
 
 import { bundle } from '../bundling';
 import type { PlayConfig } from '../config';
+import { GOOGLE_CLIENT_SECRET_NAME, importedResources } from '../config';
 import { FUNCTIONS } from '../generated/service';
 
 export interface PlayAuthStackProps extends StackProps {
@@ -21,27 +22,35 @@ export interface PlayAuthStackProps extends StackProps {
 }
 
 /**
- * The user pool both apps sign in to, and the one Lambda that Cognito calls.
+ * The user pool the apps sign in to, and the one Lambda that Cognito calls.
  *
- * ## Everything here except the trigger is imported
+ * ## `ownership.auth` decides whether the pool is imported or created
  *
- * The pool, its app client and its domain already exist, and the pool is the
- * single most expensive thing in this account to recreate: deleting it takes
- * every account with it, including the federated ones, and there is no copy of
- * them anywhere. The app client's id is compiled into both frontends'
- * environments, so recreating the *client* is a redeploy of both apps and a
- * re-registration of every deployed origin. So all three are imported, and the
- * imports are why the pool's app client is read from
- * `infra/config/play-<stage>.json` rather than managed:
+ * - **`false` — `dev` — imports** the pool, its app client and its domain. The
+ *   pool is the single most expensive thing in this account to recreate:
+ *   deleting it takes every account with it, including the federated ones, and
+ *   there is no copy of them anywhere. The app client's id is compiled into both
+ *   frontends' environments, so recreating the *client* is a redeploy of both
+ *   apps and a re-registration of every deployed origin.
  *
- * > An imported resource is unmanaged. CDK will not change its properties and
- * > will not delete it.
+ *   The imports are why the app client is read from
+ *   `infra/config/play-<stage>.json` rather than managed:
  *
- * The practical consequence is that the callback URLs Cognito accepts are **not**
- * deployed from here. `services/api/scripts/set-auth-urls.sh` used to write an
- * SSM parameter and tell you to redeploy, because the pool was Serverless's to
- * update; it now calls Cognito directly, which is both fewer steps and the only
- * thing that can work.
+ *   > An imported resource is unmanaged. CDK will not change its properties and
+ *   > will not delete it.
+ *
+ *   The practical consequence is that the callback URLs Cognito accepts are
+ *   **not** deployed from here. `services/api/scripts/set-auth-urls.sh` used to
+ *   write an SSM parameter and tell you to redeploy, because the pool was
+ *   Serverless's to update; it now calls Cognito directly, which is both fewer
+ *   steps and the only thing that can work.
+ *
+ * - **`true` — a new environment — creates** the pool, its client and its
+ *   domain, named `play-users-<stage>` and `play-<stage>-<account>`. It is
+ *   empty, which is the point: **a new pool has no accounts in it**, so existing
+ *   users do not carry over. Its callback URLs come from
+ *   `auth.callbackUrls` and a deploy applies them, because a pool this stack
+ *   owns is one a deploy can change.
  *
  * ## The trigger Lambda, and why it lives here
  *
@@ -52,10 +61,15 @@ export interface PlayAuthStackProps extends StackProps {
  * stack already references the user pool for its authorizer — putting it in the
  * API stack would close that into a dependency cycle.
  *
- * It is deployed in both modes, so its ARN is available either way. In the
- * imported mode nothing wires it to the pool — an imported pool's `LambdaConfig`
- * cannot be set from CDK — and `infra/scripts/adopt-cognito.sh` is what points
- * the pool at it, once, during the cutover.
+ * It is deployed in both modes, so its ARN is available either way — and the
+ * wiring differs, which is the whole of what `ownership.auth` costs:
+ *
+ * - Created pool: `lambdaTriggers.preSignUp` is set from here, so the pool calls
+ *   this stage's function the moment it exists.
+ * - Imported pool: an imported pool's `LambdaConfig` cannot be set from CDK, so
+ *   nothing wires it and `infra/scripts/adopt-cognito.sh` points the pool at one
+ *   stage's function, once, during the cutover. One pool, one trigger — which is
+ *   why the console reports that step rather than applying it.
  */
 export class PlayAuthStack extends Stack {
   public readonly userPool: cognito.IUserPool;
@@ -73,7 +87,7 @@ export class PlayAuthStack extends Stack {
 
     this.googleSignInEnabled = owned
       ? Boolean(config.auth.googleClientId)
-      : config.existing.googleSignInEnabled;
+      : importedResources(config).googleSignInEnabled;
 
     this.linkFederatedUserFunction = this.createTrigger(config);
 
@@ -83,13 +97,14 @@ export class PlayAuthStack extends Stack {
       this.userPoolClientId = created.clientId;
       this.userPoolDomain = created.domain;
     } else {
+      const existing = importedResources(config);
       this.userPool = cognito.UserPool.fromUserPoolId(
         this,
         'CognitoUserPool',
-        config.existing.userPoolId,
+        existing.userPoolId,
       );
-      this.userPoolClientId = config.existing.userPoolClientId;
-      this.userPoolDomain = config.existing.userPoolDomain;
+      this.userPoolClientId = existing.userPoolClientId;
+      this.userPoolDomain = existing.userPoolDomain;
     }
 
     // Lets Cognito invoke the trigger above. This is a permission *about* the
@@ -222,14 +237,25 @@ export class PlayAuthStack extends Stack {
     });
 
     if (this.googleSignInEnabled) {
-      // The client secret is the one secret this path needs, and it is read as a
-      // CloudFormation dynamic reference rather than looked up at synth: the
-      // value is resolved by CloudFormation at deploy, so it is never in the
-      // synthesized template, in `cdk.out`, or in this process.
+      // The client secret, as a CloudFormation dynamic reference so it is never
+      // in the synthesized template, in `cdk.out`, or in this process — the
+      // value is resolved by CloudFormation at deploy.
+      //
+      // **Secrets Manager, not SSM**, and that is a hard constraint rather than
+      // a preference: CloudFormation refuses an SSM Secure reference in this
+      // exact property —
+      //
+      //   SSM Secure reference is not supported in:
+      //   [AWS::Cognito::UserPoolIdentityProvider/Properties/ProviderDetails/client_secret]
+      //
+      // — and refuses it in `AWS::SecretsManager::Secret`'s `SecretString` as
+      // well, so the value cannot be moved across declaratively either.
+      // `infra/scripts/provision-google-secret.mjs` does the copy, and the plan
+      // runs it before this stack deploys.
       new cognito.UserPoolIdentityProviderGoogle(this, 'GoogleIdentityProvider', {
         userPool,
         clientId: config.auth.googleClientId,
-        clientSecretValue: SecretValue.ssmSecure('/play/auth/google-client-secret', '1'),
+        clientSecretValue: SecretValue.secretsManager(GOOGLE_CLIENT_SECRET_NAME),
         scopes: ['email', 'profile', 'openid'],
         attributeMapping: {
           email: cognito.ProviderAttribute.GOOGLE_EMAIL,

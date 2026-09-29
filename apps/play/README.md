@@ -26,7 +26,7 @@ some of which fail in ways that name nothing anybody can act on. Two of them are
 idempotent scripts it is easy to run twice and hard to know you needed to run
 once.
 
-So the plan is written down, in `src/server/plan.ts`, as twelve steps. Each step
+So the plan is written down, in `src/server/plan.ts`, as thirteen steps. Each step
 is a **check** and an **apply**: the check asks "is this already true?", and when
 it is, the step is a check mark with the reason beside it and nothing is run.
 That is what makes a second press of the button cheap — on an environment that is
@@ -40,24 +40,45 @@ already up, most of the plan reports *already satisfied*.
 | 4 | CDK is bootstrapped in this account and region | the `CDKToolkit` stack is settled |
 | 5 | The handlers are bundled | the bundler reports nothing to rebuild |
 | 6 | The templates synthesize | never — this one validates |
-| 7 | The videos bucket has one owner | the S3 handover finds nothing overlapping |
-| 8 | The four stacks deploy | never — `cdk deploy` is run, and reports "nothing to change" |
-| 9 | Every stack is complete, with its outputs | all four root stacks are settled and carry `ApiUrl`, the pool and its client |
-| 10 | The three apps point at it | every `.env.local` already reads this stage's `ApiUrl` |
-| 11 | The API answers | `GET /catalog/courses` returns 200 |
-| 12 | The pool's pre sign-up trigger points here | the pool already calls `play-<stage>-link-federated-user` |
+| 7 | The videos bucket has one owner | the bucket is this environment's, **or** the S3 handover finds nothing overlapping |
+| 8 | The Google client secret can be read at deploy | the pool is imported, **or** the secret is already in Secrets Manager |
+| 9 | The four stacks deploy | never — `cdk deploy` is run, and reports "nothing to change" |
+| 10 | Every stack is complete, with its outputs | all four root stacks are settled and carry `ApiUrl`, the pool and its client |
+| 11 | The three apps point at it | every `.env.local` already reads this stage's `ApiUrl` |
+| 12 | The API answers | `GET /catalog/courses` returns 200 |
+| 13 | The pool's pre sign-up trigger points here | the pool is this environment's, **or** it already calls `play-<stage>-link-federated-user` |
 
-Steps 5 and 8 have no check on purpose, and they are the two where running the
+Steps 5 and 9 have no check on purpose, and they are the two where running the
 tool *is* the check: `bundle.mjs` keeps esbuild's metafile and knows what is
 stale, and `cdk deploy` against an unchanged environment is a no-op. Both report
 "nothing to do" as a success, and the run draws that as a satisfied step rather
 than a tick for work that did not happen.
 
+### Step 8, and a CloudFormation limitation worth knowing
+
+`AWS::Cognito::UserPoolIdentityProvider` **cannot take an SSM Secure string**.
+CloudFormation rejects the reference and names the property:
+
+> SSM Secure reference is not supported in:
+> [AWS::Cognito::UserPoolIdentityProvider/Properties/ProviderDetails/client_secret]
+
+It rejects `{{resolve:ssm-secure:…}}` in `AWS::SecretsManager::Secret`'s own
+`SecretString` too, so the value cannot even be moved across declaratively.
+A `secretsmanager` reference *is* accepted there, so step 8 runs
+`infra/scripts/provision-google-secret.mjs`, which copies the parameter into
+Secrets Manager, and the auth stack reads it from there.
+
+This only applies when the stack **creates** the pool — an imported pool already
+has its Google provider attached and no deploy touches it — which is why the
+step is a check mark on `dev` and real work on a new environment.
+
 ### Two steps the console is careful about
 
-The bucket and the user pool are imported **and shared**, and each has something
-exactly one stage can own. Both are steps 7 and 12, and they are treated
-differently because their situations are different:
+Both exist because a *migrated* stage shares its bucket and its user pool with
+every other migrated stage, and each of those has something exactly one stage can
+own. They are steps 7 and 13 — and **neither does anything for an environment that
+creates its own**: a new environment's bucket belongs to nobody else, and its pool
+is wired to its own trigger at deploy time, so both come back as a check mark.
 
 - **The `uploads/` notification (step 7) must be handed over** — CDK's
   conservative handler appends its own rule to a bucket it did not create, and
@@ -67,7 +88,7 @@ differently because their situations are different:
   processing away from whichever stage had it. It therefore says so in its
   detail, names the function it is about to displace in its check, and names the
   one it moved from in its note.
-- **The pre sign-up trigger (step 12) is reported, not moved.** It is the one
+- **The pre sign-up trigger (step 13) is reported, not moved.** It is the one
   step with `manual: true`: its check still runs and still says whose the trigger
   is, but the step stops there instead of applying. An optional step that applied
   itself would, on a staging run, quietly take federated sign-up away from `dev`
@@ -76,37 +97,59 @@ differently because their situations are different:
   in the transcript beside what the check found, for whoever decides it should
   be.
 
+Step 13 is optional because a *migrated* stage's pool is **imported and shared**
+— one pool, one pre sign-up trigger, and every stage deploys its own function.
+Repointing it takes federated sign-up away from whichever stage had it, which is
+a decision about which environment owns sign-up, not a step toward a working
+deploy.
 
-Step 12 is optional because the user pool is **imported and shared** — one pool,
-one pre sign-up trigger, and every stage deploys its own function. Repointing it
-takes federated sign-up away from whichever stage had it, which is a decision
-about which environment owns sign-up, not a step toward a working deploy.
-
-## A new environment is a stage, and a stage is cheap
+## A new environment creates everything
 
 The unit is what the CDK app calls a **stage**: `cdk deploy --context stage=dev`
 deploys `PlayApiStack-dev` and its three siblings.
 
 A stage that does not exist yet needs one thing — `infra/config/play-<stage>.json`
-— and step 3 writes it. If the legacy `play-backend-<stage>` stack is still
-there, it runs `import-state.mjs`, which is the documented discovery path and is
-read-only. If it is not — which is the case for every stage that did not exist
-before the CDK migration — the file is **seeded from a stage that has one**.
+— and step 3 writes it. Which of two files it writes depends on whether the stage
+already exists:
 
-That second path is not a shortcut. It is the honest answer, because of the rule
-the whole backend is built on:
+- **The legacy `play-backend-<stage>` stack is still there.** The stage predates
+  the CDK migration and its data is real, so it runs `import-state.mjs`, the
+  documented read-only discovery path, and the file names the resources it found.
+  This is what `dev` did, and it is the only case in which a stage imports
+  anything.
+- **There is no legacy stack.** The stage is new, so there is nothing to discover
+  and nothing to import. The file is written with `ownership` set for all three
+  groups, which tells the stacks to **create** the tables, the bucket, the
+  distribution and the user pool, all named `play-<stage>-*`.
 
-> **The tables, the videos bucket, the CloudFront distribution and the Cognito
-> user pool are imported.** An imported resource is unmanaged: CloudFormation
-> will not change its properties and will not delete it.
+That second path is the point of the whole thing:
 
-What a stage imports is the same resources, because they are shared. A new stage
-creates its own API, its own media roles and its own pre sign-up trigger, and
-nothing that holds data. The console says so on the card, above the button,
-before it is pressed.
+> **A new environment creates everything.** Its own 27 tables, its own videos
+> bucket and CloudFront distribution, its own Cognito user pool — all empty, all
+> named after the stage, and all retained if the stack is deleted. It imports
+> nothing, so it cannot read or write another environment's data.
 
-Creating resources a stage would *own* is `ownership` in that config file, and
-[`infra/config/README.md`](../../infra/config/README.md) says why it is `false`.
+Not *everything* is new: the mail addresses, the Google client id, the callback
+URLs and the CloudFront signing key are **product** configuration rather than
+per-environment state, so they are carried over from a stage that has them. A
+stage that invented its own would be a stage whose Google sign-in does not work.
+
+### Why `dev` is different
+
+`dev` sets all three switches to `false` and imports. Its resources predate this
+CDK app by years and hold the product, and an imported resource is *unmanaged*:
+CloudFormation will not change its properties and will not delete it. That is the
+entire reason the migration did not lose any data.
+
+`false` is not the default for a new stage, and a new stage does not get it.
+Seeding one from `play-dev.json` would copy `ownership: false` **and** dev's 27
+physical table names — which reads like a new environment and behaves like a
+second front door to dev's database. The console does not do that.
+
+[`infra/config/README.md`](../../infra/config/README.md) has the full contract,
+including what turning a migrated stage into an owning one costs: a new user pool
+has no accounts in it.
+
 The console shows the three switches as they are and never offers to flip them.
 
 ## The frontends, and how "a specific environment" works
@@ -144,7 +187,7 @@ src/server/
   exec.ts          running a process and turning its output into lines
   aws.ts           the AWS CLI as a function or two — every call is a read
   environments.ts  infra/config/play-<stage>.json, and the stack outputs an app needs
-  plan.ts          THE PLAN: the twelve steps, their checks and their work
+  plan.ts          THE PLAN: the thirteen steps, their checks and their work
   run.ts           one run at a time, its transcript, and its event stream
   services.ts      the three dev servers, and cleaning up after them
 

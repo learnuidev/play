@@ -14,10 +14,10 @@ import { PlayMediaStack } from '../src/stacks/media-stack';
  *
  * | Stack | Holds | Deploy frequency |
  * | --- | --- | --- |
- * | `PlayDataStack` | The 23 tables — imported | Rarely |
- * | `PlayMediaStack` | The videos bucket and distribution — imported — plus the two media roles | Rarely |
- * | `PlayAuthStack` | The user pool — imported — and the pre sign-up trigger | Occasionally |
- * | `PlayApiStack` | The 134 functions, their routes, and the IAM | Constantly |
+ * | `PlayDataStack` | The tables | Rarely |
+ * | `PlayMediaStack` | The videos bucket and distribution, plus the two media roles | Rarely |
+ * | `PlayAuthStack` | The user pool and the pre sign-up trigger | Occasionally |
+ * | `PlayApiStack` | The functions, their routes, and the IAM | Constantly |
  *
  * That split is the answer to the problem this migration exists to solve.
  * CloudFormation caps a stack at 500 resources, and the single Serverless stack
@@ -26,16 +26,30 @@ import { PlayMediaStack } from '../src/stacks/media-stack';
  * the ceiling still exists; it is just assigned. Adding a route touches one
  * stack, and that stack has room.
  *
- * The three stacks that hold existing resources **import them and create
- * nothing**, so deploying this app changes no data. That is the property to keep
- * in mind when reading the stacks: `cdk deploy --all` on the first run is
- * expected to be close to a no-op for everything but `PlayApiStack`, and if it
- * is not, something is wrong.
+ * ## What each stack does with its stateful resources is `ownership`
+ *
+ * The first three stacks each hold one of the three stateful groups — the
+ * tables, the media and the pool — and `ownership` in
+ * `infra/config/play-<stage>.json` decides, per group, whether the stack creates
+ * it or imports it:
+ *
+ * - **A new environment** sets all three `true` and imports nothing. Deploying
+ *   it creates its own tables, bucket, distribution and pool, named
+ *   `play-<stage>-*` and empty. This is what the deploy console writes for a
+ *   stage that has never existed.
+ * - **A migrated stage** sets all three `false`. Every resource is imported by
+ *   physical name and is therefore *unmanaged*: CloudFormation will not change
+ *   it and will not delete it. `cdk deploy --all` is then close to a no-op for
+ *   everything but `PlayApiStack`, and if it is not, something is wrong.
+ *
+ * `false` exists for one reason: `dev`'s resources predate this app and hold the
+ * product. It is not the default for a new environment, and a stage that copies
+ * it inherits dev's data rather than getting its own.
  *
  * The stage is a context value, so one app describes every deployment:
  *
  *   cdk deploy --all --context stage=dev
- *   cdk synth --all --context stage=prod
+ *   cdk synth --all --context stage=staging
  */
 
 const app = new App();
@@ -55,7 +69,7 @@ const env = { account: config.account, region: config.region };
 const data = new PlayDataStack(app, `PlayDataStack-${stage}`, {
   env,
   config,
-  description: 'Play data: the DynamoDB tables, imported rather than recreated',
+  description: 'Play data: the DynamoDB tables — created, or imported from the migrated backend',
 });
 
 const media = new PlayMediaStack(app, `PlayMediaStack-${stage}`, {
@@ -67,7 +81,7 @@ const media = new PlayMediaStack(app, `PlayMediaStack-${stage}`, {
 const auth = new PlayAuthStack(app, `PlayAuthStack-${stage}`, {
   env,
   config,
-  description: 'Play auth: the Cognito user pool, imported, and the pre sign-up trigger',
+  description: 'Play auth: the Cognito user pool and the pre sign-up trigger',
 });
 
 new PlayApiStack(app, `PlayApiStack-${stage}`, {

@@ -76,17 +76,87 @@ export interface PlayConfig {
   stage: string;
   account: string;
   region: string;
-  existing: ExistingResources;
+  /**
+   * The names of the resources this environment imports.
+   *
+   * **Absent on an environment that owns everything**, which is what a new stage
+   * is: it imports nothing, so there is nothing to name. It is required exactly
+   * to the extent that `ownership` says something is imported, and `validate`
+   * checks it field by field rather than demanding the whole block.
+   */
+  existing?: ExistingResources;
   mail: MailSettings;
   auth: AuthSettings;
   /** The *name* of the CloudFront signing key parameter. Never the key. */
   cloudFrontPrivateKeyParam: string;
+  /** The *name* of the parameter holding that key's public half. */
+  cloudFrontPublicKeyParam: string;
   ownership: Ownership;
 }
+
+/**
+ * What a config that says nothing about ownership means.
+ *
+ * False for all three, because the configs that predate this field are `dev` and
+ * the migrated stage — the ones that genuinely import. A stage written by the
+ * console declares its own `ownership` and never reaches this default.
+ */
+export const IMPORT_EVERYTHING: Ownership = {
+  tables: false,
+  media: false,
+  auth: false,
+};
+
+/** The same switch, with the "not stated" case resolved. */
+export function ownershipOf(config: PlayConfig): Ownership {
+  return config.ownership ?? IMPORT_EVERYTHING;
+}
+
+/** True when this environment creates all of its own stateful resources. */
+export function ownsEverything(config: PlayConfig): boolean {
+  const ownership = ownershipOf(config);
+  return ownership.tables && ownership.media && ownership.auth;
+}
+
+/** Where the CloudFront public key lives when the config does not say. */
+export const DEFAULT_CLOUDFRONT_PUBLIC_KEY_PARAM = '/play/cloudfront/public-key';
+
+/**
+ * Where a **created** user pool reads the Google client secret from.
+ *
+ * Secrets Manager rather than SSM, and not by preference:
+ * `AWS::Cognito::UserPoolIdentityProvider` rejects an SSM Secure reference in
+ * `ProviderDetails.client_secret` outright — "SSM Secure reference is not
+ * supported in: [...]" — and rejects it in `AWS::SecretsManager::Secret`'s
+ * `SecretString` too, so the value cannot even be moved across declaratively.
+ * A `secretsmanager` reference *is* accepted there.
+ *
+ * `infra/scripts/provision-google-secret.mjs` copies the SSM parameter into
+ * this secret, and the parameter stays the source of truth.
+ */
+export const GOOGLE_CLIENT_SECRET_NAME = 'play/auth/google-client-secret';
 
 /** Where `import-state.mjs` writes, and where this reads. */
 export function configPath(stage: string): string {
   return path.join(CONFIG_DIR, `play-${stage}.json`);
+}
+
+/**
+ * The names of the imported resources, for a stack that has decided to import.
+ *
+ * `loadConfig` has already refused a config that imports something and does not
+ * name it, so reaching the throw here means a construct was handed a config
+ * that never went through validation — worth a sentence rather than a
+ * `undefined` in a bucket ARN.
+ */
+export function importedResources(config: PlayConfig): ExistingResources {
+  if (!config.existing) {
+    throw new Error(
+      `infra/config/play-${config.stage}.json has no 'existing' block, but a stack that ` +
+        'imports was built from it. Either the config is wrong or the stack ignored ownership.',
+    );
+  }
+  return config.existing;
 }
 export function loadConfig(stage: string): PlayConfig {
   const file = configPath(stage);
@@ -105,7 +175,18 @@ export function loadConfig(stage: string): PlayConfig {
     );
   }
 
-  const config = JSON.parse(fs.readFileSync(file, 'utf8')) as PlayConfig;
+  const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as PlayConfig;
+
+  // Defaults are applied before validation, never after: a config is checked in
+  // the shape the stacks will actually read it in, so "ownership is missing"
+  // cannot pass here and become a stack-sized surprise later.
+  const config: PlayConfig = {
+    ...parsed,
+    ownership: ownershipOf(parsed),
+    cloudFrontPublicKeyParam:
+      parsed.cloudFrontPublicKeyParam ?? DEFAULT_CLOUDFRONT_PUBLIC_KEY_PARAM,
+  };
+
   const problems = validate(config);
   if (problems.length > 0) {
     throw new Error(`${file} is incomplete:\n  ${problems.join('\n  ')}`);
@@ -120,6 +201,11 @@ export function loadConfig(stage: string): PlayConfig {
  * Lambda that reads that table, after a deploy, in production. A missing
  * distribution domain fails as a broken video URL. Both are cheap to catch
  * here, against a file that is meant to be read by a person anyway.
+ *
+ * **What is required depends on what is imported.** A physical name is demanded
+ * exactly when `ownership` says the corresponding resource is imported — so an
+ * environment that owns its tables is not asked for 27 names it does not have,
+ * and an environment that imports them cannot leave one out.
  */
 function validate(config: PlayConfig): string[] {
   const problems: string[] = [];
@@ -127,23 +213,44 @@ function validate(config: PlayConfig): string[] {
   for (const field of ['stage', 'account', 'region'] as const) {
     if (!config[field]) problems.push(`${field} is empty`);
   }
-  if (!config.existing) {
-    problems.push('existing is missing');
+
+  const ownership = ownershipOf(config);
+  const existing = config.existing;
+
+  // The blocks this environment imports, and the fields each one needs. Keyed
+  // by block so the error can name which switch to flip instead of listing
+  // names a new environment was never going to have.
+  const imported: Record<string, readonly (keyof ExistingResources)[]> = {};
+  if (!ownership.tables) imported.tables = [];
+  if (!ownership.media) {
+    imported.media = [
+      'videosBucket',
+      'cloudFrontDistributionId',
+      'cloudFrontDomain',
+      'cloudFrontPublicKeyId',
+    ];
+  }
+  if (!ownership.auth) {
+    imported.auth = ['userPoolId', 'userPoolClientId', 'userPoolDomain'];
+  }
+
+  if (Object.keys(imported).length === 0) return problems;
+
+  if (!existing) {
+    problems.push(
+      `existing is missing, but ownership imports ${Object.keys(imported).join(', ')} — ` +
+        'an environment that imports a resource has to name it',
+    );
     return problems;
   }
-  for (const field of [
-    'videosBucket',
-    'cloudFrontDistributionId',
-    'cloudFrontDomain',
-    'cloudFrontPublicKeyId',
-    'userPoolId',
-    'userPoolClientId',
-    'userPoolDomain',
-  ] as const) {
-    if (!config.existing[field]) problems.push(`existing.${field} is empty`);
-  }
-  if (Object.keys(config.existing.tables ?? {}).length === 0) {
+
+  if (!ownership.tables && Object.keys(existing.tables ?? {}).length === 0) {
     problems.push('existing.tables is empty');
+  }
+  for (const [block, fields] of Object.entries(imported)) {
+    for (const field of fields) {
+      if (!existing[field]) problems.push(`existing.${String(field)} is empty (imported ${block})`);
+    }
   }
 
   return problems;

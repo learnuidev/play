@@ -52,7 +52,11 @@ export function EnvironmentCard({
           </div>
           <p className="text-muted-foreground mt-1.5 text-sm">
             {environment
-              ? `account ${environment.account} · ${environment.region} · ${environment.tables} imported tables`
+              ? `account ${environment.account} · ${environment.region} · ${
+                  environment.ownsEverything
+                    ? "its own tables, media and pool"
+                    : `${environment.tables} imported tables`
+                }`
               : "no config file yet — the plan writes one"}
           </p>
         </div>
@@ -92,36 +96,69 @@ export function EnvironmentCard({
       ) : null}
 
       <div className="mt-5 flex flex-col gap-2.5 border-t border-border/40 pt-4">
-        <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
-          <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            The tables, the videos bucket, the CloudFront distribution and the Cognito user pool
-            are <span className="text-foreground/80">imported</span> — CloudFormation will not
-            change or delete one. A deploy here creates the{" "}
-            <span className="text-foreground/80">
-              {healthy === 0 ? "four" : "environment's own"}
-            </span>{" "}
-            API, media roles and sign-up trigger, and every stage points at the same data.
-          </span>
-        </p>
+        {environment?.ownsEverything ? (
+          <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
+            <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              This environment <span className="text-foreground/80">creates everything</span>: its
+              own tables, its own videos bucket and CloudFront distribution, its own Cognito user
+              pool — all named <span className="font-mono">play-{stage}-*</span>, all empty, and all
+              retained if the stack is deleted. Nothing is shared with another environment, so a
+              deploy here cannot change what{" "}
+              <span className="font-mono">dev</span> reads.
+            </span>
+          </p>
+        ) : environment ? (
+          <>
+            <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
+              <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                The tables, the videos bucket, the CloudFront distribution and the Cognito user pool
+                are <span className="text-foreground/80">imported</span> — CloudFormation will not
+                change or delete one. A deploy here creates the{" "}
+                <span className="text-foreground/80">
+                  {healthy === 0 ? "four" : "environment's own"}
+                </span>{" "}
+                API, media roles and sign-up trigger, and it{" "}
+                <span className="text-foreground/80">points at the same data</span> as every other
+                stage that imports.
+              </span>
+            </p>
 
-        {/* The two things that are genuinely shared-and-singleton. Both are stated
-            here rather than left to the checklist, because both are consequences
-            of pressing the button — not details of how it is pressed. */}
-        <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
-          <span className="mt-0.5 size-3.5 shrink-0 text-center font-mono leading-none" aria-hidden>
-            ·
-          </span>
-          <span>
-            Two of those can only have{" "}
-            <span className="text-foreground/80">one owner at a time</span>: the bucket notifies one
-            function for <span className="font-mono">uploads/</span>, and the pool's pre sign-up
-            trigger calls one function. Deploying a stage{" "}
-            <span className="text-foreground/80">takes video processing</span> from whichever stage
-            had it, and <span className="text-foreground/80">leaves the trigger alone</span> — the
-            checklist reports the second and names what the first costs.
-          </span>
-        </p>
+            {/* The two things that are genuinely shared-and-singleton. Both are
+                stated here rather than left to the checklist, because both are
+                consequences of pressing the button — not details of how it is
+                pressed. They are also the reason a new environment should
+                create its own: neither applies when it does. */}
+            <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
+              <span
+                className="mt-0.5 size-3.5 shrink-0 text-center font-mono leading-none"
+                aria-hidden
+              >
+                ·
+              </span>
+              <span>
+                Two of those can only have{" "}
+                <span className="text-foreground/80">one owner at a time</span>: the bucket notifies
+                one function for <span className="font-mono">uploads/</span>, and the pool's pre
+                sign-up trigger calls one function. Deploying a stage{" "}
+                <span className="text-foreground/80">takes video processing</span> from whichever
+                stage had it, and <span className="text-foreground/80">leaves the trigger alone</span>{" "}
+                — the checklist reports the second and names what the first costs.
+              </span>
+            </p>
+          </>
+        ) : (
+          <p className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
+            <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              There is no config file for{" "}
+              <span className="font-mono">{stage}</span> yet. The plan writes one on the way through
+              — a <span className="text-foreground/80">new environment</span>, creating its own
+              tables, media and user pool rather than importing another stage's.
+            </span>
+          </p>
+        )}
       </div>
     </Card>
   );

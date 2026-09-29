@@ -30,7 +30,7 @@ import type { EnvironmentView } from "@/lib/types";
  * about and what the frontend cards would be started against, from one place.
  *
  * **The chrome never moves.** The rail is `h-screen` and the bar is sticky and
- * translucent, so scrolling a twelve-step checklist and a thousand-line
+ * translucent, so scrolling a thirteen-step checklist and a thousand-line
  * transcript never takes the controls off screen. That is the whole reason the
  * console exists rather than a shell script and a `tail -f`.
  */

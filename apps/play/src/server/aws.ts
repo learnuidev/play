@@ -144,10 +144,18 @@ export async function identityError(ctx: Partial<AwsContext> = {}): Promise<stri
  * Stacks
  * ------------------------------------------------------------------ */
 
+/**
+ * The four root stacks, and what each one is for.
+ *
+ * The purposes are deliberately neutral about importing: which of the first
+ * three create their resources and which import them is `ownership` in the
+ * environment's config, and it differs between a migrated stage and a new one.
+ * The environment card says which this one does.
+ */
 export const ROOT_STACKS = [
-  { suffix: "Data", purpose: "the DynamoDB tables, imported" },
-  { suffix: "Media", purpose: "the videos bucket and distribution, imported" },
-  { suffix: "Auth", purpose: "the Cognito user pool, imported" },
+  { suffix: "Data", purpose: "the DynamoDB tables" },
+  { suffix: "Media", purpose: "the videos bucket and distribution" },
+  { suffix: "Auth", purpose: "the Cognito user pool" },
   { suffix: "Api", purpose: "the functions, their routes, and the IAM" },
 ] as const;
 

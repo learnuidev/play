@@ -11,30 +11,67 @@ import { defaultRegion, profileSetting, repoPath } from "./repo";
  * The unit is a **stage**, which is what the CDK app calls it: `cdk deploy
  * --context stage=dev` deploys `PlayApiStack-dev` and its three siblings, and
  * the stage name is in every Lambda's name, every stack's name and every log
- * group's path. A second stage is a second API, a second set of media roles and
- * a second pre sign-up trigger — deployed from the same repository, into the
- * same account, over the *same imported data*.
+ * group's path.
  *
- * That last clause is the one worth being loud about, because it is the thing
- * that is surprising about this backend and the thing that makes a new
- * environment cheap:
+ * ## Two kinds of environment, and the difference is one switch
  *
- * > The tables, the videos bucket, the CloudFront distribution and the Cognito
- * > user pool are imported. An imported resource is unmanaged — CloudFormation
- * > will not change it and will not delete it. So deploying a stage creates the
- * > API and nothing that holds data, and every stage points at the same data.
+ * `ownership` in `infra/config/play-<stage>.json` decides what a stage does with
+ * the three stateful groups — the tables, the media (bucket and distribution)
+ * and the auth (user pool):
  *
- * A stage that should own its data is `ownership.tables` in the config file,
- * which `docs/migration.md` phase E says to do when a property actually needs
- * changing. The console shows those three switches as they are, rather than
- * offering to flip them.
+ * | | `tables`/`media`/`auth` | The stage | Its data |
+ * | --- | --- | --- | --- |
+ * | **New** | `true` | Creates them, named `play-<stage>-*` | Its own, empty |
+ * | **Migrated** | `false` | Imports them by physical name | Shared with every other migrated stage |
+ *
+ * **A new environment creates everything.** That is the default the console
+ * writes, and it is the one that makes "deploy to a new environment" mean what
+ * it sounds like: new tables, a new bucket, a new distribution, a new user pool,
+ * all empty, named after the stage.
+ *
+ * `false` is the *migrated* case and exists for exactly one reason: `dev`'s
+ * resources predate this CDK app by years and hold the product. An imported
+ * resource is unmanaged — CloudFormation will not change it and will not delete
+ * it — so a migrated stage can be deployed without any risk to the data. Two
+ * migrated stages do point at the same data; that is a property of `dev`, not
+ * something a new environment inherits.
  */
+
+export interface StageOwnership {
+  tables: boolean;
+  media: boolean;
+  auth: boolean;
+}
+
+/** What a stage that says nothing about ownership does: import, the migrated way. */
+export const IMPORT_EVERYTHING: StageOwnership = { tables: false, media: false, auth: false };
+
+export function ownershipOf(config: StageConfig | null): StageOwnership {
+  const stated = config?.ownership;
+  if (!stated) return IMPORT_EVERYTHING;
+  return {
+    tables: stated.tables === true,
+    media: stated.media === true,
+    auth: stated.auth === true,
+  };
+}
+
+/** True when this environment creates all of its own stateful resources. */
+export function ownsEverything(config: StageConfig | null): boolean {
+  const ownership = ownershipOf(config);
+  return ownership.tables && ownership.media && ownership.auth;
+}
 
 export interface StageConfig {
   stage: string;
   account: string;
   region: string;
-  existing: {
+  /**
+   * The resources this stage imports, by physical name.
+   *
+   * Absent on an environment that owns everything — there is nothing to name.
+   */
+  existing?: {
     tables?: Record<string, string>;
     videosBucket?: string;
     userPoolId?: string;
@@ -46,7 +83,8 @@ export interface StageConfig {
   mail?: { fromAddress?: string; appBaseUrl?: string; marketplaceBaseUrl?: string };
   auth?: { googleClientId?: string; callbackUrls?: string[]; logoutUrls?: string[] };
   cloudFrontPrivateKeyParam?: string;
-  ownership?: { tables: boolean; media: boolean; auth: boolean };
+  cloudFrontPublicKeyParam?: string;
+  ownership?: StageOwnership;
   [key: string]: unknown;
 }
 
@@ -66,11 +104,15 @@ export function readConfig(stage: string): StageConfig | null {
 }
 
 /**
- * Why a config file is not usable, or null when it is.
+ * Why a config file is not usable, or an empty list when it is.
  *
  * The same checks `infra/src/config.ts` makes at synth, said here so the deploy
  * console can fail on step three instead of step eight — and said in terms of
  * what is missing rather than what threw.
+ *
+ * A physical name is required exactly when `ownership` says that group is
+ * imported. An environment that owns its tables is not asked for 27 names it was
+ * never going to have; an environment that imports them cannot leave one out.
  */
 export function configProblems(config: StageConfig | null): string[] {
   if (!config) return ["the file does not exist, or is not JSON"];
@@ -78,20 +120,33 @@ export function configProblems(config: StageConfig | null): string[] {
   for (const field of ["stage", "account", "region"] as const) {
     if (!config[field]) problems.push(`${field} is empty`);
   }
+
+  const ownership = ownershipOf(config);
+  const imported: Record<string, readonly string[]> = {};
+  if (!ownership.tables) imported.tables = [];
+  if (!ownership.media) imported.media = ["videosBucket", "cloudFrontDomain"];
+  if (!ownership.auth) {
+    imported.auth = ["userPoolId", "userPoolClientId", "userPoolDomain"];
+  }
+  if (Object.keys(imported).length === 0) return problems;
+
   if (!config.existing) {
-    problems.push("existing is missing");
+    problems.push(
+      `ownership imports ${Object.keys(imported).join(", ")}, so 'existing' is required — ` +
+        "an environment that imports a resource has to name it",
+    );
     return problems;
   }
-  for (const field of [
-    "videosBucket",
-    "userPoolId",
-    "userPoolClientId",
-    "userPoolDomain",
-  ] as const) {
-    if (!config.existing[field]) problems.push(`existing.${field} is empty`);
-  }
-  if (Object.keys(config.existing.tables ?? {}).length === 0) {
+
+  if (!ownership.tables && Object.keys(config.existing.tables ?? {}).length === 0) {
     problems.push("existing.tables is empty");
+  }
+  for (const [block, fields] of Object.entries(imported)) {
+    for (const field of fields) {
+      if (!(config.existing as Record<string, unknown>)[field]) {
+        problems.push(`existing.${field} is empty (imported ${block})`);
+      }
+    }
   }
   return problems;
 }
@@ -211,6 +266,7 @@ export function environmentView(
     region,
     tables: Object.keys(config?.existing?.tables ?? {}).length,
     ownership: config?.ownership ?? null,
+    ownsEverything: ownsEverything(config),
     stacks: root,
     deployed,
     partial,

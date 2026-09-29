@@ -1,22 +1,27 @@
 # `infra/config` — what this deployment stands on
 
-One file per stage. `play-dev.json` is the deployed backend: the physical name of
-every DynamoDB table, the videos bucket, the CloudFront distribution and public
-key, the Cognito user pool and its app client, and the deploy-time settings that
-used to be `${ssm:...}` interpolations in `serverless.yml`.
+One file per stage. What is in it depends on which kind of stage it describes:
 
-It is written by a script and read by the CDK app. It is committed, and it is
-meant to be read before a deploy — it is the one file that says *which* resources
-a `cdk deploy` is about to be pointed at.
+- **A migrated stage** — `dev` — names everything it imports: the physical name
+  of every DynamoDB table, the videos bucket, the CloudFront distribution and
+  public key, the Cognito user pool and its app client. This is the deployed
+  backend, migrated off the legacy Serverless stack without moving any data.
+- **A new stage** — anything else — imports nothing, so it names nothing. It has
+  no `existing` block; `ownership` is the whole of what it says about resources,
+  and the stacks create them, named `play-<stage>-*`.
+
+Both kinds are committed and meant to be read before a deploy: the file is the
+one place that says *which* resources a `cdk deploy` is about to be pointed at.
 
 ```bash
 npm run import-state --workspace play-infra            # discover and write
 npm run import-state --workspace play-infra -- --help  # every option
 ```
 
-The script is read-only — every call it makes is a `describe`, a `list` or a
-`get` — and safe to re-run. It merges into what is already there, so a hand edit
-to a field it does not discover survives.
+That script is for a **migrated** stage — it is how `dev`'s names were
+discovered. It is read-only, safe to re-run, and merges into what is already
+there, so a hand edit to a field it does not discover survives. A new stage does
+not need it: the deploy console writes the file, and there is nothing to discover.
 
 ## Why a committed file, rather than a lookup
 
@@ -39,46 +44,76 @@ says so before anything is deployed.
 | Field | What it is |
 | --- | --- |
 | `stage`, `account`, `region` | The deployment. Explicit, so every ARN built from them is a literal string rather than a token |
+| `ownership` | Which of the three stateful groups this stage creates. See below |
+| `existing` | **Only on a migrated stage.** Absent when `ownership` is all `true` |
 | `existing.tables` | Legacy logical id → physical table name. Keys match the construct ids in `src/generated/service.ts` |
 | `existing.videosBucket` | The bucket the presigned uploads and CloudFront reads go to |
 | `existing.cloudFront*` | The distribution, its domain, and the public key id handlers sign URLs with |
 | `existing.userPool*` | The pool, its app client and its Hosted UI domain prefix |
 | `existing.googleSignInEnabled` | Whether that pool has a Google identity provider |
 | `mail.*` | The invitation sender and the two app base URLs. **Deploy-time, not runtime** |
-| `auth.googleClientId`, `auth.callbackUrls`, `auth.logoutUrls` | Used only if `ownership.auth` is turned on. The live pool's values are read from Cognito by `set-auth-urls.mjs` |
+| `auth.googleClientId`, `auth.callbackUrls`, `auth.logoutUrls` | The Google client id, and the origins Cognito accepts. On a migrated stage the live pool's values are read from Cognito by `set-auth-urls.mjs` instead |
 | `cloudFrontPrivateKeyParam` | The *name* of the signing key parameter. Never the key |
-| `ownership` | See below |
+| `cloudFrontPublicKeyParam` | The *name* of that key's public half. Defaults to `/play/cloudfront/public-key` |
+
+`existing` is validated **field by field, against `ownership`**: a name is
+required exactly when the corresponding group is imported. So a stage that
+imports its tables cannot leave one out, and a stage that creates them is not
+asked for 27 names it was never going to have.
 
 ## `ownership`
 
 ```json
-"ownership": { "tables": false, "media": false, "auth": false }
+"ownership": { "tables": true, "media": true, "auth": true }
 ```
 
-**All three are `false`, and `false` is what you want.** It means the stacks
-import the resources that already exist rather than creating them. An imported
+This is the switch that decides what "an environment" means, and there are two
+answers:
+
+| | Value | The stage | Its data |
+| --- | --- | --- | --- |
+| **New environment** | all `true` | Creates the tables, the bucket, the distribution and the pool, named `play-<stage>-*` | Its own, empty |
+| **Migrated stage** | all `false` | Imports them by physical name | Shared with every other migrated stage |
+
+**A new environment is all `true`, and that is what the deploy console writes.**
+Deploying `staging` for the first time gives you staging's own 27 tables, its own
+videos bucket and CloudFront distribution, and its own Cognito user pool — all
+empty, and all named after the stage. Nothing is shared, so a deploy there cannot
+change what `dev` reads, and there is no handover step to worry about because
+there is only ever one owner of staging's bucket.
+
+**All `false` is the migrated case, and it exists for exactly one stage.** `dev`'s
+resources predate this CDK app by years and hold the product. An imported
 resource is *unmanaged*: CloudFormation will not change its properties and will
-not delete it. That is the entire reason this migration did not lose any data —
-and it is why `cdk deploy` on a fresh checkout is nearly a no-op.
+not delete it. That is the entire reason the migration did not lose any data, and
+it is why `cdk deploy PlayDataStack-dev` on a fresh checkout is a no-op.
 
-Setting one to `true` means **create this instead of importing it**, which is a
-data migration rather than a configuration change:
+The two are not interchangeable, and the difference is easy to get wrong in the
+direction that matters: seeding a new stage from `play-dev.json` would copy
+`ownership: false` and dev's physical table names with it, which reads like a new
+environment and behaves like a second front door to dev's database. The console
+does not do that — a stage with no legacy stack to discover gets a new-environment
+config.
 
-- `tables` creates 23 empty tables under new names. The point is to copy the
-  data across, not to point it at the live ones — creating a table with an
-  existing name fails the deploy with `already exists`, or replaces it, and a
-  replaced table is an empty table.
-- `media` creates a new distribution. A new distribution is a new domain name,
-  which is a new URL in every player.
-- `auth` creates a new user pool. That is every account re-registering,
-  including the federated ones, and there is no copy of them anywhere.
+### Turning a migrated stage into an owning one
 
-This is phase E of `docs/migration.md`, and the guide there is to do it when a
-property actually needs changing — not for tidiness.
+Only `dev` is migrated, and all `false` is right for it. For any other stage,
+setting these to `true` when it was `false` is **additive**: imports create no
+CloudFormation resources, so the stacks simply gain the ones they were missing.
+What that means in practice:
+
+- `tables` creates 27 empty tables. The Data stack currently holds a single
+  `CDKMetadata` resource, so this is a create, not a replacement.
+- `media` creates a bucket and a distribution. A new distribution is a new domain
+  name, so stream URLs change for that stage only.
+- `auth` creates a new user pool — **and a new pool has no accounts in it.**
+  Existing users, including federated ones, do not carry over; that is the cost
+  of a separate environment, and it is why `dev` keeps importing.
 
 ## Keeping it true
 
-Three commands change a resource this file names, and none of them is a deploy:
+Three commands change a resource a *migrated* stage names, and none of them is a
+deploy:
 
 | Task | Command |
 | --- | --- |
@@ -86,6 +121,10 @@ Three commands change a resource this file names, and none of them is a deploy:
 | Google sign-in was enabled or rotated | `services/api/scripts/set-google-oauth.sh` |
 | The invitation sender changed | `services/api/scripts/set-mail-sender.sh` |
 
-The first two write to Cognito, because the pool and its client are imported and
-no deploy can change them. The third writes this file, because those two values
-*are* deployed — they are in every Lambda's environment.
+The first two write to Cognito, because `dev`'s pool and its client are imported
+and no deploy can change them. None of this applies to a new environment: its
+pool is deployed, so its callback URLs are in `auth.callbackUrls` and a deploy
+applies them.
+
+The third writes this file, because those two values *are* deployed — they are in
+every Lambda's environment.

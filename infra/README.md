@@ -32,10 +32,23 @@ They are divided by **what a change to one of them costs**, not by size.
 
 | Stack | Holds | Deploy frequency |
 | --- | --- | --- |
-| `PlayDataStack` | The 23 DynamoDB tables — **imported** | Rarely |
-| `PlayMediaStack` | The videos bucket and CloudFront distribution — **imported** — plus the two media roles | Rarely |
-| `PlayAuthStack` | The Cognito user pool — **imported** — and the pre sign-up trigger | Occasionally |
+| `PlayDataStack` | The DynamoDB tables | Rarely |
+| `PlayMediaStack` | The videos bucket and CloudFront distribution, plus the two media roles | Rarely |
+| `PlayAuthStack` | The Cognito user pool and the pre sign-up trigger | Occasionally |
 | `PlayApiStack` | The REST API, its authorizer and gateway responses, the execution role, the three event-driven functions, and four nested stacks holding the 130 route functions | Constantly |
+
+Whether the first three **create** or **import** what they hold is `ownership` in
+`infra/config/play-<stage>.json`, one flag per group:
+
+- **A new environment** sets all three `true`. Every table, bucket, distribution
+  and pool is created, named `play-<stage>-*` and empty — which is what
+  `apps/play` writes for a stage that has never existed.
+- **A migrated stage** sets all three `false` and names them. `dev` is the only
+  one, and it is `false` because its resources predate this app and hold the
+  product. An imported resource is unmanaged: CloudFormation will not change it
+  and will not delete it.
+
+[`config/README.md`](config/README.md) has the full contract.
 
 `PlayApiStack` reaches CloudFormation's 500-resource limit on its own — 134
 functions, a log group and a permission each, 133 methods, 87 CORS preflights and
@@ -86,6 +99,37 @@ a Lambda's environment, and the failure surfaces as a 500 at the first request.
 | `scripts/retain-legacy-resources.mjs` | Marks the old stack's 35 stateful resources `DeletionPolicy: Retain` and updates the stack. Runs once, **before** the teardown |
 | `scripts/teardown-legacy-stack.sh` | Removes the old Serverless stack **without deleting the data it owns**. Refuses unless the retention above is in place |
 | `scripts/handover-s3-notifications.mjs` | Removes the legacy stack's S3 notification rule so the bucket's configuration has one owner. Runs once, before the first deploy |
+| `scripts/provision-google-secret.mjs` | Mirrors the Google client secret from SSM into Secrets Manager. Needed before a stack that **creates** a user pool deploys — CloudFormation refuses an SSM Secure reference in `UserPoolIdentityProvider`. Idempotent |
+
+## Destroying a stage, and the log groups it leaves behind
+
+Every log group here is named (`/aws/lambda/play-<stage>-<function>`) and marked
+`RemovalPolicy.RETAIN`, so that a stack delete is not a reason to lose the record
+of what happened. The cost shows up when you **delete a stage and deploy it again
+under the same name**: the retained log groups outlive the stack, and the next
+deploy fails early validation because it is trying to create a log group that
+already exists.
+
+```
+Early validation failed for change set cdk-deploy-change-set:
+PlayAuthStack-staging/LinkFederatedUserLogGroup/Resource  (AWS::Logs::LogGroup …)
+  Resource of type 'AWS::Logs::LogGroup' with identifier
+  '/aws/lambda/play-staging-link-federated-user' already exists.
+```
+
+It names the log group and not the reason, which is why it is written down here.
+The fix is to remove the orphans, which are logs of a stack that no longer
+exists:
+
+```bash
+aws logs describe-log-groups --log-group-name-prefix /aws/lambda/play-<stage> \
+  --query 'logGroups[].logGroupName' --output text \
+  | tr '\t' '\n' | xargs -I{} aws logs delete-log-group --log-group-name {}
+```
+
+A stage that has never existed does not hit this — it is only the
+delete-and-recreate cycle. Deleting the log groups is a real decision rather
+than housekeeping: they are the only record of what the destroyed stage did.
 
 ## Bundling, and why it is not `NodejsFunction`
 

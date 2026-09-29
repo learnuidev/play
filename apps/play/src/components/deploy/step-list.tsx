@@ -12,12 +12,12 @@ import type { StepView } from "@/lib/types";
  * The checklist.
  *
  * A step is a row you can open, and the open one is the one whose transcript is
- * below. That pairing is the whole interface: twelve rows say *what* the plan
+ * below. That pairing is the whole interface: thirteen rows say *what* the plan
  * will do and how far it has got, and the pane underneath says *what it is
  * saying right now* about the one you are looking at.
  *
  * The connector between the rows is drawn rather than implied. A checklist that
- * is a list of twelve identical rows reads as twelve options; one with a line
+ * is a list of thirteen identical rows reads as thirteen options; one with a line
  * running down it reads as an order, which is what it is.
  */
 

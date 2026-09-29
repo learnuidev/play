@@ -29,7 +29,7 @@ import type { RunStatus, StepView } from "@/lib/types";
  * The deploy page.
  *
  * Four things, in the order somebody reads them: what this environment is, the
- * twelve steps the plan will take and which of them are already satisfied, the
+ * thirteen steps the plan will take and which of them are already satisfied, the
  * transcript of the one being worked on, and — when it is over — what came out
  * of it.
  *
@@ -112,9 +112,9 @@ export function DeployView() {
             <code className="text-foreground/80 font-mono">
               infra/config/play-{stage}.json
             </code>{" "}
-            yet. The plan&rsquo;s third step writes one, seeded from a stage that has one — what is
-            imported is shared, so the tables, the bucket, the distribution and the pool carry over
-            unchanged.
+            yet. The plan&rsquo;s third step writes one — a{" "}
+            <span className="text-foreground/80">new environment</span>, with its own tables,
+            bucket, distribution and user pool, imported from nowhere and shared with nobody.
           </span>
         </p>
       ) : null}
