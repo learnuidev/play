@@ -257,14 +257,46 @@ function requirements(
       done: signingKey?.ready ?? false,
       tone: signingKey === null ? "muted" : signingKey.ready ? "ok" : "warn",
       label: signingKey === null ? "unknown" : signingKey.ready ? "in SSM" : "not in SSM",
-      note:
-        signingKey === null
-          ? "SSM could not be read, so whether the key pair is there is not known — the console's AWS credentials are the usual reason."
-          : signingKey.ready
-            ? `${signingKey.privateParam} holds the private half; ${signingKey.publicParam} holds the public half the distribution is created against.`
-            : `Neither half is in SSM, so a distribution this environment creates would have a key group with no key in it. It is generated on demand and never rotated — an existing pair is left exactly as it is.`,
+      note: keyNote(stage, signingKey),
     },
   ];
+}
+
+/**
+ * The signing key, in a sentence.
+ *
+ * Four states, and the difference between them is *which half is read*: a stage
+ * that creates its distribution is built from the public parameter, so both
+ * halves are needed; a stage that imports one has its public side already (the
+ * key group that distribution has) and only ever signs with the private half.
+ * Saying "both halves must be in SSM" to `dev` would be asking for a parameter
+ * nothing reads.
+ */
+function keyNote(stage: string, key: SigningKeyView | null): string {
+  if (key === null) {
+    return "SSM could not be read, so whether the key pair is there is not known — the console's AWS credentials are the usual reason.";
+  }
+
+  const shared = key.own
+    ? ""
+    : " Its config names the shared pair rather than its own — which is what a stage that imports the distribution that pair gates has to do.";
+
+  if (key.importedMedia) {
+    return key.ready
+      ? `${key.privateParam} holds the private half; the public side is the key group the distribution this environment imports already has.${shared}`
+      : `${key.privateParam} is not in SSM, and this environment imports the distribution it signs for — the pair has to be the one that distribution was created against, so nothing here can generate it.`;
+  }
+
+  if (key.ready) {
+    return `${key.privateParam} holds the private half; ${key.publicParam} holds the public half the distribution is created against.${shared}`;
+  }
+
+  const missing = !key.privateExists
+    ? key.publicExists
+      ? `${key.privateParam} is not in SSM`
+      : `Neither half is in SSM: ${key.privateParam} and ${key.publicParam}`
+    : `${key.publicParam} is not in SSM`;
+  return `${missing}, so a distribution this environment creates would have a key group with no key in it. The pair is generated on demand and never rotated — an existing one is left exactly as it is, and a new environment's pair is named after the stage: \`/play/${stage}/cloudfront/*\`.`;
 }
 
 /** The Google values that are missing, named one at a time. */

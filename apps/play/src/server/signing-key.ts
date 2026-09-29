@@ -108,14 +108,26 @@ export async function signingKeyState(
   );
 
   const found = new Set(answer?.Parameters ?? []);
+  const privateExists = found.has(privateParam);
+  const publicExists = found.has(publicParam);
+
+  // A stage that imports its distribution never reads the public parameter: the
+  // public side of its pair is the key group that distribution already has, and
+  // `existing.cloudFrontPublicKeyId` is what names it. So the question "can this
+  // environment sign a URL" is the private half for an imported stage and both
+  // halves for one that creates its own.
+  const config = readConfig(stage);
+  const importedMedia = config !== null && ownershipOf(config).media === false;
+
   return {
     privateParam,
     publicParam,
     source,
     own,
-    privateExists: found.has(privateParam),
-    publicExists: found.has(publicParam),
-    ready: found.has(privateParam) && found.has(publicParam),
+    privateExists,
+    publicExists,
+    importedMedia,
+    ready: privateExists && (importedMedia || publicExists),
   };
 }
 
@@ -151,13 +163,14 @@ export async function ensureSigningKey(
     return { key: before, note: "both halves were already in SSM — nothing was written", lines: [] };
   }
 
-  const config = readConfig(stage);
-  if (config && ownershipOf(config).media === false) {
+  if (before.importedMedia) {
     throw new Error(
-      `${stage} imports its videos bucket and distribution, so its key pair is the one that ` +
-        `distribution was created against — a new one would invalidate every signed URL it hands ` +
-        `out. Point cloudFrontPrivateKeyParam at the parameter that holds that pair, or leave it ` +
-        `alone if the pair is deliberately not in SSM.`,
+      `${stage} imports its videos bucket and distribution, so the key it signs with is the one ` +
+        `that distribution was created against — a generated pair would not match it, and every ` +
+        `signed URL it hands out would stop working. ` +
+        `${before.privateParam} is not in SSM: either it holds that key under another name, and ` +
+        `cloudFrontPrivateKeyParam has to say which, or the pair has to be replaced, which is a ` +
+        `deploy of a new CloudFront public key rather than a script.`,
     );
   }
 

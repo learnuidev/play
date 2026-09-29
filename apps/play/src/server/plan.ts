@@ -544,7 +544,7 @@ export function buildPlan(stage: string): PlanStep[] {
   const signingKey: PlanStep = {
     id: "signing-key",
     title: "The CloudFront signing key is in SSM",
-    detail: `Signed URLs need a key pair, and neither half is in this repository: the **private** half is read by the handlers at request time, by parameter *name*, and the **public** half is what \`PlayMediaStack\` creates the distribution's public key from. The names come from the environment's config, and on every stage here they are the same two shared parameters — the pair is product configuration, not per-environment state. \`infra/scripts/ensure-cloudfront-key.mjs\` writes whichever half is missing and **never replaces one that is there**.`,
+    detail: `Signed URLs need a key pair, and neither half is in this repository: the **private** half is read by the handlers at request time, by parameter *name*, and the **public** half is what \`PlayMediaStack\` creates the distribution's public key from. The names come from the environment's config and are **per environment** by default — \`/play/<stage>/cloudfront/private-key\` and its public half — because the pair signs one distribution's URLs and one environment's handlers should not be able to mint URLs for another's. A stage that imports a distribution names the pair that distribution was created against, which is what \`dev\` does. \`infra/scripts/ensure-cloudfront-key.mjs\` writes whichever half is missing and **never replaces one that is there**.`,
     satisfiedLabel: "In SSM",
     timeoutMs: 2 * 60_000,
     check: async (ctx) => {

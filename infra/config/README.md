@@ -54,13 +54,26 @@ says so before anything is deployed.
 | `mail.*` | The invitation sender and the two app base URLs. **Deploy-time, not runtime** |
 | `auth.googleClientId`, `auth.callbackUrls`, `auth.logoutUrls` | The Google client id, and the origins Cognito accepts. On a migrated stage the live pool's values are read from Cognito by `set-auth-urls.mjs` instead |
 | `googleClientSecretName` | The Secrets Manager secret a **created** pool reads the client secret from. Defaults to `play/<stage>/google-client-secret`, which is per-stage so two environments cannot overwrite each other |
-| `cloudFrontPrivateKeyParam` | The *name* of the signing key parameter. Never the key |
-| `cloudFrontPublicKeyParam` | The *name* of that key's public half. Defaults to `/play/cloudfront/public-key` |
+| `cloudFrontPrivateKeyParam` | The *name* of the signing key parameter. Never the key. Defaults to `/play/<stage>/cloudfront/private-key` |
+| `cloudFrontPublicKeyParam` | The *name* of that key's public half. Defaults to `/play/<stage>/cloudfront/public-key` |
 
 `auth` and `mail` are the two blocks a **person** writes rather than a script
-discovers, which is why they have a screen: the console's **Settings** view, one
+discovers, which is why they have a screen: the console's **Checklist** tab, one
 per environment. Everything else here is either a physical name read out of AWS
 or a resource count.
+
+**The CloudFront signing key pair is per environment**, and the two fields above
+are only names: the key material lives in SSM, at `/play/<stage>/cloudfront/*`
+unless the config says otherwise, and `infra/scripts/ensure-cloudfront-key.mjs`
+generates it — once, never rotated. A stage that **imports** its distribution
+names the pair that distribution was created against, because that is the only
+pair its key group will accept a signature from; `dev` is the one stage here that
+does, and it names the shared `/play/cloudfront/*`.
+
+The two values are different shapes on purpose, and the script is the place that
+knows it: the **private** parameter is base64 of the PKCS#8 PEM (what
+`services/api/src/lib/cloudfront-key.ts` decodes), and the **public** one is the
+PEM itself (what `PlayMediaStack` interpolates into CloudFront's `EncodedKey`).
 
 **The Google client secret is not in this file**, and must not be. It is a
 credential, this file is committed, and CloudFormation refuses the SSM Secure

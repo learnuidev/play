@@ -29,6 +29,20 @@
  * was created against. This script reads whatever the config names; the names
  * are the decision, not this file.
  *
+ * ## What the two parameters hold, and why they are different
+ *
+ * | Parameter | Type | Value |
+ * | --- | --- | --- |
+ * | the private one | `SecureString` | **base64 of the PKCS#8 PEM** — one line, and what `services/api/src/lib/cloudfront-key.ts` decodes at request time |
+ * | the public one | `String` | **the PEM itself**, `-----BEGIN PUBLIC KEY-----` and all, because `PlayMediaStack` hands it straight to CloudFront's `EncodedKey` |
+ *
+ * That asymmetry is not a preference: it is the convention the parameter has
+ * held since `services/api/scripts/generate-cloudfront-keypair.sh` wrote it (the
+ * base64 is also how the key used to arrive through a Lambda's environment). A
+ * raw PEM in the private parameter is a key the runtime decodes into garbage, so
+ * it is written the way the reader expects and `privatePem()` below accepts
+ * either shape when reading one back.
+ *
  * ## Idempotent, in both directions
  *
  * The console calls this when a new environment is created, and the deploy plan
@@ -179,13 +193,22 @@ function present(names) {
  * the CLI a value too big or too sensitive for a shell argument, and the file is
  * deleted before this process exits — success or failure.
  */
-function putParameter({ name, type, description, secret }) {
+function putParameter({ name, type, description, secret }, { overwrite = false } = {}) {
   const directory = mkdtempSync(path.join(tmpdir(), 'play-cloudfront-key-'));
   const file = path.join(directory, 'put-parameter.json');
   try {
     writeFileSync(
       file,
-      JSON.stringify({ Name: name, Type: type, Value: secret, Description: description }),
+      JSON.stringify({
+        Name: name,
+        Type: type,
+        Value: secret,
+        ...(description ? { Description: description } : {}),
+        // Only ever set to re-encode the private half, never to replace key
+        // material: `put-parameter` without it fails on an existing parameter,
+        // which is the guard that keeps "ensure" from becoming "rotate".
+        ...(overwrite ? { Overwrite: true } : {}),
+      }),
       { mode: 0o600 },
     );
     chmodSync(file, 0o600);
@@ -193,6 +216,67 @@ function putParameter({ name, type, description, secret }) {
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+/**
+ * The private key as a PEM, from whatever the parameter holds.
+ *
+ * The convention is base64 of the PKCS#8 PEM — see the header — but a parameter
+ * somebody wrote by hand (or with `openssl` and a shell) may hold the PEM
+ * itself, and refusing that would be refusing to work with a key that is
+ * perfectly good. What is not accepted is a value that is neither, because the
+ * only thing worse than no key is a key that decodes to nonsense.
+ */
+function privatePem(stored) {
+  const value = stored.trim();
+  if (value.includes('-----BEGIN')) return value;
+  const decoded = Buffer.from(value, 'base64').toString('utf8').trim();
+  if (!decoded.includes('-----BEGIN')) {
+    throw new Error(
+      `${privateParam.name} holds neither a PEM nor base64 of one, so the public half cannot ` +
+        'be derived from it. Nothing was written.',
+    );
+  }
+  return decoded;
+}
+
+/**
+ * Whether the two parameters hold two halves of one key pair.
+ *
+ * Derived rather than trusted: the public half is computed from the private one
+ * and compared with what is at the public parameter. Nothing is written and no
+ * key material is printed — only the verdict, and the fingerprint of the public
+ * key when they do match.
+ */
+function checkPair(imported) {
+  const stored = aws([
+    'ssm', 'get-parameter', '--name', privateParam.name, '--with-decryption',
+    '--query', 'Parameter.Value', '--output', 'text',
+  ]);
+  const publicValue = aws([
+    'ssm', 'get-parameter', '--name', publicParam.name,
+    '--query', 'Parameter.Value', '--output', 'text',
+  ]);
+  if (!stored || !publicValue) return { ok: false };
+
+  const shape = stored.includes('-----BEGIN') ? 'pem' : 'base64';
+  try {
+    const pem = privatePem(stored);
+    const derived = createPublicKey(pem).export({ type: 'spki', format: 'pem' });
+    const ok = normalizePem(derived) === normalizePem(publicValue);
+    if (ok) {
+      console.log(`\nThe two halves match: sha256:${fingerprint(derived).slice(0, 32)}…`);
+    }
+    return { ok, shape, pem };
+  } catch (error) {
+    console.error(`\n${privateParam.name} could not be read as a private key: ${error.message}`);
+    return { ok: false, shape };
+  }
+}
+
+/** PEM comparison, without caring about trailing newlines or line endings. */
+function normalizePem(pem) {
+  return pem.trim().replace(/\r\n/g, '\n');
 }
 
 function fingerprint(pem) {
@@ -221,8 +305,59 @@ console.log(`\nPrivate half:     ${privateFound ? 'present' : 'not in SSM'}`);
 console.log(`Public half:      ${publicFound ? 'present' : 'not in SSM'}`);
 
 if (privateFound && publicFound) {
-  console.log('\nNothing to do: both halves are in SSM. A key that exists is never rotated —\n' +
+  // "Both parameters exist" is not the same claim as "this environment can sign
+  // a URL": the handlers sign with one and the distribution is created against
+  // the other, and a pair that does not match is a 403 on every video with
+  // nothing in any log to say why. So the two are compared, here, where the
+  // private key is being handled anyway.
+  const imported = Boolean(config && config.ownership && config.ownership.media === false);
+  const match = checkPair(imported);
+
+  console.log('\nNothing to do: both halves are in SSM, and a key that exists is never rotated —\n' +
     'the distribution signs with the public half it was created against.');
+
+  // The same key in the wrong shape is not a key. `lib/cloudfront-key` base64-
+  // *decodes* this parameter, so a PEM stored here is decoded into nonsense and
+  // every signature it makes is garbage — while looking, in the console, exactly
+  // like a configured environment. Re-encoding it is not a rotation: the bytes
+  // of the key are the same ones.
+  if (match.ok && match.shape === 'pem') {
+    if (plan) {
+      console.log(
+        `\n--plan: ${privateParam.name} holds a PEM where the runtime decodes base64. Would\n` +
+          'rewrite it base64-encoded — the same key, in the shape the handlers read.',
+      );
+      process.exit(0);
+    }
+    putParameter(
+      {
+        name: privateParam.name,
+        type: 'SecureString',
+        secret: Buffer.from(match.pem, 'utf8').toString('base64'),
+        description: `CloudFront URL-signing private key for the Play videos distribution (stage ${stage}), base64 of the PKCS#8 PEM`,
+      },
+      { overwrite: true },
+    );
+    console.log(
+      `\nRewrote ${privateParam.name} base64-encoded. Same key, in the shape the handlers decode:\n` +
+        'as a PEM it was a parameter that looked configured and signed nothing.',
+    );
+    process.exit(0);
+  }
+
+  if (!match.ok) {
+    console.error(
+      `\nBut they are not a pair: the public half of ${privateParam.name} is not the value at\n` +
+        `${publicParam.name}. A distribution created from that public key will reject every URL the\n` +
+        'handlers sign, which shows up as a player that loads and never starts.' +
+        (imported
+          ? '\n\nThis stage imports its distribution, so nothing here creates a key from that\n' +
+            'parameter — the key that matters is the one its distribution already trusts.'
+          : '\n\nReplacing the pair is a deploy of a new CloudFront public key, not a script: see\n' +
+            'the note at the end of services/api/scripts/generate-cloudfront-keypair.sh.'),
+    );
+    process.exit(imported ? 0 : 1);
+  }
   process.exit(0);
 }
 
@@ -251,14 +386,16 @@ if (plan) {
 if (privateFound) {
   // The private half is the one thing that cannot be re-derived, so it is read
   // and the public half is computed from it. No new key material.
-  const pem = aws([
+  const stored = aws([
     'ssm', 'get-parameter', '--name', privateParam.name, '--with-decryption',
     '--query', 'Parameter.Value', '--output', 'text',
   ]);
-  if (!pem) {
+  if (!stored) {
     console.error(`\n${privateParam.name} could not be read. Nothing written.`);
     process.exit(1);
   }
+
+  const pem = privatePem(stored);
   const publicPem = createPublicKey(pem).export({ type: 'spki', format: 'pem' });
 
   putParameter({
@@ -282,19 +419,27 @@ const { privateKey, publicKey } = generateKeyPairSync('rsa', {
 putParameter({
   name: privateParam.name,
   type: 'SecureString',
-  description: `CloudFront URL-signing private key for the Play videos distribution (stage ${stage})`,
-  secret: privateKey,
+  // base64 of the PKCS#8 PEM: what `lib/cloudfront-key` decodes, and what the
+  // parameter has held since it was first written.
+  secret: Buffer.from(privateKey, 'utf8').toString('base64'),
+  description: `CloudFront URL-signing private key for the Play videos distribution (stage ${stage}), base64 of the PKCS#8 PEM`,
 });
 
 putParameter({
   name: publicParam.name,
   type: 'String',
-  description: `CloudFront URL-signing public key for the Play videos distribution (public half of ${privateParam.name})`,
+  // The PEM itself: CloudFront's `EncodedKey` is a PEM, and the media stack
+  // interpolates this value into it.
   secret: publicKey,
+  description: `CloudFront URL-signing public key for the Play videos distribution (public half of ${privateParam.name})`,
 });
 
 console.log('\nGenerated a 2048-bit RSA key pair and wrote both halves:');
-console.log(`  ${privateParam.name}  SecureString — the handlers sign with it, by name`);
-console.log(`  ${publicParam.name}  String — the media stack creates a CloudFront public key from it`);
+console.log(
+  `  ${privateParam.name}  SecureString — base64 of the PKCS#8 PEM, which is what the handlers decode`,
+);
+console.log(
+  `  ${publicParam.name}  String — the PEM the media stack creates a CloudFront public key from`,
+);
 console.log(`Public key fingerprint: sha256:${fingerprint(publicKey).slice(0, 32)}…`);
 console.log('\nA deploy can now create a distribution gated by this key group.');

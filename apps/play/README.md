@@ -96,7 +96,7 @@ is missing:
 | The config file | `infra/config/play-<stage>.json` exists — saving the credentials below is what writes a new environment's |
 | Google sign-in | there is a client id, a secret in Secrets Manager, and callback and logout URLs |
 | Mail and origins | the invitation sender and the two app base URLs |
-| The CloudFront signing key | both halves are in SSM — the one row with a button, because it is generated rather than typed |
+| The CloudFront signing key | both halves of *this environment's* pair are in SSM, at `/play/<stage>/cloudfront/*` — the one row with a button, because it is generated rather than typed |
 
 The form below the rows is the credentials form, and it is open by default
 whenever something is missing: a page that told you the credentials were absent
@@ -200,6 +200,13 @@ what keeps a 1.7 KB credential out of a hundred Lambdas' environments — and
 the distribution's `PublicKey` from at deploy. So a stage that creates its own
 media cannot deploy without both.
 
+The two parameters do **not** hold the same shape of value, and getting that
+wrong is a silent break rather than an error: the private one holds **base64 of
+the PKCS#8 PEM** — one line, because `lib/cloudfront-key` base64-decodes it at
+request time — and the public one holds **the PEM itself**, because the media
+stack hands it straight to CloudFront's `EncodedKey`. A PEM in the private
+parameter looks configured in every console and signs nothing.
+
 `infra/scripts/ensure-cloudfront-key.mjs` is what puts them there, and it is
 **idempotent in the direction that matters: it never rotates a key that exists.**
 CloudFront signs with the public key a distribution was *created* against, so a
@@ -209,10 +216,30 @@ there is a check mark, a missing public half is derived from the private one, a
 missing private half beside an existing public one is **refused**, and both
 missing generates a 2048-bit RSA pair.
 
+**One pair per environment**, named after the stage: `/play/<stage>/cloudfront/*`.
+The pair signs one distribution's URLs, and one environment's handlers should not
+be able to mint URLs for another's — so the default a new environment is written
+with is its own, and the pair is generated the first time anybody needs it.
+
+The exception is a stage that **imports** its distribution: `dev`'s key group is
+the legacy one, so its private half has to be the parameter holding the key that
+group was created against — the shared `/play/cloudfront/private-key` — and its
+config says so. That is a fact about a migrated stage, not a default: the console
+reports a pair that is not the environment's own rather than quietly repointing
+it, because the parameter a config names is the key its distribution already
+trusts.
+
 The same script is what the console's Checklist tab calls when a new environment
-is created, so the step is usually a check mark with nothing behind it. On every
-stage here the two names are the same shared parameters: the pair is product
-configuration, like the Google client id, rather than per-environment state.
+is created, so on a stage that already has its pair the step is a check mark with
+nothing behind it.
+
+Two things are worth knowing about the division of labour. **The plan's check is
+two parameters existing** — asking whether they are *usable* means reading the
+private key, and the checklist is drawn on every page load, so that read belongs
+to the script, which compares the halves whenever it runs and re-encodes a
+private half that is stored as a PEM. And **the console's Checklist row reports
+the pair's state, not its substance**: a stage whose parameters exist is a tick,
+because the alternative is a secret read per tab.
 
 ### Step 9, and a CloudFormation limitation worth knowing
 

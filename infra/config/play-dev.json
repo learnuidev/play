@@ -71,5 +71,6 @@
     "tables": false,
     "media": false,
     "auth": false
-  }
+  },
+  "cloudFrontPublicKeyParam": "/play/cloudfront/public-key"
 }

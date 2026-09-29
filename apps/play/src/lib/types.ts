@@ -274,7 +274,16 @@ export interface SigningKeyView {
   own: boolean;
   privateExists: boolean;
   publicExists: boolean;
-  /** Both halves are in SSM, so a deploy can build a distribution that signs URLs. */
+  /**
+   * True when this environment **imports** its distribution.
+   *
+   * It changes which half matters: a stage that creates a distribution is built
+   * from the public parameter, so both halves have to be there, while a stage
+   * that imports one already has its public side — `cloudFrontPublicKeyId`, in
+   * its config — and only ever needs the private half, to sign with.
+   */
+  importedMedia: boolean;
+  /** Everything this environment needs to sign URLs is in SSM. */
   ready: boolean;
 }
 
