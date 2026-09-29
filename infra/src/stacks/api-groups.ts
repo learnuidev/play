@@ -41,8 +41,18 @@ import type { FunctionSpec } from '../types';
  * mean a change to one feature re-planning a stack full of unrelated ones.
  *
  * The sizes are what they are because of that, not because they are equal:
- * `content` is the biggest at around 280 resources, and CloudFormation's warning
- * line is 400.
+ * `content` is the biggest, and it is now past CloudFormation's warning line —
+ * `cdk synth` reports `ApiContentRoutes` at 410 of the 500 a stack may hold,
+ * which it reached by taking the quiz feature's routes rather than by anyone
+ * being careless. It is worth knowing before the next route lands there.
+ *
+ * What to do about it is a decision for the day it is needed, and there is an
+ * obvious shape to it: `questions` and `banks` are roots of their own, so they
+ * can leave as a group of their own (a quiz group) without breaking the rule
+ * above — a root belongs to exactly one stack, and it would still. What cannot
+ * leave is `contents/{contentId}/quiz`, which is a route under a root that
+ * lessons share, so a feature that outgrows this partition has to be split at a
+ * path root rather than inside one.
  */
 export interface ApiGroup {
   /** The construct id, and the stack name's suffix. */

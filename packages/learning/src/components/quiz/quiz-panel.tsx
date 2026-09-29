@@ -62,17 +62,26 @@ import { AddFromBankDialog } from './add-from-bank-dialog';
 import { GenerateQuestionsDialog } from './generate-questions-dialog';
 import { QuestionDialog } from './question-dialog';
 import { QuestionBody, QuestionFacts } from './question-parts';
+import { QuizTaking } from './quiz-taking';
 import { downloadTextFile, questionsToCsv, questionsToJson, quizFileName } from '@learning/lib/question-export';
 import type { QuizGeneration, QuizQuestion } from '@play/types';
 
 /**
- * A quiz, as its author sees it: the questions it asks, in the order it asks
- * them, and where each one came from.
+ * A quiz, as its author sees it, or as the learner sitting it does.
  *
- * A quiz does not own its questions. They live in **banks**, each one is about a
- * **lesson**, and a quiz holds references — so the same question can be asked by
- * a retake and by next term's version of the course. Everything this page does
- * follows from that:
+ * Those are two screens behind one component, and `canEdit` is which one it is.
+ * An author gets what is below: the questions the quiz asks, in the order it
+ * asks them, where each one came from, and everything that edits, verifies or
+ * reorders them. A learner gets `QuizTaking` — the same questions without the
+ * answers, and what they scored. It is not a permission check on the client: the
+ * two routes behind them authorize differently and hand out different things,
+ * and the fact that nothing about writing a quiz belongs on the page somebody is
+ * sitting is the reason the split is here rather than deeper in.
+ *
+ * What the authoring half is built on: a quiz does not own its questions. They
+ * live in **banks**, each one is about a **lesson**, and a quiz holds references
+ * — so the same question can be asked by a retake and by next term's version of
+ * the course. Everything this page does follows from that:
  *
  * - **removing** a question takes it out of this quiz and leaves it where it
  *   lives; **deleting** it is a different thing, offered separately, and it
@@ -80,10 +89,9 @@ import type { QuizGeneration, QuizQuestion } from '@play/types';
  * - **editing** one changes it everywhere, which is why the row says so before
  *   the editor opens;
  * - **verifying** one verifies the question, once, whichever page it is done
- *   from — that is the whole point of a shared question being reviewed once.
- *
- * A learner never sees any of this: the questions carry the answer key, and the
- * API refuses to serve them to anybody who cannot edit the quiz.
+ *   from — that is the whole point of a shared question being reviewed once, and
+ *   it is also what puts a question in front of a learner: the paper holds back
+ *   everything nobody has read.
  */
 
 /** One question in the quiz, draggable because the order is the quiz's. */
@@ -255,22 +263,10 @@ function GenerationBanner({
   return null;
 }
 
-/** The page a learner gets: what this is, and that it cannot be taken yet. */
-function NotTakeableYet() {
-  return (
-    <div className="grid justify-items-center gap-3 rounded-3xl border border-border/60 bg-card py-16 text-center">
-      <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <HelpCircleIcon className="size-5" />
-      </div>
-      <p className="text-base font-semibold tracking-tight">This quiz cannot be taken yet</p>
-      <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-        Quiz questions are written and reviewed in Play Studio. Answering one is not part of Play
-        yet, so there is nothing to open here for now.
-      </p>
-    </div>
-  );
-}
-
+/**
+ * A quiz, with the authoring controls when the reader may change it and the
+ * paper when they may not. See the file's own note on the two screens.
+ */
 export function QuizPanel({
   contentId,
   spaceId,
@@ -449,7 +445,7 @@ export function QuizPanel({
     }
   }
 
-  if (!canEdit) return <NotTakeableYet />;
+  if (!canEdit) return <QuizTaking contentId={contentId} spaceId={spaceId} />;
 
   if (isLoading) {
     return (

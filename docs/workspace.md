@@ -125,6 +125,7 @@ dropped the player API the classroom uses.
 | A screen both apps have, with different URLs or data | `@play/learning`, with the differences as props |
 | A screen both apps have and neither varies — the sign-in | `@play/auth` |
 | Questions, the banks they live in, and what a quiz asks | `services/api/src/lib/{questions,question-banks,quiz-questions}.ts` + `functions/{banks,questions,quiz}/*` — see [quizzes.md](quizzes.md) |
+| A quiz being sat: the paper, the marking, the attempts | `services/api/src/lib/quiz-attempts.ts` + `functions/quiz/{get-quiz,submit-quiz-attempt}.ts`, drawn by `packages/learning/src/components/quiz/quiz-taking.tsx` |
 | A credential somebody calls the API with, and the screens for it | `services/api` + the studio's `/api-keys` and `/oauth/*` |
 | A request, its cache key and its invalidation | `@play/api/modules/*/*.queries.ts` |
 | Anything a page renders that is not specific to a screen | `@play/ui` |
@@ -392,10 +393,17 @@ from its first path segment:
 
 | Group | Path roots | What a change to it re-plans |
 | --- | --- | --- |
-| `Content` | `videos`, `sections`, `contents` | 279 resources |
-| `Courses` | `spaces`, `cohorts`, `rewards`, `catalog` | 209 |
-| `People` | `organizations`, `me` | 172 |
+| `Content` | `videos`, `sections`, `contents`, `questions`, `banks` | 410 resources |
+| `Courses` | `spaces`, `cohorts`, `rewards`, `catalog` | 216 |
+| `People` | `organizations`, `me` | 184 |
 | `PublicApi` | `v1`, `oauth` | 191 |
+
+The counts are what `cdk synth` reports for each nested stack, and `Content` is
+the one worth watching: it is past CloudFormation's warning line. `cdk synth`
+says so out loud now, and `infra/src/stacks/api-groups.ts` says what could be
+done about it — the quiz roots (`questions`, `banks`) can leave as a group of
+their own, since a root belongs to exactly one stack and moving a whole root
+keeps that true.
 
 The rule the groups have to obey is that **a path's first segment belongs to
 exactly one of them**, and `synth` refuses if a root is unclaimed or claimed

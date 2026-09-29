@@ -82,6 +82,8 @@ import type {
   QuestionBankResponse,
   QuestionResponse,
   QuestionsResponse,
+  QuizAttemptResponse,
+  QuizPaperResponse,
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
   RevokeRewardGrantResponse,
@@ -95,6 +97,7 @@ import type {
   SpaceStatsResponse,
   SpaceThumbnailResponse,
   StreamResponse,
+  SubmitQuizAttemptPayload,
   SubtitleResponse,
   ThumbnailResponse,
   UpdateCohortPayload,
@@ -758,6 +761,23 @@ export const api = {
     request<BatchVerificationResponse>(`/contents/${contentId}/questions/verification`, {
       method: 'POST',
       body: JSON.stringify(questionIds ? { questionIds } : {}),
+    }),
+
+  /**
+   * Taking a quiz, which is the other half of writing one.
+   *
+   * The paper is the quiz's questions without the answer key, served to whoever
+   * may read the course, which is what lets somebody registered for it — and in
+   * no organization at all — sit it. Handing it in is marked on the server, for
+   * the obvious reason, and finishes the quiz: the response carries the
+   * completion and any reward it earned, as marking a lesson complete does.
+   */
+  getQuiz: (contentId: string) => request<QuizPaperResponse>(`/contents/${contentId}/quiz`),
+
+  submitQuizAttempt: (contentId: string, payload: SubmitQuizAttemptPayload) =>
+    request<QuizAttemptResponse>(`/contents/${contentId}/quiz/attempts`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   // Learner state. Nothing in the app calls these yet — the classroom does.

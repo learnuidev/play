@@ -992,6 +992,45 @@ export const TABLES: TableSpec[] = [
     ],
     grantsIndexes: true,
   },
+  /**
+   *  The times a quiz was sat, and what each one scored.
+   *
+   *  Keyed by the **quiz**, and by the learner inside it rather than the other
+   *  way round, because both questions this table is ever asked are about one
+   *  quiz: "what have I scored on this one" is a learner's own prefix of the
+   *  partition, and "what becomes of these when the quiz is deleted" is the
+   *  partition, read and deleted whole. Keyed by the learner instead, the second
+   *  would need an index and the first would too.
+   *
+   *  A sort key of `${userId}#${attemptId}` is what makes both of those one
+   *  query: an attempt id is a ULID, so it sorts by the moment it was made and
+   *  "newest first" needs no attribute to order by.
+   *
+   *  There is deliberately no index. An author reading a class's results would
+   *  be one — `contentId` is already the partition, so it would be an index over
+   *  a partition key it shares, which is a scan with extra steps.
+   */
+  {
+    id: 'QuizAttemptsTable',
+    envVar: 'QUIZ_ATTEMPTS_TABLE',
+    billingMode: 'PAY_PER_REQUEST',
+    attributeDefinitions: [
+      { name: 'contentId', type: 'S' },
+      { name: 'attemptKey', type: 'S' },
+    ],
+    keySchema: [
+      { name: 'contentId', keyType: 'HASH' },
+      { name: 'attemptKey', keyType: 'RANGE' },
+    ],
+    globalSecondaryIndexes: [
+    ],
+    actions: [
+      'dynamodb:DeleteItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+    ],
+    grantsIndexes: false,
+  },
 ];
 
 export const FUNCTIONS: FunctionSpec[] = [
@@ -2087,6 +2126,33 @@ export const FUNCTIONS: FunctionSpec[] = [
     memorySize: 512,
     description: "Verifies a quiz's questions in a batch",
     http: [{"path":"contents/{contentId}/questions/verification","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  /**
+   *  Taking a quiz. The other side of the group above, and the reason the two
+   *  can be told apart by their paths: what an author reads carries the answer
+   *  key, and what a learner reads is the same questions without it.
+   */
+  {
+    key: 'get-quiz',
+    entry: 'src/functions/quiz/get-quiz.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: 'A quiz as the learner taking it sees it, without the answers',
+    http: [{"path":"contents/{contentId}/quiz","method":"GET","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'submit-quiz-attempt',
+    entry: 'src/functions/quiz/submit-quiz-attempt.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: 'Marks a sitting of a quiz and records the attempt',
+    http: [{"path":"contents/{contentId}/quiz/attempts","method":"POST","authorized":true}],
     s3: [],
     eventBridge: [],
   },

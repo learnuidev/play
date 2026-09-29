@@ -1,10 +1,15 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@api/lib/api';
+import { contentKeys } from '@api/modules/content/content.queries';
+import { progressKeys } from '@api/modules/progress/progress.queries';
+import { rewardKeys } from '@api/modules/reward/reward.queries';
+import { spaceKeys } from '@api/modules/space/space.queries';
 import type { QuizGeneration } from '@play/types';
 
 /**
- * The banks, the questions in them, and what a quiz asks of them.
+ * The banks, the questions in them, what a quiz asks of them, and what happens
+ * when somebody sits one.
  *
  * Two ideas decide the cache keys here:
  *
@@ -14,6 +19,10 @@ import type { QuizGeneration } from '@play/types';
  * - **A quiz only references questions**, so adding, removing or reordering one
  *   in a quiz touches the quiz's own list and nothing about the question. That
  *   is why `quizQuestionKeys` is separate from `bankKeys.questions`.
+ *
+ * A third follows from the second: **a learner's paper is not an author's
+ * list.** The two describe the same quiz and carry different things, so they are
+ * cached apart — see `quizPaperKeys`.
  */
 
 export const bankKeys = {
@@ -388,5 +397,85 @@ export function useVerifyQuizQuestions(contentId: string) {
   return useMutation({
     mutationFn: (questionIds?: string[]) => api.verifyQuizQuestions(contentId, questionIds),
     onSuccess: invalidate,
+  });
+}
+
+/* -------------------------------------------------------------------------
+ * Taking a quiz
+ * ---------------------------------------------------------------------- */
+
+/**
+ * A quiz's paper, as the learner sitting it reads it.
+ *
+ * A cache key of its own rather than `quizQuestionKeys`, and the reason is the
+ * answer key: the authoring list and the paper are two different documents
+ * about the same quiz, fetched by two routes with two authorizations, and a
+ * shared key would let one be drawn where the other belongs — which, for these
+ * two, is the whole failure.
+ */
+export const quizPaperKeys = {
+  all: ['quiz-paper'] as const,
+  paper: (contentId: string) => ['quiz-paper', contentId] as const,
+};
+
+export function useQuizPaper(contentId: string, enabled = true) {
+  return useQuery({
+    queryKey: quizPaperKeys.paper(contentId),
+    queryFn: () => api.getQuiz(contentId),
+    enabled: Boolean(contentId) && enabled,
+  });
+}
+
+/**
+ * Handing in a sheet, and everything that follows from it.
+ *
+ * Submitting finishes the quiz, so this is `useToggleCompletion`'s twin: the
+ * paper is refetched (its attempt list now has one more), and every surface that
+ * says how far somebody has got is invalidated with it — the tick beside the
+ * quiz in an outline, the percentage on a course page, the course cards — none
+ * of which are on this screen and all of which are wrong until they are asked
+ * again.
+ */
+export function useSubmitQuizAttempt(contentId: string, spaceId: string) {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof api.submitQuizAttempt>[1]) =>
+      api.submitQuizAttempt(contentId, payload),
+
+    onSuccess: ({ attempt, earned }) => {
+      // The attempt comes back marked, so the result is drawn without waiting
+      // for the paper to be read again: the list of sittings gains its summary,
+      // and the full attempt becomes the one the page opens on.
+      qc.setQueryData(
+        quizPaperKeys.paper(contentId),
+        (previous: Awaited<ReturnType<typeof api.getQuiz>> | undefined) =>
+          previous
+            ? {
+                ...previous,
+                attempts: [
+                  {
+                    attemptId: attempt.attemptId,
+                    questionCount: attempt.questionCount,
+                    correctCount: attempt.correctCount,
+                    score: attempt.score,
+                    submittedAt: attempt.submittedAt,
+                  },
+                  ...previous.attempts,
+                ],
+                lastAttempt: attempt,
+              }
+            : previous,
+      );
+
+      qc.invalidateQueries({ queryKey: contentKeys.detail(contentId) });
+      qc.invalidateQueries({ queryKey: progressKeys.all });
+
+      if (earned && earned.length > 0) {
+        qc.invalidateQueries({ queryKey: rewardKeys.mine() });
+        qc.invalidateQueries({ queryKey: rewardKeys.list(spaceId) });
+        qc.invalidateQueries({ queryKey: spaceKeys.stats(spaceId) });
+      }
+    },
   });
 }

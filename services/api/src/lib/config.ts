@@ -15,6 +15,7 @@ export const env = {
   questionsTableName: required('QUESTIONS_TABLE', process.env.QUESTIONS_TABLE),
   questionBanksTableName: required('QUESTION_BANKS_TABLE', process.env.QUESTION_BANKS_TABLE),
   quizQuestionsTableName: required('QUIZ_QUESTIONS_TABLE', process.env.QUIZ_QUESTIONS_TABLE),
+  quizAttemptsTableName: required('QUIZ_ATTEMPTS_TABLE', process.env.QUIZ_ATTEMPTS_TABLE),
   contentFilesTableName: required('CONTENT_FILES_TABLE', process.env.CONTENT_FILES_TABLE),
   favouritesTableName: required('FAVOURITES_TABLE', process.env.FAVOURITES_TABLE),
   playlistTableName: required('PLAYLIST_TABLE', process.env.PLAYLIST_TABLE),

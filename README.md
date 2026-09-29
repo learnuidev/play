@@ -1043,6 +1043,8 @@ All endpoints require `Authorization: Bearer <Cognito ID token>`.
 | DELETE | `/contents/{contentId}/questions/{questionId}`         | Stop asking it — the question stays in its bank                        |
 | PUT    | `/contents/{contentId}/questions/placement`            | Move it in the quiz's order                                            |
 | POST   | `/contents/{contentId}/questions/verification`         | Verify a batch of the quiz's questions                                 |
+| GET    | `/contents/{contentId}/quiz`                           | A quiz as a learner is handed it: the questions without the answers    |
+| POST   | `/contents/{contentId}/quiz/attempts`                  | Hand in an answer sheet and be marked (`201`)                          |
 | PUT    | `/contents/{contentId}/favourite`                      | Favourite it (any member)                                              |
 | DELETE | `/contents/{contentId}/favourite`                      | Unfavourite it                                                         |
 | PUT    | `/contents/{contentId}/playlist`                       | Add it to the caller's learning playlist                               |
@@ -1459,13 +1461,15 @@ pointers, and a pointer whose target is gone is skipped when their list is read.
 
 ### Quizzes and question banks
 
-A course can check what it taught. Two records make that work, and the split
-between them is the design:
+A course can check what it taught. Three records make that work, and the splits
+between them are the design:
 
 ```
 QuestionBank ─── Question ─── Lesson (a VIDEO content)
                     │
                     └── QuizQuestionLink ─── Quiz (a QUIZ content)
+                                             │
+                                             └── QuizAttempt (somebody sat it)
 ```
 
 **A question belongs to a bank and is about a lesson.** That is the rule: a
@@ -1511,6 +1515,18 @@ row lands — the server renumbers from what the container currently holds — s
 client that sends a stale view of a list cannot delete a row somebody else added
 while the drag was in flight.
 
+**A quiz can be sat, and the answer key never reaches somebody who has not
+answered.** `GET /contents/{contentId}/quiz` is authorized as a *read* of the
+course — the learner registered for it is in no organization at all — and answers
+with questions whose type has nowhere to put the key, so a handler that forgot to
+strip it would have to add a field to leak it. Only **verified** questions are
+asked, and the rest are counted so the page can say why it looks short. Handing
+in (`POST …/quiz/attempts`) is marked on the server and finishes the quiz: the
+completion and the course's rewards are written in the same request, exactly as
+marking a lesson complete does. Each attempt is a record of a moment — it carries
+the prompt, the options, the pick, what was right *then* and the explanation — so
+a question edited afterwards neither re-marks it nor leaves a blank where it was.
+
 A course's own page carries the third view of the same questions — a **Question
 banks** tab beside Content — which is every question about *this course's*
 lessons, from every bank, grouped by lesson and including the lessons nothing has
@@ -1518,13 +1534,14 @@ been written about yet. It reads through the questions table's
 `SpacePositionIndex`, so the tab is one query, and it authorizes as organization
 membership: a learner registered for the course is not told what the answers are.
 
-Three tables arrived with this feature and no deploy creates them:
-`QuestionsTable`, `QuestionBanksTable` and `QuizQuestionsTable` are made by
-`node infra/scripts/create-quiz-tables.mjs --yes`, once per stage, and recorded in
-`infra/config/play-<stage>.json`. [docs/quizzes.md](docs/quizzes.md) is the full
-map — the model, the routes, the import format, what deleting what takes with it,
-and what is deliberately not built yet (nobody takes a quiz; there are no
-attempts or scores).
+Four tables arrived with this feature and no deploy creates them:
+`QuestionsTable`, `QuestionBanksTable`, `QuizQuestionsTable` and
+`QuizAttemptsTable` are made by `node infra/scripts/create-quiz-tables.mjs --yes`,
+once per stage, and recorded in `infra/config/play-<stage>.json`.
+[docs/quizzes.md](docs/quizzes.md) is the full map — the model, the routes, the
+import format, taking a quiz, what deleting what takes with it, and what is
+deliberately not built yet (no pass mark, no time limit, and no view of anybody
+else's results).
 
 ### Learner state
 

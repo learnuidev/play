@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Creates the three tables the question model uses — and the only tables in this
+ * Creates the four tables the question model uses — and the only tables in this
  * service that no deploy can create.
  * **Run this once, in each stage, before deploying the API.**
  *
@@ -22,6 +22,7 @@
  * | `QuestionsTable` | the questions, each in a bank and about a lesson |
  * | `QuestionBanksTable` | the banks an organization owns |
  * | `QuizQuestionsTable` | which questions each quiz asks, and in what order |
+ * | `QuizAttemptsTable` | the times each quiz was sat, and what each one scored |
  *
  * ## What it reads
  *
@@ -69,7 +70,7 @@ const INFRA = path.resolve(HERE, '..');
 const ROOT = path.resolve(INFRA, '..');
 
 /** The tables this script owns, in the order it reports them. */
-const TABLE_IDS = ['QuestionsTable', 'QuestionBanksTable', 'QuizQuestionsTable'];
+const TABLE_IDS = ['QuestionsTable', 'QuestionBanksTable', 'QuizQuestionsTable', 'QuizAttemptsTable'];
 
 function usage() {
   const lines = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n');
@@ -489,7 +490,7 @@ if (wrote) {
   fs.writeFileSync(configFile, `${JSON.stringify(config, null, 2)}\n`);
   console.log(`\nWrote ${path.relative(ROOT, configFile)}: ${TABLE_IDS.join(', ')}`);
 } else {
-  console.log(`\n${path.relative(ROOT, configFile)} already names all three.`);
+  console.log(`\n${path.relative(ROOT, configFile)} already names all four.`);
 }
 
 console.log('\nNext: deploy the API.');

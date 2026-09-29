@@ -7,6 +7,7 @@ import { documentClient as client, isConditionalCheckFailed } from './dynamodb';
 import { moveIntoPlace } from './placement';
 import { addBankQuestionCount } from './question-banks';
 import { deleteQuestionItem, listQuestionsByLesson } from './questions';
+import { deleteAttemptsForQuiz } from './quiz-attempts';
 import { deleteLinksForQuestion, deleteLinksForQuiz } from './quiz-questions';
 
 export const CONTENTS_TABLE = env.contentsTableName;
@@ -137,6 +138,10 @@ export async function purgeContent(content: Content): Promise<void> {
 
   if (content.type === 'QUIZ') {
     await deleteLinksForQuiz(content.contentId);
+    // An attempt is a record of answering *this* quiz, and nothing looks one up
+    // except through the quiz it was made in — so with the quiz gone they are
+    // unreachable rows rather than somebody's history. See `deleteAttemptsForQuiz`.
+    await deleteAttemptsForQuiz(content.contentId);
   } else {
     for (const question of await listQuestionsByLesson(content.contentId)) {
       await deleteLinksForQuestion(question.questionId);

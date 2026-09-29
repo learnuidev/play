@@ -501,6 +501,110 @@ export interface QuizQuestionLink {
 }
 
 /**
+ * One question as a learner is handed it: everything but the answer.
+ *
+ * A quiz's questions carry the answer key, and this is the half a learner may
+ * see before they answer — which is why it is a type of its own rather than a
+ * `QuizQuestion` with fields hidden at the edge. A handler that forgot to strip
+ * `correctOptionIds` would hand out the answers, and a shape that has nowhere to
+ * put them cannot.
+ */
+export interface QuizPaperQuestion {
+  questionId: string;
+  type: QuestionType;
+  /** The statement to judge, or the question to answer. */
+  prompt: string;
+  /** Two to six options, in the order the author gave them. */
+  options: QuestionOption[];
+}
+
+/**
+ * One answer a learner gave, and what it turned out to be.
+ *
+ * **The question is copied in, and that is the point of the shape.** An attempt
+ * records what somebody was asked and what they said: a question edited
+ * afterwards must not silently reword the thing they got wrong, and one deleted
+ * afterwards must not leave a blank where their answer was. It is a record of a
+ * moment, and a moment that reads only by looking up rows that have since
+ * changed is not a record of anything.
+ *
+ * The three facts about an answer:
+ *
+ * - `correctOptionIds` is what answered it *at the time*, not what answers it
+ *   now — an author fixing a mistake in a question does not re-mark a term of
+ *   attempts made against the old one, and should not;
+ * - `optionId` absent is a real answer — "I do not know" — and it is wrong,
+ *   which is a different thing from a question that was never asked;
+ * - `explanation` is copied for the same reason as the prompt: it is feedback
+ *   about this attempt, and it has to still be there when the question is not.
+ */
+export interface QuizAttemptAnswer {
+  questionId: string;
+  /** The question as it was asked, so the attempt reads on its own. */
+  prompt: string;
+  /** The options it offered, in the order they were shown. */
+  options: QuestionOption[];
+  /** The option they chose. Absent when they skipped it. */
+  optionId?: string;
+  /** The options that answered it at the moment they submitted. */
+  correctOptionIds: string[];
+  correct: boolean;
+  /** Why, when the question carried one. */
+  explanation?: string;
+}
+
+/**
+ * One time somebody answered a quiz.
+ *
+ * Keyed by the **quiz** rather than by the learner — `contentId` is the
+ * partition and `userId#attemptId` the sort key — because both questions ever
+ * asked of this table are about one quiz: "what have I scored on this" is one
+ * learner's prefix of one partition, and "what happens to these when the quiz
+ * goes" is that same partition, read and deleted whole. A learner-keyed table
+ * would answer the first and need an index for the second.
+ *
+ * An attempt is written once and never edited: it is a record of a moment, not
+ * a state anything moves through. That is why there is no `startedAt` and no
+ * status — a learner who opens a quiz and closes it has not attempted anything,
+ * and a row for that would be a row that exists to be deleted.
+ */
+export interface QuizAttempt {
+  /** ULID, and the second half of the sort key. */
+  attemptId: string;
+  /** Cognito `sub` of the learner. Held in `attemptKey`, and told apart from it. */
+  userId: string;
+  /** `${userId}#${attemptId}` — the sort key. */
+  attemptKey: string;
+  contentId: string;
+  spaceId: string;
+  organizationId: string;
+  /** How many questions were asked, which is the total the score is over. */
+  questionCount: number;
+  correctCount: number;
+  /** 0–100, rounded. Kept on the row so a list of attempts is one read. */
+  score: number;
+  /** One entry per question asked, in the order the quiz asks them. */
+  answers: QuizAttemptAnswer[];
+  submittedAt: number;
+}
+
+/**
+ * One sitting, as everything but the result screen reads it.
+ *
+ * The score, the date and the id: what a line saying "you have sat this four
+ * times, best 80%" needs, and what listing an attempt's answers would make every
+ * read of a quiz pay for. The newest attempt travels in full beside these, since
+ * it is the one the page actually draws.
+ */
+export interface QuizAttemptSummary {
+  attemptId: string;
+  questionCount: number;
+  correctCount: number;
+  score: number;
+  submittedAt: number;
+}
+
+/**
  * A generation run, as it is recorded on the quiz's content row.
  *
  * There is at most one per quiz — asking again replaces the record and starts a

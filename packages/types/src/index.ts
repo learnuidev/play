@@ -1127,6 +1127,120 @@ export interface QuizQuestion {
 }
 
 /**
+ * One question as a learner is handed it, on a quiz they have not answered yet.
+ *
+ * Everything a `QuizQuestion` carries except the answer: `correctOptionIds` and
+ * `explanation` are the answer key, and the route that serves a paper has no
+ * field to put them in. That is deliberate rather than tidy — a handler that
+ * forgot to strip them would be handing out the answers, and a shape that cannot
+ * carry them cannot make that mistake.
+ */
+export interface QuizPaperQuestion {
+  questionId: string;
+  type: QuestionType;
+  /** The statement to judge, or the question to answer. */
+  prompt: string;
+  /** Two to six options, in the order the author gave them. */
+  options: QuestionOption[];
+}
+
+/**
+ * One answer a learner gave, and what it turned out to be.
+ *
+ * The question is copied in rather than looked up: an attempt is a record of
+ * what somebody was asked and what they said, so a question edited since must
+ * not reword the thing they got wrong, and one deleted since must not leave a
+ * blank. `correctOptionIds` and `explanation` are what was true at the moment
+ * they handed it in, for the same reason — an author fixing a mistake in a
+ * question does not re-mark the attempts made against the old one.
+ *
+ * `optionId` absent is a question they skipped, which is wrong rather than
+ * missing: the score is over the questions the quiz asks, so a blank is one
+ * nobody got.
+ */
+export interface QuizAttemptAnswer {
+  questionId: string;
+  /** The question as it was asked. */
+  prompt: string;
+  /** The options it offered, in the order they were shown. */
+  options: QuestionOption[];
+  /** The option they chose. Absent when they skipped it. */
+  optionId?: string;
+  correctOptionIds: string[];
+  correct: boolean;
+  explanation?: string;
+}
+
+/** One sitting of a quiz: what was asked, what they said, and what it scored. */
+export interface QuizAttempt {
+  attemptId: string;
+  contentId: string;
+  spaceId: string;
+  questionCount: number;
+  correctCount: number;
+  /** 0–100, rounded. */
+  score: number;
+  /** One entry per question asked, in the order the quiz asks them. */
+  answers: QuizAttemptAnswer[];
+  submittedAt: number;
+}
+
+/** A sitting as a list reads it: the numbers, and none of the answers. */
+export interface QuizAttemptSummary {
+  attemptId: string;
+  questionCount: number;
+  correctCount: number;
+  score: number;
+  submittedAt: number;
+}
+
+/**
+ * A quiz as the learner taking it sees it.
+ *
+ * `heldBack` is the questions the quiz asks that nobody has verified yet: they
+ * are answers no learner is marked against, and counting them here is what lets
+ * a page explain a short quiz instead of looking broken. `attempts` is the
+ * caller's own sittings, newest first, capped at the most recent twenty — and
+ * `lastAttempt` is the newest of them in full, which is the result the page
+ * opens on.
+ */
+export interface QuizPaperResponse {
+  questions: QuizPaperQuestion[];
+  heldBack: number;
+  attempts: QuizAttemptSummary[];
+  lastAttempt?: QuizAttempt;
+}
+
+/** One answer on a sheet being handed in. */
+export interface QuizAttemptSubmission {
+  questionId: string;
+  /** The option chosen, or `null` for a question left blank. */
+  optionId?: string | null;
+}
+
+export interface SubmitQuizAttemptPayload {
+  /** A question left out of the list is one they skipped. */
+  answers: QuizAttemptSubmission[];
+}
+
+/**
+ * What handing in a quiz answers with.
+ *
+ * Submitting finishes the quiz — answering is the learner's own "I have had my
+ * go", so the completion and the course's rewards are written by the same
+ * request, exactly as marking a lesson complete is. A score is not a threshold:
+ * a quiz is taken, not passed, and an attempt that scored nothing still finished
+ * it.
+ */
+export interface QuizAttemptResponse {
+  attempt: QuizAttempt;
+  completed: boolean;
+  completedAt: number;
+  /** Rewards this finished, if any. See `RewardGrant`. */
+  earned: RewardGrant[];
+}
+
+/**
  * One question a quiz asks, and where it sits in it.
  *
  * A row of its own rather than a list on the quiz, because the two halves have

@@ -332,6 +332,29 @@ export async function requireQuizAccess(contentId: string, userId: string): Prom
 }
 
 /**
+ * Authorizes the caller against a quiz they are *taking*.
+ *
+ * The other half of the pair above, and the difference between them is the whole
+ * of what taking a quiz added: reading a quiz is a read of the course, so a
+ * learner registered for it — who is often in no organization at all — may open
+ * the quiz, where the authoring routes still refuse them for being outside the
+ * organization that wrote it.
+ *
+ * What makes that safe is not a permission but a shape: everything reached
+ * through this answers with questions whose answer key has no field to live in
+ * (see `QuizPaperQuestion`). The key is read on the way to marking a submission
+ * and never handed out, which is the "separate route that hands out its
+ * questions without the answers" `requireQuizAccess` was written to wait for.
+ */
+export async function requireQuizReadAccess(contentId: string, userId: string): Promise<Content> {
+  const content = await requireContentAccess(contentId, userId, 'read');
+  if (content.type !== 'QUIZ') {
+    throw new HttpError(400, 'That content is a lesson, not a quiz');
+  }
+  return content;
+}
+
+/**
  * Loads a question bank and authorizes the caller against the organization that
  * owns it.
  *
