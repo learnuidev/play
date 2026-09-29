@@ -52,7 +52,7 @@ says so before anything is deployed.
 | `existing.userPool*` | The pool, its app client and its Hosted UI domain prefix |
 | `existing.googleSignInEnabled` | Whether that pool has a Google identity provider |
 | `mail.*` | The invitation sender and the two app base URLs. **Deploy-time, not runtime** |
-| `auth.googleClientId`, `auth.callbackUrls`, `auth.logoutUrls` | The Google client id, and the origins Cognito accepts. On a migrated stage the live pool's values are read from Cognito by `set-auth-urls.mjs` instead |
+| `auth.googleClientId`, `auth.callbackUrls`, `auth.logoutUrls` | The Google client id, and the origins Cognito accepts. On a migrated stage the live pool's values are read from Cognito by `set-auth-urls.mjs` instead — and saving them in the console runs that script, so the two URL lists reach the live app client rather than waiting for a deploy |
 | `googleClientSecretName` | The Secrets Manager secret a **created** pool reads the client secret from. Defaults to `play/<stage>/google-client-secret`, which is per-stage so two environments cannot overwrite each other |
 | `videosBucketName` | What to call the **videos bucket**, on a stage that creates its media. Absent — the default, and what the console writes — lets CloudFormation name it, because an S3 bucket name is unique across every AWS account |
 | `cloudFrontLogsBucketName` | The same, for the distribution's log bucket |

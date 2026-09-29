@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckIcon, KeyRoundIcon } from "lucide-react";
+import { CheckIcon, KeyRoundIcon, TriangleAlertIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
@@ -22,10 +22,12 @@ import type {
  * them, and this is where.
  *
  * The values land in `infra/config/play-<stage>.json` (`auth` and `mail`), which
- * is committed and readable. **The client secret does not.** It is write-only:
- * sent to Secrets Manager and never read back, because CloudFormation refuses an
- * SSM Secure reference in the identity provider, and the repository is not a
- * place for a credential.
+ * is committed and readable — and the two URL lists land on the live app client
+ * as well, because a stage that imports its pool has no deploy that could apply
+ * them. **The client secret does not.** It is write-only: sent to Secrets
+ * Manager and never read back, because CloudFormation refuses an SSM Secure
+ * reference in the identity provider, and the repository is not a place for a
+ * credential.
  *
  * The form holds no state of its own beyond its fields — the page that draws it
  * owns the request, because the same response is also the answer to "can this
@@ -114,8 +116,8 @@ export function SettingsForm({
           title="Google sign-in"
           hint={
             settings.needsGoogleSecret
-              ? `This environment creates its own user pool (play-users-${stage}), so its identity provider is built from these values at deploy.`
-              : `${stage} imports its user pool, so nothing here reaches Cognito — the live pool is changed by set-auth-urls.mjs. These are the values a deploy would use if it ever created one.`
+              ? `This environment creates its own user pool (play-users-${stage}), so its identity provider is built from these values at deploy — and once that pool exists, saving writes the two URL lists onto its client as well.`
+              : `${stage} imports its user pool, so no deploy can change what it accepts — saving writes the two URL lists to Cognito directly, by running set-auth-urls.mjs against this stage's own lists.`
           }
           action={
             <span className="text-muted-foreground flex shrink-0 items-center gap-1.5 font-mono text-xs">
@@ -275,6 +277,21 @@ export function SettingsForm({
                 </span>
               </>
             ) : null}
+            {/* The one part of a save that reaches something running, so it is
+                drawn with its own icon: a check when Cognito now holds these
+                lists, a warning when it does not — which is a stage whose pool
+                does not exist yet as often as it is a failure. */}
+            <span className="text-border">·</span>
+            <span className="flex items-start gap-1.5">
+              {write.authUrls.applied ? (
+                <CheckIcon className="text-ok mt-0.5 size-3.5 shrink-0" />
+              ) : (
+                <TriangleAlertIcon className="text-warn mt-0.5 size-3.5 shrink-0" />
+              )}
+              <span className={write.authUrls.applied ? undefined : "text-foreground/80"}>
+                {write.authUrls.note}
+              </span>
+            </span>
           </span>
         ) : (
           <span className="text-muted-foreground font-mono text-xs">

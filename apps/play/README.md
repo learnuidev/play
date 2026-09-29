@@ -488,18 +488,27 @@ Checklist**.
 
 | Field | Lands in |
 | --- | --- |
-| Google client id, callback URLs, logout URLs | `auth` in `infra/config/play-<stage>.json` |
+| Google client id | `auth` in `infra/config/play-<stage>.json` |
+| Callback URLs, logout URLs | `auth` in that file **and** the live app client — saving runs `set-auth-urls.mjs` for this stage |
 | From address, the two app base URLs | `mail` in the same file |
 | **Google client secret** | **Secrets Manager**, at `play/<stage>/google-client-secret` |
 
 Everything is editable at any time, not only during a first deploy. What a change
 does afterwards depends on the pool:
 
-- An environment that **creates** its pool applies what is saved on the next
-  deploy — the callback URLs are read from the config by the auth stack.
-- `dev` **imports** its pool, so nothing saved here reaches Cognito. The live pool
-  is changed by `services/api/scripts/set-auth-urls.mjs`, and these values are the
-  record of what it should be.
+- An environment that **creates** its pool gets the two URL lists twice: the save
+  writes them onto the client as soon as that pool exists, and the auth stack
+  builds the client with the same list from the config file on every deploy.
+- `dev` **imports** its pool, so there is no deploy that could apply them. The
+  save is what reaches Cognito, by running
+  `services/api/scripts/set-auth-urls.mjs` with this stage's own lists —
+  `--stage` alone would not do, because the script's defaults are the product's
+  deployed origins rather than this environment's.
+
+Either way the outcome is reported beside the save button rather than assumed: a
+stage whose pool does not exist yet is a sentence there, not a failed save. On a
+stage that imports its pool, that sentence is the only record that a sign-in
+would still be refused.
 
 **The secret never touches the repository.** It is write-only in both directions:
 sent to Secrets Manager on save, never read back, and the page shows only whether

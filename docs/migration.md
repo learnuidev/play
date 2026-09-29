@@ -52,7 +52,7 @@ that touches auth:
 
 | Because it is imported | What it means |
 | --- | --- |
-| The user pool and its client | The callback URLs Cognito accepts are **not** deployed. `services/api/scripts/set-auth-urls.mjs` writes them straight to Cognito. It used to write SSM and tell you to redeploy; that deploy no longer exists, and could not work |
+| The user pool and its client | The callback URLs Cognito accepts are **not** deployed. `services/api/scripts/set-auth-urls.mjs` writes them straight to Cognito, and the console's Settings save runs it with that stage's own lists. It used to write SSM and tell you to redeploy; that deploy no longer exists, and could not work |
 | The same pool | Setting the pre sign-up trigger is `infra/scripts/adopt-cognito.mjs`, for the same reason |
 | The CloudFront public key | On `dev`, rotating the signing key is a CloudFront API call against the key group the imported distribution trusts, because the stack neither creates that key nor the group that lists it. `generate-cloudfront-keypair.sh` ends with what that takes. A stage that **creates** its media has a key the media stack owns, so its rotation is a config change instead — new parameter names, `cloudFrontKeyVersion` up, deploy |
 | The tables | Nothing will notice if one is deleted, and nothing will recreate it. Point-in-time recovery is not on — enabling it is an in-place call, and worth doing for the tables whose loss would be more than an inconvenience |

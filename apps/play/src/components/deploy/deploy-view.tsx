@@ -125,7 +125,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
         state={state}
         deployable={!running}
         busy={deploy.starting}
-        onDeploy={() => void deploy.start(stage)}
+        onDeploy={() => void deploy.start({ stage })}
       />
 
       {unknown ? (

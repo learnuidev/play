@@ -18,6 +18,15 @@ import { signingKeyState } from "@/server/signing-key";
  * directions, which is why the form has to be told "a secret is set" rather
  * than being handed the secret to prefill.
  *
+ * ## `PUT` reaches the live pool, not only the file
+ *
+ * The callback and logout URLs are the one part of a save whose effect is not a
+ * file: a stage that imports its pool has no deploy that can change the URL
+ * lists Cognito accepts, so `saveSettings` runs
+ * `services/api/scripts/set-auth-urls.mjs` against this stage's own lists. What
+ * that found is `write.authUrls`, and a stage with no pool yet answers with a
+ * sentence rather than a failure — `server/auth-urls.ts` has the reasoning.
+ *
  * ## A stage with no config file gets a draft, not a 404
  *
  * That stage is a **new environment**, and these settings are exactly what it

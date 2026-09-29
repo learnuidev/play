@@ -212,6 +212,28 @@ function poolIds() {
   }
 
   const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+
+  // A config with no `existing` block is a stage that **creates** its pool: the
+  // file exists, so the fallback above finds it, but it names no pool to write
+  // to until `PlayAuthStack-<stage>` has been deployed once. Said in a sentence
+  // rather than left to crash on `config.existing.userPoolId` — this is a state
+  // a first save reaches on purpose (the console runs this on every save), and
+  // the answer is that the auth stack builds the client with these URLs from
+  // this very file.
+  //
+  // Printed rather than thrown, alone: the console shows this sentence in the
+  // form, and a V8 stack under it would be the part a reader has to skip past to
+  // reach the reason.
+  if (!config.existing?.userPoolId || !config.existing?.userPoolClientId) {
+    console.error(
+      `${path.relative(ROOT, configFile)} imports no user pool, and PlayAuthStack-${stage} could ` +
+        'not be read. A stage that creates its own pool has no app client to write to until that ' +
+        'stack has been deployed once — the auth stack builds the client with these URLs from the ' +
+        'config file, so a deploy applies them.',
+    );
+    process.exit(1);
+  }
+
   return {
     poolId: config.existing.userPoolId,
     clientId: config.existing.userPoolClientId,

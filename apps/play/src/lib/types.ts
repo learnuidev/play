@@ -264,9 +264,9 @@ export interface EnvironmentSettings {
 /**
  * What a save wrote, so the page can say it rather than guess.
  *
- * A save is up to three writes with three destinations — the committed config
- * file, Secrets Manager, and the signing key's parameters — and "Saved" is not
- * an honest summary of all three.
+ * A save is up to four writes with four destinations — the committed config
+ * file, Secrets Manager, the signing key's parameters, and the live app client —
+ * and "Saved" is not an honest summary of all four.
  */
 export interface SettingsWriteView {
   configPath: string;
@@ -275,6 +275,25 @@ export interface SettingsWriteView {
   secretWritten: boolean;
   /** What the signing-key check found. Null when this environment imports its media. */
   signingKeyNote: string | null;
+  /** What happened to the live app client, which is the other half of a URL save. */
+  authUrls: AuthUrlsWriteView;
+}
+
+/**
+ * Whether the callback and logout URLs that were just saved reached the pool
+ * that is running.
+ *
+ * The config file is what a **deploy** reads, and a stage that imports its pool
+ * has no deploy that can change the URL lists Cognito accepts — an imported
+ * resource is unmanaged. So the save runs `set-auth-urls.mjs` as well, and this
+ * is what it found rather than what was assumed: a stage whose pool does not
+ * exist yet is a sentence here, not a failed save.
+ */
+export interface AuthUrlsWriteView {
+  /** Cognito was reached, and now holds the lists that were just saved. */
+  applied: boolean;
+  /** One sentence: what happened, or why it did not. */
+  note: string;
 }
 
 /**

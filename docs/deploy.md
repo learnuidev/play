@@ -127,10 +127,16 @@ applies anything to it. It used to be an SSM parameter that Serverless read at
 deploy time; the script now calls `UpdateUserPoolClient` itself, so there is one
 step and nothing to remember afterwards.
 
+The console runs it for you: saving the callback or logout URLs on an
+environment's Settings form runs this script with that stage's own two lists, so
+a change reaches the pool whether or not that stage has a deploy that would
+apply it. What it found is reported beside the save button.
+
 `set-auth-urls.mjs`'s own defaults are already the list this deployment wants:
 both apps on localhost, and both on their domains (studio.lets-play.xyz and
 lets-play.xyz). So the write is the script with no arguments, and the only reason
-to pass `--callback-urls` is to say something different:
+to pass `--callback-urls` is to say something different — which is exactly what
+the console does, because a stage's list is its own:
 
 ```bash
 # the four origins, each as a /auth/callback path and a bare origin: the path is

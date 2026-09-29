@@ -1,9 +1,11 @@
 import type {
+  AuthUrlsWriteView,
   EnvironmentSettings,
   EnvironmentSettingsInput,
   GoogleOAuthValues,
   SettingsWriteView,
 } from "@/lib/types";
+import { applyAuthUrls } from "./auth-urls";
 import { awsJson, getIdentity } from "./aws";
 import {
   configFile,
@@ -29,8 +31,9 @@ import { ensureSigningKey } from "./signing-key";
  *
  * They are the values a new environment needs before it can deploy, because its
  * user pool is created from them. On `dev` they describe a pool that already
- * exists — nothing here redeploys it, and `set-auth-urls.mjs` is still what
- * changes the live pool.
+ * exists — nothing here redeploys it, so saving **applies** the URLs to that
+ * pool instead of waiting for a deploy that will never come: this module runs
+ * `set-auth-urls.mjs`, and `auth-urls.ts` is where that is explained.
  *
  * ## The secret never touches the config file
  *
@@ -183,12 +186,15 @@ export async function googleOAuthValues(
 /**
  * Writes the settings for an environment.
  *
- * Three destinations, deliberately kept apart:
+ * Four destinations, deliberately kept apart:
  *
  * - the **configuration** goes into the committed config file. When there is no
  *   file yet, this creates one — a *new environment*, `ownership` all `true` and
  *   no `existing` block — which is what makes this form the way an environment
  *   is created rather than something to fill in afterwards;
+ * - the **URLs Cognito will accept** go onto the pool that is running now, by
+ *   running `set-auth-urls.mjs` — see `auth-urls.ts` for why a file write is not
+ *   enough on a stage that imports its pool;
  * - the **secret** goes to Secrets Manager, write-only in both directions;
  * - the **signing key**, which is the one thing nobody can type, is created if
  *   it is missing and left alone if it is there.
@@ -264,9 +270,35 @@ export async function saveSettings(
       configPath: file,
       created,
       secretWritten: Boolean(input.googleClientSecret),
+      authUrls: await authUrlsNote(stage, auth, ctx),
       ...(await keyNote(stage, settings, ctx)),
     },
   };
+}
+
+/**
+ * The live app client, as part of a save.
+ *
+ * The stage's own URLs rather than the script's defaults, which are the product's
+ * deployed origins — see `auth-urls.ts`. A failure does **not** fail the save for
+ * the same reason the signing key's does not: the file is written and is the
+ * thing that was asked for, and a stage with no pool yet is not an error. What
+ * happened is reported either way, because "saved" without it would be a summary
+ * that hides the half of it that decides whether a sign-in works.
+ */
+async function authUrlsNote(
+  stage: string,
+  auth: { callbackUrls: string[]; logoutUrls: string[] },
+  ctx: { profile?: string; region?: string },
+): Promise<AuthUrlsWriteView> {
+  try {
+    return await applyAuthUrls(stage, auth, ctx);
+  } catch (error) {
+    return {
+      applied: false,
+      note: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 /**
