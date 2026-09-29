@@ -1,8 +1,10 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireQuestionAccess } from '../../lib/access';
 import { requireUserId } from '../../lib/auth';
+import { getContent } from '../../lib/contents';
 import { HttpError, handle, jsonBody, ok, pathParam } from '../../lib/http';
 import {
+  assertLesson,
   getQuestion,
   parseQuestionInput,
   updateQuestion,
@@ -17,6 +19,8 @@ interface UpdateQuestionBody {
   answer?: unknown;
   /** A string, or `null` to clear it. */
   explanation?: unknown;
+  /** Point the question at a different lesson. */
+  lessonContentId?: unknown;
 }
 
 /** The marker `resolveAnswer` prefixes a refusal with, so it can be thrown as a 400. */
@@ -62,21 +66,27 @@ function resolveAnswer(body: UpdateQuestionBody, existing: QuizQuestion): unknow
 }
 
 /**
- * Changes a question: its words, its options, or which one is right.
+ * Changes a question: its words, its options, which one is right, or the lesson
+ * it is about.
  *
- * Two things make this more than a patch. The first is that a type change is
- * re-validated as a whole question rather than field by field — switching a
- * multiple-choice question to true/false replaces its options with True and
- * False, and the answer has to be re-read against them. The second is that an
- * edit to what a question *says* takes its verification away: somebody said
- * "this is right" about a sentence, and a sentence that has changed is one
- * nobody has said anything about. See `UpdateQuestionPatch`.
+ * Two things make this more than a patch. The first is that anything touching
+ * the type, the options or the answer is re-validated as a whole question rather
+ * than field by field — switching a multiple-choice question to true/false
+ * replaces its options with True and False, and the answer has to be re-read
+ * against them. The second is that an edit to what a question *says*, or to the
+ * lesson it is about, takes its verification away: somebody said "this is right",
+ * about a sentence and a lesson, and one that has changed since is one nobody has
+ * said anything about. See `UpdateQuestionPatch`.
+ *
+ * An edit here is visible everywhere the question is asked, because a quiz does
+ * not own it. That is the point of a bank, and the page says so before somebody
+ * changes a question three quizzes are using.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const userId = requireUserId(event);
   const questionId = pathParam(event, 'questionId');
 
-  const existing = await requireQuestionAccess(questionId, userId);
+  const existing = await requireQuestionAccess(questionId, userId, 'write');
   const body = jsonBody<UpdateQuestionBody>(event);
 
   const patch: UpdateQuestionPatch = {};
@@ -121,6 +131,23 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     const prompt = body.prompt.trim().replace(/\s+/g, ' ');
     if (prompt !== existing.prompt) {
       patch.prompt = prompt;
+      changesTheQuestion = true;
+    }
+  }
+
+  if (body.lessonContentId !== undefined) {
+    if (typeof body.lessonContentId !== 'string' || !body.lessonContentId.trim()) {
+      throw new HttpError(400, 'lessonContentId must be a lesson id');
+    }
+
+    const lesson = await getContent(body.lessonContentId.trim());
+    assertLesson(lesson, existing.organizationId);
+
+    if (lesson.contentId !== existing.lessonContentId) {
+      patch.lessonContentId = lesson.contentId;
+      patch.lessonSpaceId = lesson.spaceId;
+      // A question moved to another lesson is a question about something else,
+      // so whoever verified the old one verified a different question.
       changesTheQuestion = true;
     }
   }

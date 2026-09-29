@@ -1,20 +1,27 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
+  AddQuizQuestionsResponse,
+  ApproveAuthorizationResponse,
   AudioResponse,
   BatchVerificationResponse,
   CatalogCourseResponse,
   CohortResponse,
   Comment,
+  CompletionResponse,
   ContentFileResponse,
   ContentMutationResponse,
   ContentResponse,
-  CompletionResponse,
+  CreateApiKeyPayload,
+  CreateApiKeyResponse,
   CreateCohortPayload,
   CreateCommentPayload,
   CreateContentPayload,
   CreateLoopPayload,
+  CreateOAuthAppPayload,
+  CreateOAuthAppResponse,
   CreateOrganizationPayload,
   CreateOrganizationResponse,
+  CreateQuestionBankPayload,
   CreateQuestionPayload,
   CreateRewardPayload,
   CreateSectionPayload,
@@ -22,49 +29,46 @@ import type {
   CreateSpaceResponse,
   CreateVideoPayload,
   CreateVideoResponse,
-  ApproveAuthorizationResponse,
-  CreateApiKeyPayload,
-  CreateApiKeyResponse,
-  CreateOAuthAppPayload,
-  CreateOAuthAppResponse,
   FavouriteResponse,
   FavouriteTargetType,
   GenerateQuestionsPayload,
   GrantRewardPayload,
   ImportQuestionsPayload,
   ImportQuestionsResponse,
+  InstructorResponse,
   InviteMemberPayload,
   InviteMemberResponse,
   InviteSpaceMemberPayload,
   InviteSpaceMemberResponse,
   ListApiKeysResponse,
+  ListBankQuestionsResponse,
   ListCatalogResponse,
-  ListOAuthAppsResponse,
-  ListOAuthConnectionsResponse,
   ListCohortsResponse,
   ListCommentsResponse,
   ListContentFilesResponse,
-  ListLoopsResponse,
-  ListQuestionsResponse,
-  LoopLikeResponse,
   ListContentsResponse,
   ListFavouritesResponse,
   ListInstructorsResponse,
-  InstructorResponse,
-  ListMyInvitationsResponse,
+  ListLoopsResponse,
   ListMyCoursesResponse,
+  ListMyInvitationsResponse,
+  ListMyProgressResponse,
   ListMyRewardsResponse,
   ListMySpaceInvitationsResponse,
-  ListMyProgressResponse,
-  ListOrganizationApiKeysResponse,
+  ListOAuthAppsResponse,
+  ListOAuthConnectionsResponse,
   ListOrgMembersResponse,
+  ListOrganizationApiKeysResponse,
   ListOrganizationsResponse,
   ListPlaylistResponse,
+  ListQuestionBanksResponse,
+  ListQuestionsResponse,
   ListRewardsResponse,
   ListSectionsResponse,
   ListSpaceMembersResponse,
   ListSpacesResponse,
   ListVideosResponse,
+  LoopLikeResponse,
   LoopResponse,
   OAuthAppResponse,
   OAuthAuthorizationParams,
@@ -72,12 +76,14 @@ import type {
   OrgMemberResponse,
   OrgRole,
   PlaceContentPayload,
+  PlaceQuizQuestionPayload,
+  PlaylistResponse,
+  ProfileResponse,
+  QuestionBankResponse,
   QuestionResponse,
   QuestionsResponse,
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
-  PlaylistResponse,
-  ProfileResponse,
   RevokeRewardGrantResponse,
   RewardGrantResponse,
   RewardResponse,
@@ -97,6 +103,7 @@ import type {
   UpdateOAuthAppPayload,
   UpdateOAuthAppResponse,
   UpdateProfilePayload,
+  UpdateQuestionBankPayload,
   UpdateQuestionPayload,
   UpdateRewardPayload,
   UpdateSectionPayload,
@@ -584,90 +591,6 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  /**
-   * A quiz's questions, with how many are still waiting to be read.
-   *
-   * Read-only for the API's purposes — an author's screen is the only caller —
-   * and every question route is behind a *write* on the quiz, because what comes
-   * back carries the answer key. See `requireQuizAccess`.
-   */
-  listQuestions: (contentId: string) =>
-    request<ListQuestionsResponse>(`/contents/${contentId}/questions`),
-
-  createQuestion: (contentId: string, payload: CreateQuestionPayload) =>
-    request<QuestionResponse>(`/contents/${contentId}/questions`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-
-  updateQuestion: (questionId: string, patch: UpdateQuestionPayload) =>
-    request<QuestionResponse>(`/questions/${questionId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(patch),
-    }),
-
-  deleteQuestion: (questionId: string) =>
-    request<void>(`/questions/${questionId}`, { method: 'DELETE' }),
-
-  /**
-   * A person saying a question is right — or taking that back.
-   *
-   * Two calls rather than one with a body, because it is one decision with two
-   * directions and there is no third state to set: a question is either read by
-   * somebody or it is not.
-   */
-  verifyQuestion: (questionId: string) =>
-    request<QuestionResponse>(`/questions/${questionId}/verification`, { method: 'PUT' }),
-
-  unverifyQuestion: (questionId: string) =>
-    request<QuestionResponse>(`/questions/${questionId}/verification`, { method: 'DELETE' }),
-
-  /**
-   * Verifying a batch. Without `questionIds` it is every question of the quiz
-   * that is still waiting, which is what an author who has just read a generated
-   * set means by it.
-   */
-  verifyQuestions: (contentId: string, questionIds?: string[]) =>
-    request<BatchVerificationResponse>(`/contents/${contentId}/questions/verification`, {
-      method: 'POST',
-      body: JSON.stringify(questionIds ? { questionIds } : {}),
-    }),
-
-  /** Where a question sits in its quiz — what a drag inside the list performs. */
-  placeQuestion: (questionId: string, index: number) =>
-    request<QuestionsResponse>(`/questions/${questionId}/placement`, {
-      method: 'PUT',
-      body: JSON.stringify({ index }),
-    }),
-
-  /**
-   * Imports questions from a file.
-   *
-   * The file travels base64 inside a JSON body because API Gateway's REST
-   * integration has no multipart parser; the rows that could not be read come
-   * back as `skipped`, each with the line it was on, rather than failing the
-   * whole import.
-   */
-  importQuestions: (contentId: string, payload: ImportQuestionsPayload) =>
-    request<ImportQuestionsResponse>(`/contents/${contentId}/questions/import`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-
-  /**
-   * Asks AI to write questions from a lesson.
-   *
-   * It answers `202` with the quiz, not with questions: the run is queued,
-   * because a model reading a transcript takes longer than API Gateway will hold
-   * a request open. What comes back carries the run's state, and the quiz page
-   * polls it.
-   */
-  generateQuestions: (contentId: string, payload: GenerateQuestionsPayload) =>
-    request<ContentMutationResponse>(`/contents/${contentId}/questions/generation`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-
   /** Reserves an attachment and returns the presigned PUT the client uploads to. */
   uploadContentFile: (contentId: string, payload: UploadContentFilePayload) =>
     request<UploadContentFileResponse>(`/contents/${contentId}/files`, {
@@ -682,6 +605,160 @@ export const api = {
 
   deleteContentFile: (contentId: string, fileId: string) =>
     request<void>(`/contents/${contentId}/files/${fileId}`, { method: 'DELETE' }),
+
+  /**
+   * An organization's question banks.
+   *
+   * A bank is where questions live; a quiz asks some of them. The list is
+   * readable by any member of the organization — checking a colleague's
+   * questions is reading — and everything that changes one takes an editor.
+   */
+  listQuestionBanks: (orgId: string) =>
+    request<ListQuestionBanksResponse>(`/organizations/${orgId}/question-banks`),
+
+  createQuestionBank: (orgId: string, payload: CreateQuestionBankPayload) =>
+    request<QuestionBankResponse>(`/organizations/${orgId}/question-banks`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getQuestionBank: (bankId: string) => request<QuestionBankResponse>(`/banks/${bankId}`),
+
+  updateQuestionBank: (bankId: string, patch: UpdateQuestionBankPayload) =>
+    request<QuestionBankResponse>(`/banks/${bankId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  /** Deletes a bank **and every question in it**, out of every quiz asking them. */
+  deleteQuestionBank: (bankId: string) =>
+    request<void>(`/banks/${bankId}`, { method: 'DELETE' }),
+
+  /**
+   * A bank's questions, with the bank itself and how many need reading.
+   *
+   * One request draws the whole page, and the page groups them by lesson: a bank
+   * is a list somebody works down, and the grouping is how it is read rather
+   * than how it is stored.
+   */
+  listBankQuestions: (bankId: string) =>
+    request<ListBankQuestionsResponse>(`/banks/${bankId}/questions`),
+
+  /** Writes one by hand. `lessonContentId` is required: every question is about a lesson. */
+  createQuestion: (bankId: string, payload: CreateQuestionPayload) =>
+    request<QuestionResponse>(`/banks/${bankId}/questions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * Imports questions from a file.
+   *
+   * The file travels base64 inside a JSON body because API Gateway's REST
+   * integration has no multipart parser; the rows that could not be read come
+   * back as `skipped`, each with the line it was on, rather than failing the
+   * whole import. One file is about one lesson.
+   */
+  importQuestions: (bankId: string, payload: ImportQuestionsPayload) =>
+    request<ImportQuestionsResponse>(`/banks/${bankId}/questions/import`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * Asks AI to write questions from a lesson.
+   *
+   * It answers `202` with the bank, not with questions: the run is queued,
+   * because a model reading a transcript takes longer than API Gateway will hold
+   * a request open. What comes back carries the run's state, and the page polls
+   * it. With `addToContentId` the run also adds what it writes to that quiz.
+   */
+  generateQuestions: (bankId: string, payload: GenerateQuestionsPayload) =>
+    request<QuestionBankResponse>(`/banks/${bankId}/questions/generation`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /** Forgets the last run on a bank, once its author has read why it failed. */
+  dismissQuestionGeneration: (bankId: string) =>
+    request<void>(`/banks/${bankId}/questions/generation`, { method: 'DELETE' }),
+
+  /**
+   * Verifying a batch. Without `questionIds` it is every question of the bank
+   * that is still waiting, which is what an author who has just read a generated
+   * set means by it.
+   */
+  verifyQuestions: (bankId: string, questionIds?: string[]) =>
+    request<BatchVerificationResponse>(`/banks/${bankId}/questions/verification`, {
+      method: 'POST',
+      body: JSON.stringify(questionIds ? { questionIds } : {}),
+    }),
+
+  updateQuestion: (questionId: string, patch: UpdateQuestionPayload) =>
+    request<QuestionResponse>(`/questions/${questionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  /** Deletes it from its bank — and out of every quiz asking it. */
+  deleteQuestion: (questionId: string) =>
+    request<{ removedFrom: number }>(`/questions/${questionId}`, { method: 'DELETE' }),
+
+  /**
+   * A person saying a question is right — or taking that back.
+   *
+   * Two calls rather than one with a body, because it is one decision with two
+   * directions and there is no third state to set: a question is either read by
+   * somebody or it is not. It is the same act whichever page it is done from,
+   * because it is the same question.
+   */
+  verifyQuestion: (questionId: string) =>
+    request<QuestionResponse>(`/questions/${questionId}/verification`, { method: 'PUT' }),
+
+  unverifyQuestion: (questionId: string) =>
+    request<QuestionResponse>(`/questions/${questionId}/verification`, { method: 'DELETE' }),
+
+  /**
+   * Every question about one course's lessons, from every bank.
+   *
+   * The course page's own read: an author working through a course wants to know
+   * what has been written for the lessons in it, wherever those questions live.
+   * Organization-only, because questions carry the answer key.
+   */
+  listSpaceQuestions: (spaceId: string) =>
+    request<ListQuestionsResponse>(`/spaces/${spaceId}/questions`),
+
+  /** What a quiz asks, in the order it asks it. */
+  listQuizQuestions: (contentId: string) =>
+    request<ListQuestionsResponse>(`/contents/${contentId}/questions`),
+
+  /**
+   * Adds questions to a quiz. They stay in their banks — a quiz holds references,
+   * not copies — and one already asked is counted rather than duplicated.
+   */
+  addQuizQuestions: (contentId: string, questionIds: string[]) =>
+    request<AddQuizQuestionsResponse>(`/contents/${contentId}/questions`, {
+      method: 'POST',
+      body: JSON.stringify({ questionIds }),
+    }),
+
+  /** Takes a question out of a quiz. The question itself is untouched. */
+  removeQuizQuestion: (contentId: string, questionId: string) =>
+    request<void>(`/contents/${contentId}/questions/${questionId}`, { method: 'DELETE' }),
+
+  /** Where a question sits in the quiz that asks it — what a drag performs. */
+  placeQuizQuestion: (contentId: string, payload: PlaceQuizQuestionPayload) =>
+    request<QuestionsResponse>(`/contents/${contentId}/questions/placement`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+
+  /** Verifying a batch of one quiz's questions, from the page asking them. */
+  verifyQuizQuestions: (contentId: string, questionIds?: string[]) =>
+    request<BatchVerificationResponse>(`/contents/${contentId}/questions/verification`, {
+      method: 'POST',
+      body: JSON.stringify(questionIds ? { questionIds } : {}),
+    }),
 
   // Learner state. Nothing in the app calls these yet — the classroom does.
   favouriteContent: (contentId: string) =>

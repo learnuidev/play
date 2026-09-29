@@ -14,9 +14,14 @@ import {
   DialogTitle,
 } from '@ui/components/ui/dialog';
 import { Label } from '@ui/components/ui/label';
-import { useSections } from '@api/modules/section/section.queries';
 import { useImportQuestions } from '@api/modules/question/question.queries';
-import { IMPORT_EXTENSIONS, MAX_IMPORT_BYTES, downloadImportTemplate, readFileAsBase64 } from '@learning/lib/question-file';
+import {
+  IMPORT_EXTENSIONS,
+  MAX_IMPORT_BYTES,
+  downloadImportTemplate,
+  readFileAsBase64,
+} from '@learning/lib/question-file';
+import { LessonPicker } from './lesson-picker';
 import type { ImportQuestionsResponse } from '@play/types';
 
 const MAX_ROWS = 300;
@@ -43,12 +48,19 @@ function SkippedRows({ skipped }: { skipped: ImportQuestionsResponse['skipped'] 
 }
 
 /**
- * Bringing a quiz in from a file.
+ * Bringing questions in from a file.
  *
  * The dialog is the whole of the file's documentation: the columns, an example,
  * and a template to download — because a format described in a README is a
  * format somebody has to leave the page to read, and the person importing a
  * spreadsheet is holding the file in the other hand.
+ *
+ * **The lesson is chosen here, once, for the whole file.** It has to be chosen —
+ * a question is about a lesson — and a column of lesson titles would be a column
+ * the importer had to guess at, because a title is not unique and the same
+ * course can hold two lessons called "Introduction". A file covering two lessons
+ * is imported twice, which the dialog says rather than leaving somebody to
+ * discover it from the questions all landing on one lesson.
  *
  * Two things it refuses to do quietly. A file that is too large, or of a kind
  * nothing reads, fails as a whole and says why. A file whose *rows* are partly
@@ -57,45 +69,43 @@ function SkippedRows({ skipped }: { skipped: ImportQuestionsResponse['skipped'] 
  * for years.
  */
 export function ImportQuestionsDialog({
-  contentId,
+  orgId,
+  bankId,
   spaceId,
   open,
   onOpenChange,
 }: {
-  contentId: string;
-  spaceId: string;
+  orgId: string;
+  bankId: string;
+  /** The course whose lessons are on offer, when the page knows it. */
+  spaceId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
-  const [sourceContentId, setSourceContentId] = useState('');
+  const [lessonContentId, setLessonContentId] = useState('');
   const [result, setResult] = useState<ImportQuestionsResponse | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { data: outline } = useSections(spaceId);
-  const importQuestions = useImportQuestions(contentId);
-
-  const lessons = (outline?.sections ?? []).flatMap((section) =>
-    section.contents.filter((content) => content.type === 'VIDEO').map((content) => ({ contentId: content.contentId, title: content.title })),
-  );
+  const importQuestions = useImportQuestions(bankId);
 
   useEffect(() => {
     if (!open) return;
     setFile(null);
-    setSourceContentId('');
+    setLessonContentId('');
     setResult(null);
     if (inputRef.current) inputRef.current.value = '';
   }, [open]);
 
   async function submit() {
-    if (!file) return;
+    if (!file || !lessonContentId) return;
 
     try {
       const contentBase64 = await readFileAsBase64(file);
       const response = await importQuestions.mutateAsync({
         fileName: file.name,
         contentBase64,
-        ...(sourceContentId ? { sourceContentId } : {}),
+        lessonContentId,
       });
 
       setResult(response);
@@ -114,8 +124,8 @@ export function ImportQuestionsDialog({
         <DialogHeader>
           <DialogTitle>Import questions</DialogTitle>
           <DialogDescription>
-            A spreadsheet (.xlsx), a CSV, or a JSON file. Every question lands needing
-            verification, whichever way it arrived.
+            A spreadsheet (.xlsx), a CSV, or a JSON file — all of it about one lesson. Every
+            question lands needing verification, whichever way it arrived.
           </DialogDescription>
         </DialogHeader>
 
@@ -146,24 +156,13 @@ export function ImportQuestionsDialog({
               </p>
             </div>
 
-            {lessons.length > 0 && (
-              <div className="grid gap-2">
-                <Label htmlFor="import-source">Written from</Label>
-                <select
-                  id="import-source"
-                  value={sourceContentId}
-                  onChange={(event) => setSourceContentId(event.target.value)}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-                >
-                  <option value="">Not from a particular lesson</option>
-                  {lessons.map((lesson) => (
-                    <option key={lesson.contentId} value={lesson.contentId}>
-                      {lesson.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <LessonPicker
+              orgId={orgId}
+              spaceId={spaceId}
+              value={lessonContentId}
+              onChange={setLessonContentId}
+              disabled={importQuestions.isPending}
+            />
 
             <div className="rounded-2xl border border-border/60 bg-muted/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
               <p className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -176,9 +175,10 @@ export function ImportQuestionsDialog({
                   Type, Question, Option A, Option B, Option C, Option D, Answer, Explanation
                 </span>
                 . The answer is a letter (<span className="text-foreground">A</span>), or{' '}
-                <span className="text-foreground">True</span>/<span className="text-foreground">False</span>{' '}
-                for a true/false question. The type can be left out: a row with options is multiple
-                choice, and one without them is true/false.
+                <span className="text-foreground">True</span>/
+                <span className="text-foreground">False</span> for a true/false question. The type
+                can be left out: a row with options is multiple choice, and one without them is
+                true/false.
               </p>
               <Button
                 type="button"
@@ -211,7 +211,11 @@ export function ImportQuestionsDialog({
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="button" onClick={submit} disabled={!file || importQuestions.isPending}>
+              <Button
+                type="button"
+                onClick={submit}
+                disabled={!file || !lessonContentId || importQuestions.isPending}
+              >
                 {importQuestions.isPending && <Loader2Icon className="animate-spin" />}
                 Import
               </Button>

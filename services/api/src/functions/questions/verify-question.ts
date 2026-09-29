@@ -17,12 +17,15 @@ import { getQuestion, updateQuestionStatus } from '../../lib/questions';
  * Un-verifying *removes* the record rather than blanking it — "nobody has
  * checked this" is the absence of the fact, and a row carrying an empty name is
  * a row somebody has to read carefully to understand.
+ *
+ * Verifying here and verifying from a quiz's page are the same act on the same
+ * question: it is shared, so it is verified once.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const userId = requireUserId(event);
   const questionId = pathParam(event, 'questionId');
 
-  await requireQuestionAccess(questionId, userId);
+  await requireQuestionAccess(questionId, userId, 'write');
 
   if (event.httpMethod === 'DELETE') {
     await updateQuestionStatus(questionId, { status: 'NEEDS_VERIFICATION' });

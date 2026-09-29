@@ -419,15 +419,43 @@ export interface QuestionOption {
   text: string;
 }
 
-/** One question of a quiz, as the table stores it. */
+/**
+ * A question bank: an organization's library of questions.
+ *
+ * A bank is where questions live; a quiz asks some of them. One question written
+ * once can therefore be asked by a quiz in this course, by a retake, and by next
+ * term's version of the same course — which is the whole reason banks exist.
+ */
+export interface QuestionBank {
+  /** ULID, the table key. */
+  bankId: string;
+  /** The organization that owns it. A bank never exists outside one. */
+  organizationId: string;
+  /** Required, 2–80 characters (whitespace collapsed). */
+  name: string;
+  /** Optional, ≤ 500 characters. */
+  description: string;
+  /** How many questions it holds, kept on the row so a list needs no query each. */
+  questionCount: number;
+  /** The last generation run asked of it. See `QuizGeneration`. */
+  generation?: QuizGeneration;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One question, as the table stores it. */
 export interface QuizQuestion {
   /** ULID, the table key. */
   questionId: string;
-  /** The quiz content this belongs to. */
-  contentId: string;
-  /** Denormalized from the content, so a question authorizes in one hop. */
-  spaceId: string;
+  /** The bank it lives in. */
+  bankId: string;
+  /** Denormalized from the bank, so a question authorizes in one hop. */
   organizationId: string;
+  /** The lesson it is about — a `VIDEO` content. Required. */
+  lessonContentId: string;
+  /** Denormalized from that lesson: which course a quiz must be in to ask it. */
+  lessonSpaceId: string;
   type: QuestionType;
   /** The statement to judge, or the question to answer. */
   prompt: string;
@@ -444,15 +472,32 @@ export interface QuizQuestion {
   explanation?: string;
   status: QuestionStatus;
   source: QuestionSource;
-  /** The lesson the question was written from, when it was written from one. */
-  sourceContentId?: string;
-  /** 1-based order inside the quiz. Sparse: gaps are legal. */
+  /** 1-based order inside the bank. Sparse: gaps are legal. */
   position: number;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
   verifiedBy?: string;
   verifiedAt?: number;
+}
+
+/**
+ * One question a quiz asks.
+ *
+ * The two halves have different owners: the question belongs to a bank and
+ * outlives the quiz, and the quiz owns only the fact that it asks it, and in
+ * what order. Removing a question from a quiz deletes this row and leaves the
+ * question where it is.
+ */
+export interface QuizQuestionLink {
+  /** The quiz content. */
+  contentId: string;
+  /** The question it asks. */
+  questionId: string;
+  /** 1-based order inside the quiz. Sparse: gaps are legal. */
+  position: number;
+  addedBy: string;
+  addedAt: number;
 }
 
 /**
@@ -464,9 +509,14 @@ export interface QuizQuestion {
  */
 export interface QuizGeneration {
   status: 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
-  sourceContentId: string;
+  /** The bank the questions are being written into. */
+  bankId: string;
+  /** The lesson they are written from, and what they are about. */
+  lessonContentId: string;
   count: number;
   types: QuestionType[];
+  /** A quiz to add them to when they arrive, when the run was started from one. */
+  addToContentId?: string;
   requestedBy: string;
   requestedAt: number;
   startedAt?: number;

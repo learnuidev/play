@@ -31,11 +31,29 @@
  *
  * ## What it does
  *
- * Removes the *colliding* rules and nothing else. A rule is left alone if it
- * targets a function this deployment owns (named `play-<stage>-…`), or if it
- * does not overlap anything this deployment claims — so a bucket that some other
- * system also listens to keeps that system's rules, which is exactly what CDK's
+ * Removes the *colliding* rules and nothing else: a rule is left alone if it
+ * does not overlap anything this deployment claims, so a bucket that some other
+ * system also listens to keeps that system's rules — which is exactly what CDK's
  * handler would have done.
+ *
+ * A colliding rule that *is* ours is judged by who it belongs to. The CDK
+ * handler writes every rule it creates with an id of `<stack-arn>-<hash>`, so a
+ * rule's id says which stack instance made it:
+ *
+ * - **the stack this deployment is about to become** — the rule is left alone.
+ *   The live stack owns it, and either it is the one CDK will re-assert on the
+ *   coming deploy, or it is a duplicate of it, and removing a working rule
+ *   before a deploy that might not happen is a worse outcome than a duplicate
+ *   that the deploy itself resolves.
+ * - **any other stack instance** — it is a leftover, and it is removed. This is
+ *   the case that costs somebody an afternoon: a bucket's notification rule
+ *   outlives the stack that created it whenever that stack was rolled back and
+ *   deleted, and a *fresh* stack's first deploy then fails, because CDK's
+ *   handler treats a rule it did not make in this invocation as somebody else's
+ *   and adds its own beside it — and S3 refuses two rules for one event and an
+ *   overlapping prefix: "Configuration is ambiguously defined". The message
+ *   names neither the bucket nor the rule, and the retry only works if something
+ *   removes the leftover first. This is that something.
  *
  * It is idempotent: run it twice and the second run finds nothing to do. Once
  * the CDK stack has deployed and the legacy stack is gone, there is nothing left
@@ -157,8 +175,61 @@ function aws(argv, { parse = true } = {}) {
 /** The function a rule invokes, from its ARN — `play-dev-process-video`. */
 const functionNameOf = (rule) => (rule.LambdaFunctionArn ?? '').split(':function:')[1]?.split(':')[0] ?? '';
 
-/** Whether a rule was put there by this deployment rather than by the old one. */
+/** Whether a rule targets a function of this deployment rather than the old one's. */
 const isOurs = (rule) => functionNameOf(rule).startsWith(`play-${stage}-`);
+
+/** The stack this script is clearing the way for. */
+const API_STACK_NAME = `PlayApiStack-${stage}`;
+
+/**
+ * The ARN of that stack, or `undefined` when it does not exist yet.
+ *
+ * Read rather than assumed: the ARN carries a UUID that changes every time a
+ * stack is deleted and created again, and that UUID is the only thing that can
+ * tell a rule belonging to the stack about to be deployed from a rule belonging
+ * to the stack instance that failed to deploy an hour ago.
+ */
+function currentStackArn() {
+  try {
+    const out = execFileSync(
+      'aws',
+      [
+        'cloudformation',
+        'describe-stacks',
+        '--stack-name',
+        API_STACK_NAME,
+        '--query',
+        'Stacks[0].StackId',
+        '--output',
+        'text',
+        '--profile',
+        profile,
+        '--region',
+        region,
+      ],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    ).trim();
+    return out && out !== 'None' ? out : undefined;
+  } catch {
+    // A stack that is not there is not an error: that is the first deploy, which
+    // is exactly when every leftover rule has to go.
+    return undefined;
+  }
+}
+
+/**
+ * Whether a rule belongs to the stack this deployment is about to become.
+ *
+ * CDK's notifications handler ids every rule it creates as `<stack-arn>-<hash>`,
+ * so a rule that does not carry this stack's ARN was made by some other stack
+ * instance — one that has since been deleted, or one whose rollback could not
+ * clear its rule. Either way it is a leftover, and on a fresh deploy it is the
+ * thing that makes the create fail.
+ */
+function belongsToLiveStack(rule, stackArn) {
+  if (!stackArn) return false;
+  return String(rule.Id ?? '').startsWith(`${stackArn}-`);
+}
 
 /** `uploads/`, or undefined for a rule with no prefix filter. */
 const prefixOf = (rule) =>
@@ -197,16 +268,26 @@ if (existing.length === 0) {
   process.exit(0);
 }
 
+// Read before the report, so it can say which of our own rules are leftovers.
+const stackArn = currentStackArn();
+
 console.log('\nOn the bucket now:');
 for (const rule of existing) {
   const prefix = prefixOf(rule);
+  const owner = !isOurs(rule)
+    ? 'legacy'
+    : belongsToLiveStack(rule, stackArn)
+      ? 'ours  '
+      : 'stale ';
   console.log(
-    `  ${isOurs(rule) ? 'ours  ' : 'legacy'}  ${functionNameOf(rule)}` +
+    `  ${owner}  ${functionNameOf(rule)}` +
       `  [${(rule.Events ?? []).join(', ')}${prefix ? ` on ${prefix}` : ''}]`,
   );
 }
 
-const keep = existing.filter((rule) => isOurs(rule) || !collides(rule));
+const keep = existing.filter(
+  (rule) => !collides(rule) || (isOurs(rule) && belongsToLiveStack(rule, stackArn)),
+);
 const remove = existing.filter((rule) => !keep.includes(rule));
 
 if (remove.length === 0) {

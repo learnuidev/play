@@ -1,8 +1,10 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireQuizAccess } from '../../lib/access';
+import { requireBankAccess } from '../../lib/access';
 import { requireUserId } from '../../lib/auth';
-import { getContent, updateContent } from '../../lib/contents';
+import { getContent } from '../../lib/contents';
 import { HttpError, handle, jsonBody, noContent, ok, pathParam } from '../../lib/http';
+import { getBank, updateBank } from '../../lib/question-banks';
+import { assertLesson } from '../../lib/questions';
 import {
   isGenerationActive,
   publishGeneration,
@@ -13,102 +15,119 @@ import {
 import type { QuizGeneration } from '../../types';
 
 interface GenerateQuestionsBody {
-  /** The lesson to write questions from. */
-  sourceContentId?: unknown;
+  /** The lesson to write questions from — which is also what they are about. */
+  lessonContentId?: unknown;
   count?: unknown;
   types?: unknown;
+  /** A quiz to add them to once they are written. */
+  addToContentId?: unknown;
 }
 
 /**
  * Asks for questions to be written from a lesson — or forgets the last answer.
  *
- * The request *starts* the work and answers with the quiz, which now carries a
+ * The request *starts* the work and answers with the bank, which now carries a
  * queued run — it does not wait for the questions, because it cannot: a model
  * reading a transcript and writing ten questions takes longer than API Gateway
  * will hold a REST request open, and a route that tried would fail on exactly
  * the lessons worth generating from.
  *
  * `DELETE` on the same route is the other half: it clears the record. A run that
- * failed leaves its reason on the quiz, which is the right place for it until
+ * failed leaves its reason on the bank, which is the right place for it until
  * the author has read it — and this is how they say they have. It is the same
  * decision in two directions, which is why it is one function.
  *
- * The three refusals worth naming:
+ * Three refusals worth naming:
  *
- * - **a lesson of another course** — questions are written from something in the
- *   course they will be asked in, and a source id from elsewhere is either a
- *   mistake or an attempt to read a lesson the caller cannot read;
- * - **a quiz as the source** — a model asked to write questions about a set of
- *   questions writes questions about the wording of the questions;
- * - **a run already going** — two runs writing into one quiz at once is two
- *   lists interleaved, and the second author's questions arriving in the middle
- *   of the first author's. A run that died is not "already going": see
+ * - **a lesson of another organization** — the lesson must be one this bank's
+ *   organization owns, which is what stops a stray id from writing questions
+ *   about a course the caller cannot read;
+ * - **a quiz in another course** — questions are written for one lesson, so a
+ *   quiz they can be added to is a quiz in *that* lesson's course, or none;
+ * - **a run already going** — two runs writing into one bank at once is two
+ *   lists interleaved. A run that died is not "already going": see
  *   `isGenerationActive`, which is what makes a stuck run recoverable.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const userId = requireUserId(event);
-  const contentId = pathParam(event, 'contentId');
+  const bankId = pathParam(event, 'bankId');
 
-  const quiz = await requireQuizAccess(contentId, userId);
+  const bank = await requireBankAccess(bankId, userId, 'write');
 
   if (event.httpMethod === 'DELETE') {
-    await updateContent(contentId, { generation: null });
+    await updateBank(bank.bankId, { generation: null });
     return noContent();
   }
 
   const body = jsonBody<GenerateQuestionsBody>(event);
 
-  if (typeof body.sourceContentId !== 'string' || !body.sourceContentId.trim()) {
-    throw new HttpError(400, 'sourceContentId is required');
+  if (typeof body.lessonContentId !== 'string' || !body.lessonContentId.trim()) {
+    throw new HttpError(400, 'lessonContentId is required — questions are written about a lesson');
   }
 
-  const source = await getContent(body.sourceContentId.trim());
-  if (!source || source.spaceId !== quiz.spaceId) {
-    throw new HttpError(400, 'Questions are written from a lesson of this course');
-  }
-  if (source.type === 'QUIZ') {
-    throw new HttpError(400, 'Questions are written from a lesson, not from another quiz');
-  }
+  const lesson = await getContent(body.lessonContentId.trim());
+  assertLesson(lesson, bank.organizationId);
 
   // A cheap check that saves a whole round trip through the queue: a lesson with
   // no video and no notes has nothing for a model to read, and the run would
-  // only be able to fail. The video's subtitles are checked by the worker, which
-  // is the first thing that can know whether they are ready.
-  if (!source.videoId && !source.notes) {
+  // only be able to fail. Whether the video has *subtitles* is checked by the
+  // worker, which is the first thing that can know.
+  if (!lesson.videoId && !lesson.notes) {
     throw new HttpError(400, 'That lesson has no video and no notes to write questions from');
   }
 
-  if (isGenerationActive(quiz.generation)) {
-    throw new HttpError(409, 'Questions are already being written for this quiz');
+  if (typeof body.addToContentId === 'string' && body.addToContentId.trim()) {
+    const quiz = await getContent(body.addToContentId.trim());
+    if (!quiz || quiz.type !== 'QUIZ') {
+      throw new HttpError(400, 'addToContentId must be a quiz');
+    }
+    // The lesson's own course, so the questions written about it are questions
+    // that quiz's learners can actually be asked.
+    if (quiz.spaceId !== lesson.spaceId) {
+      throw new HttpError(400, 'A quiz can only be given questions about its own course’s lessons');
+    }
+  }
+
+  const fresh = await getBank(bank.bankId);
+  if (isGenerationActive(fresh?.generation)) {
+    throw new HttpError(409, 'Questions are already being written for this bank');
   }
 
   const count = resolveQuestionCount(body.count);
   const types = resolveQuestionTypes(body.types);
   const requestedAt = Date.now();
 
+  const addToContentId =
+    typeof body.addToContentId === 'string' && body.addToContentId.trim()
+      ? body.addToContentId.trim()
+      : undefined;
+
   const detail: GenerationJobDetail = {
-    contentId,
-    sourceContentId: source.contentId,
+    bankId: bank.bankId,
+    lessonContentId: lesson.contentId,
     count,
     types,
+    ...(addToContentId ? { addToContentId } : {}),
     requestedBy: userId,
     requestedAt,
   };
 
   const generation: QuizGeneration = {
     status: 'QUEUED',
-    sourceContentId: source.contentId,
+    bankId: bank.bankId,
+    lessonContentId: lesson.contentId,
     count,
     types,
+    ...(addToContentId ? { addToContentId } : {}),
     requestedBy: userId,
     requestedAt,
   };
 
   // The record is written before the event is published, so the page that polls
-  // this quiz cannot see a run it does not know about — the other order leaves a
-  // window in which the worker has already started and the quiz still says
+  // this bank cannot see a run it does not know about — the other order leaves a
+  // window in which the worker has already started and the bank still says
   // nothing is happening.
-  await updateContent(contentId, { generation });
+  await updateBank(bank.bankId, { generation });
 
   try {
     await publishGeneration(detail);
@@ -116,7 +135,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     // A run that was never handed over is not a run: the record goes back to
     // failed rather than leaving the page polling something that will never
     // finish.
-    await updateContent(contentId, {
+    await updateBank(bank.bankId, {
       generation: {
         ...generation,
         status: 'FAILED',
@@ -127,7 +146,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     throw new HttpError(500, 'Could not queue the generation — try again');
   }
 
-  return ok({ content: await getContent(contentId) }, 202);
+  return ok({ bank: await getBank(bank.bankId) }, 202);
 }
 
 export const handler = handle(main);

@@ -59,12 +59,16 @@ export interface ImportOutcome {
   total: number;
 }
 
-/** A file, as the route received it. */
+/**
+ * A file, as the route received it.
+ *
+ * No lesson: which lesson the questions are about is a fact about the *request*
+ * rather than about the file, and the route stamps every row it writes with it.
+ * See `import-questions`, where "one file, one lesson" is written down.
+ */
 export interface ImportFile {
   fileName: string;
   contentBase64: string;
-  /** The lesson the questions are about, when the author says which. */
-  sourceContentId?: string;
 }
 
 /**
@@ -250,7 +254,7 @@ function recordFromJsonObject(entry: Record<string, unknown>): QuestionRecord {
 }
 
 /** A record through the one validator, as a row result. */
-function toRow(row: number, record: QuestionRecord, sourceContentId?: string): ImportedRow {
+function toRow(row: number, record: QuestionRecord): ImportedRow {
   const parsed = parseQuestionInput({
     type: record.type,
     prompt: record.prompt,
@@ -261,13 +265,7 @@ function toRow(row: number, record: QuestionRecord, sourceContentId?: string): I
 
   if ('error' in parsed) return { row, error: parsed.error };
 
-  return {
-    row,
-    question: {
-      ...parsed.question,
-      ...(sourceContentId ? { sourceContentId } : {}),
-    },
-  };
+  return { row, question: parsed.question };
 }
 
 /**
@@ -382,14 +380,14 @@ export async function parseImportFile(file: ImportFile): Promise<ImportOutcome> 
   }
 
   if (extension === 'json') {
-    return fromJson(buffer.toString('utf8'), file.sourceContentId);
+    return fromJson(buffer.toString('utf8'));
   }
   if (extension === 'csv' || extension === 'tsv' || extension === 'txt') {
     const text = buffer.toString('utf8');
-    return fromTable(parseDelimited(text, sniffDelimiter(text)), file.sourceContentId);
+    return fromTable(parseDelimited(text, sniffDelimiter(text)));
   }
   if (extension === 'xlsx') {
-    return fromTable(await readSheetRows(buffer), file.sourceContentId);
+    return fromTable(await readSheetRows(buffer));
   }
 
   throw new HttpError(
@@ -417,7 +415,7 @@ async function readSheetRows(buffer: Buffer): Promise<unknown[][]> {
 }
 
 /** A sheet — or a delimited file — as questions, by its heading row. */
-function fromTable(rows: unknown[][], sourceContentId?: string): ImportOutcome {
+function fromTable(rows: unknown[][]): ImportOutcome {
   // The heading row is the first row that looks like one: a sheet somebody
   // pasted into often has a title above its columns, and a parser that assumed
   // row 1 would read the title as a column name and every question as garbage.
@@ -441,7 +439,7 @@ function fromTable(rows: unknown[][], sourceContentId?: string): ImportOutcome {
   for (const [index, cells] of body.entries()) {
     if (isBlankRow(cells)) continue;
     // 1-based, counting the file as a spreadsheet does: the heading is row 1.
-    imported.push(toRow(headerIndex + index + 2, recordFromCells(headers, cells), sourceContentId));
+    imported.push(toRow(headerIndex + index + 2, recordFromCells(headers, cells)));
   }
 
   if (imported.length === 0) throw new HttpError(400, 'The file has no questions in it');
@@ -449,7 +447,7 @@ function fromTable(rows: unknown[][], sourceContentId?: string): ImportOutcome {
 }
 
 /** A JSON file as questions: an array, or an object with a `questions` array. */
-function fromJson(text: string, sourceContentId?: string): ImportOutcome {
+function fromJson(text: string): ImportOutcome {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -481,7 +479,7 @@ function fromJson(text: string, sourceContentId?: string): ImportOutcome {
 
   const rows: ImportedRow[] = entries.map((entry, index) =>
     entry && typeof entry === 'object' && !Array.isArray(entry)
-      ? toRow(index + 1, recordFromJsonObject(entry as Record<string, unknown>), sourceContentId)
+      ? toRow(index + 1, recordFromJsonObject(entry as Record<string, unknown>))
       : { row: index + 1, error: 'each question must be an object' },
   );
 

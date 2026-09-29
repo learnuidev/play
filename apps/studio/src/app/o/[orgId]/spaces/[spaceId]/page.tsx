@@ -7,6 +7,7 @@ import {
   ChevronLeftIcon,
   GiftIcon,
   LayersIcon,
+  HelpCircleIcon,
   LayoutDashboardIcon,
   MailPlusIcon,
   UsersIcon,
@@ -34,17 +35,19 @@ import {
   SpaceInvitationCard,
 } from "@/components/space/space-members-tab";
 import { SpaceCohortsTab } from "@/components/space/space-cohorts-tab";
+import { SpaceQuestionBanks } from "@/components/banks/space-question-banks";
 import { SpaceRewardsTab } from "@/components/space/space-rewards-tab";
 
 /**
- * The five things a course is: what it is, what it holds, who takes it, how they
- * are grouped, and what they are given for finishing.
+ * The six things a course is: what it is, what it holds, what is asked of it,
+ * who takes it, how they are grouped, and what they are given for finishing.
  *
  * They are tabs rather than one long page because they answer different
  * questions at different times — the overview is opened to change something
- * about the course, the content tab to arrange it, and the other three when
- * somebody new arrives or somebody earns something. Kept as separate surfaces,
- * each can be as dense as its own job needs.
+ * about the course, the content tab to arrange it, the question tab to see what
+ * has been written for its lessons, and the other three when somebody new
+ * arrives or somebody earns something. Kept as separate surfaces, each can be as
+ * dense as its own job needs.
  */
 const TAB_STRIP =
   "h-auto w-fit max-w-full justify-start gap-0.5 overflow-x-auto rounded-full bg-muted/70 p-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
@@ -222,6 +225,7 @@ export default function SpacePage() {
             label="Overview"
           />
           <SpaceTab value="content" icon={<LayersIcon />} label="Content" />
+          <SpaceTab value="questions" icon={<HelpCircleIcon />} label="Question banks" />
           <SpaceTab value="members" icon={<UsersIcon />} label="Members" />
           <SpaceTab value="cohorts" icon={<UsersRoundIcon />} label="Cohorts" />
           <SpaceTab value="rewards" icon={<GiftIcon />} label="Rewards" />
@@ -240,6 +244,10 @@ export default function SpacePage() {
             loading={outlineLoading}
             canEdit={canEdit}
           />
+        </TabsContent>
+
+        <TabsContent value="questions" className="mt-2">
+          <SpaceQuestionBanks orgId={orgId} spaceId={spaceId} canEdit={canEdit} />
         </TabsContent>
 
         <TabsContent value="members" className="mt-2">

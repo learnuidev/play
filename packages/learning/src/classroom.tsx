@@ -67,6 +67,7 @@ import { NotesEditor } from "@learning/components/content/notes-editor";
 import { isEmptyNotes } from "@learning/components/content/notes";
 import { NotesView } from "@learning/components/content/notes-view";
 import { PlayingNext } from "@learning/components/content/playing-next";
+import { GenerateQuizDialog } from "@learning/components/quiz/generate-quiz-dialog";
 import { QuizPanel } from "@learning/components/quiz/quiz-panel";
 import {
   VideoPlayer,
@@ -76,12 +77,9 @@ import {
 import { VideoStatusBadge } from "@learning/components/video/status-badge";
 import {
   useContent,
-  useCreateContent,
   useDeleteContent,
-  usePlaceContent,
   useUpdateContent,
 } from "@api/modules/content/content.queries";
-import { useGenerateQuestions } from "@api/modules/question/question.queries";
 import { useToggleCompletion } from "@api/modules/content/completion.queries";
 import {
   useCreateLoop,
@@ -100,19 +98,6 @@ import { useStream, useVideo } from "@api/modules/video/video.queries";
 import { useSection, useSections } from "@api/modules/section/section.queries";
 import type { TranscriptLine } from "@learning/lib/transcript";
 import type { Content, ContentLoop, NotesDocument, Video } from "@play/types";
-
-/**
- * How long a title this app may send.
- *
- * The API's own ceiling, repeated here for the one place a title is *built*
- * rather than typed: a quiz made from a lesson is named after it, and a lesson
- * already at the limit must produce a quiz rather than a refusal.
- */
-const MAX_CONTENT_TITLE_LENGTH = 120;
-const QUIZ_TITLE_PREFIX = "Quiz: ";
-
-/** How many questions the lesson shortcut asks for. See the dialog's own default. */
-const QUESTIONS_PER_GENERATION = 10;
 
 /**
  * A lesson: its title, the video, and everything filed under it.
@@ -913,45 +898,15 @@ function ClassroomBody({
    * writing into a quiz that is still at the end of the section, which is where
    * the reader would then be looking for it.
    */
-  const createQuiz = useCreateContent(content?.sectionId ?? "", spaceId);
-  const placeQuiz = usePlaceContent(spaceId);
-  const startGeneration = useGenerateQuestions(spaceId);
-
-  async function generateQuiz() {
-    if (!content) return;
-
-    try {
-      const { content: quiz } = await createQuiz.mutateAsync({
-        // The API's ceiling for a title is 120 characters, and the prefix is
-        // part of the title: a lesson named to the limit gets a quiz named as
-        // much of itself as fits, rather than a refusal.
-        title: `Quiz: ${content.title.slice(0, MAX_CONTENT_TITLE_LENGTH - QUIZ_TITLE_PREFIX.length)}`,
-        type: "QUIZ",
-      });
-
-      // Straight after the lesson it was written from, which is where a reader
-      // expects the check on what they have just watched.
-      const section = outline?.sections.find((entry) => entry.sectionId === content.sectionId);
-      const index = (section?.contents.findIndex((entry) => entry.contentId === content.contentId) ?? -1) + 1;
-
-      if (index > 0) {
-        await placeQuiz.mutateAsync({ contentId: quiz.contentId, sectionId: content.sectionId, index });
-      }
-
-      await startGeneration.mutateAsync({
-        contentId: quiz.contentId,
-        sourceContentId: content.contentId,
-        count: QUESTIONS_PER_GENERATION,
-      });
-
-      toast.success("Quiz created", {
-        description: "Questions are being written from this lesson.",
-      });
-      router.push(routes.lesson(spaceId, quiz.contentId));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not create the quiz");
-    }
-  }
+  /**
+   * Making a quiz out of the lesson being read.
+   *
+   * The menu item opens a dialog rather than doing it in one click, because the
+   * questions have to live in a *bank*: the author says which one, or names a new
+   * one, and everything after that — the quiz, its questions, the run that writes
+   * them — follows from the answer. See `GenerateQuizDialog`.
+   */
+  const [makingQuiz, setMakingQuiz] = useState(false);
 
   async function deleteContent() {
     if (!content) return;
@@ -1023,6 +978,7 @@ function ClassroomBody({
         <QuizPanel
           contentId={content.contentId}
           spaceId={spaceId}
+          orgId={orgId}
           canEdit={canEdit}
           title={content.title}
         />
@@ -1098,10 +1054,7 @@ function ClassroomBody({
                   {content.type === "VIDEO" && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={startGeneration.isPending || createQuiz.isPending}
-                        onSelect={() => void generateQuiz()}
-                      >
+                      <DropdownMenuItem onSelect={() => setTimeout(() => setMakingQuiz(true), 0)}>
                         <SparklesIcon />
                         Generate a quiz
                       </DropdownMenuItem>
@@ -1125,6 +1078,18 @@ function ClassroomBody({
                 open={editing}
                 onOpenChange={setEditing}
               />
+
+              {content.type === "VIDEO" && (
+                <GenerateQuizDialog
+                  orgId={orgId}
+                  spaceId={spaceId}
+                  sectionId={content.sectionId}
+                  lessonContentId={content.contentId}
+                  lessonTitle={content.title}
+                  open={makingQuiz}
+                  onOpenChange={setMakingQuiz}
+                />
+              )}
             </>
           )}
         </div>

@@ -5,7 +5,9 @@ import { deleteCommentItem, listAllComments } from './comments';
 import { env } from './config';
 import { documentClient as client, isConditionalCheckFailed } from './dynamodb';
 import { moveIntoPlace } from './placement';
-import { deleteQuestionsForContent } from './questions';
+import { addBankQuestionCount } from './question-banks';
+import { deleteQuestionItem, listQuestionsByLesson } from './questions';
+import { deleteLinksForQuestion, deleteLinksForQuiz } from './quiz-questions';
 
 export const CONTENTS_TABLE = env.contentsTableName;
 
@@ -104,7 +106,20 @@ export async function deleteContentItem(contentId: string): Promise<void> {
 
 /**
  * Removes a piece of content and everything that hangs off it: its attachment
- * rows and objects, its comments, and — when it is a quiz — its questions.
+ * rows and objects, its comments, and whatever it owns of the question model.
+ *
+ * What it owns depends on which kind it is, and the two are deliberately
+ * different, because a question's life is not a quiz's:
+ *
+ * - **a quiz owns only what it asks.** Its rows in the links table go, and the
+ *   questions stay in their banks — they were written there, they outlive this
+ *   quiz, and another quiz may be asking them right now. Deleting a quiz is not
+ *   an author deleting work.
+ * - **a lesson owns the questions about it.** A question names the lesson it is
+ *   about, so a question whose lesson has gone is a question pointing at
+ *   nothing: it would still be offered to a quiz in a course that no longer
+ *   teaches what it asks about. Its links go first, then the question, then the
+ *   bank's count comes down.
  *
  * The content row goes last. If the cascade fails part way, what is left is a
  * content that still exists and can be deleted again, rather than a row of
@@ -120,7 +135,16 @@ export async function purgeContent(content: Content): Promise<void> {
     await deleteCommentItem(content.contentId, comment.commentId);
   }
 
-  await deleteQuestionsForContent(content.contentId);
+  if (content.type === 'QUIZ') {
+    await deleteLinksForQuiz(content.contentId);
+  } else {
+    for (const question of await listQuestionsByLesson(content.contentId)) {
+      await deleteLinksForQuestion(question.questionId);
+      await deleteQuestionItem(question.questionId);
+      await addBankQuestionCount(question.bankId, -1);
+    }
+  }
+
   await deleteContentFileItems(content.contentId);
   await deleteContentFileObjects(content.contentId);
   await deleteContentItem(content.contentId);

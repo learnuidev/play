@@ -18,6 +18,8 @@ import { Input } from '@ui/components/ui/input';
 import { Label } from '@ui/components/ui/label';
 import { Textarea } from '@ui/components/ui/textarea';
 import { useCreateQuestion, useUpdateQuestion } from '@api/modules/question/question.queries';
+import { BankPicker } from './bank-picker';
+import { LessonPicker } from './lesson-picker';
 import {
   QUESTION_TYPE_LABELS,
   QUESTION_TYPES,
@@ -39,12 +41,19 @@ const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 const blankOptions = () => ['', ''];
 
 /**
- * Writing a question by hand, or changing one.
+ * Writing a question into a bank, or changing one.
  *
  * The same dialog in both directions, because the two are the same form: what
  * differs is whether the answers are already filled in.
  *
- * Three decisions worth naming:
+ * Two fields of it are the model rather than the form. **The bank** is where the
+ * question will live — questions belong to banks, and a quiz only ever asks
+ * them, so a question written from a quiz's page is written into a bank like any
+ * other. **The lesson** is required: a question without one is a question nobody
+ * can tell is still true, and it is the lesson that decides which course's quiz
+ * may ask it.
+ *
+ * Four other decisions worth naming:
  *
  * - **The type is a pair of buttons, not a select.** There are two kinds and
  *   they are the whole of what the form does differently — a select would hide
@@ -56,19 +65,33 @@ const blankOptions = () => ['', ''];
  * - **A true/false question has no options to edit.** Its two answers are True
  *   and False, spelled that way by the API, so the form says so rather than
  *   offering two fields that can only hold those words.
+ * - **An edit is everywhere.** A question is shared, so the dialog says so
+ *   before somebody changes one three quizzes are asking.
  */
 export function QuestionDialog({
-  contentId,
+  orgId,
+  bankId,
+  spaceId,
+  lessonContentId,
   question,
   open,
   onOpenChange,
 }: {
-  contentId: string;
+  /** The organization whose banks and courses the pickers offer. */
+  orgId: string;
+  /** The bank it goes into. Omit to let the author choose one. */
+  bankId?: string;
+  /** The course whose lessons are on offer. Omit to let the author choose one. */
+  spaceId?: string;
+  /** The lesson to start on, when the page it was opened from knows one. */
+  lessonContentId?: string;
   /** Omit to write a new one. */
   question?: QuizQuestion;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const [pickedBankId, setPickedBankId] = useState('');
+  const [lesson, setLesson] = useState('');
   const [type, setType] = useState<QuestionType>('MULTIPLE_CHOICE');
   const [prompt, setPrompt] = useState('');
   const [options, setOptions] = useState<string[]>(blankOptions());
@@ -76,9 +99,11 @@ export function QuestionDialog({
   const [answer, setAnswer] = useState(0);
   const [explanation, setExplanation] = useState('');
 
-  const create = useCreateQuestion(contentId);
-  const update = useUpdateQuestion(contentId);
+  const create = useCreateQuestion(bankId ?? pickedBankId);
+  const update = useUpdateQuestion(question?.bankId);
   const pending = create.isPending || update.isPending;
+
+  const destinationBankId = bankId ?? pickedBankId;
 
   /**
    * Fills the form when it opens — and only then.
@@ -93,6 +118,8 @@ export function QuestionDialog({
   useEffect(() => {
     if (!open) return;
 
+    setPickedBankId('');
+    setLesson(question?.lessonContentId ?? lessonContentId ?? '');
     setType(question?.type ?? 'MULTIPLE_CHOICE');
     setPrompt(question?.prompt ?? '');
     setOptions(
@@ -106,7 +133,7 @@ export function QuestionDialog({
         : 0,
     );
     setExplanation(question?.explanation ?? '');
-  }, [open, questionId]);
+  }, [open, questionId, lessonContentId]);
 
   const trimmedPrompt = prompt.trim();
 
@@ -117,6 +144,8 @@ export function QuestionDialog({
 
   const canSubmit =
     trimmedPrompt.length > 0 &&
+    Boolean(lesson) &&
+    (Boolean(bankId) || Boolean(pickedBankId)) &&
     !pending &&
     (type === 'TRUE_FALSE' || kept.length >= MIN_OPTIONS);
 
@@ -138,7 +167,7 @@ export function QuestionDialog({
     // with it rather than staying on a number.
     const answerAt = kept.findIndex((option) => option.index === answer);
 
-    const payload = {
+    const answers = {
       type,
       prompt: trimmedPrompt,
       // A true/false question's options are the API's business: sending them
@@ -151,10 +180,20 @@ export function QuestionDialog({
 
     try {
       if (question) {
-        await update.mutateAsync({ questionId: question.questionId, patch: payload });
-        toast.success('Question saved');
+        // The lesson is only sent when it has actually moved: an unchanged one
+        // would be a write that takes the verification away for nothing.
+        await update.mutateAsync({
+          questionId: question.questionId,
+          patch: {
+            ...answers,
+            ...(lesson !== question.lessonContentId ? { lessonContentId: lesson } : {}),
+          },
+        });
+        toast.success('Question saved', {
+          description: 'It is the same question everywhere it is asked.',
+        });
       } else {
-        await create.mutateAsync(payload);
+        await create.mutateAsync({ ...answers, lessonContentId: lesson });
         toast.success('Question added');
       }
       onOpenChange(false);
@@ -170,12 +209,24 @@ export function QuestionDialog({
           <DialogTitle>{question ? 'Edit question' : 'New question'}</DialogTitle>
           <DialogDescription>
             {question
-              ? 'Changing what the question asks takes its verification away — somebody will need to read it again.'
-              : 'It is added at the end of the quiz, and lands needing verification like every other question.'}
+              ? 'Changing what the question asks, or the lesson it is about, takes its verification away — somebody will need to read it again.'
+              : 'It is written into a bank, and every quiz asking it can be about any course that teaches the lesson.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
+          {!bankId && (
+            <BankPicker orgId={orgId} value={pickedBankId} onChange={setPickedBankId} disabled={pending} />
+          )}
+
+          <LessonPicker
+            orgId={orgId}
+            spaceId={spaceId}
+            value={lesson}
+            onChange={setLesson}
+            disabled={pending}
+          />
+
           <div className="grid gap-2">
             <Label>Kind</Label>
             <div className="flex w-fit gap-0.5 rounded-full bg-muted/70 p-0.5">

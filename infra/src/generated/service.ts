@@ -828,27 +828,31 @@ export const TABLES: TableSpec[] = [
     grantsIndexes: false,
   },
   /**
-   *  The questions of a quiz.
+   *  The questions themselves.
    *
-   *  A table of its own rather than a list on the quiz's content row, for the
-   *  same reason a lesson's attachments have one: a question is edited,
-   *  verified, reordered and deleted on its own, and a list stored inside the
-   *  content would make every one of those a rewrite of the whole quiz — two
-   *  authors working on one quiz would overwrite each other, and a long quiz
-   *  would be a 400 KB item limit away from not saving at all.
+   *  A table of their own rather than a list on anything else, for the reason a
+   *  lesson's attachments have one: a question is written, edited, verified and
+   *  deleted on its own, and a list stored inside another row would make every
+   *  one of those a rewrite of the whole thing — two authors working at once
+   *  would overwrite each other, and a long bank would be a 400 KB item limit
+   *  away from not saving at all.
    *
-   *  Keyed by the question. `ContentPositionIndex` is how a quiz is read — one
-   *  query, in the order it asks them — and it is the only index, because a
-   *  question belongs to one quiz and is never looked up another way. "Every
-   *  unverified question in this course" is the one question this table cannot
-   *  answer, and it is not a gap: verifying happens on the quiz's own page,
-   *  where the questions it is about are.
+   *  A question belongs to a **bank** and names the **lesson** it is about, and
+   *  the two indexes are those two questions:
    *
-   *  This is the first table added since the migration, so it is the first one
-   *  that is *not* an adopted legacy resource: it is created by
-   *  `infra/scripts/create-questions-table.mjs`, and its name is recorded in
-   *  `infra/config/play-<stage>.json` like every other, because the data stack
-   *  imports tables rather than creating them.
+   *  - `BankPositionIndex` is how a bank is read — one query, in the order it
+   *    holds them;
+   *  - `LessonIndex` answers "everything written about this lesson", which is
+   *    read for exactly one thing and cannot be avoided: deleting a lesson. A
+   *    question whose lesson is gone points at nothing, so the cascade that
+   *    removes a lesson reads this index and takes them with it;
+   *  - `SpacePositionIndex` answers "everything written about this *course's*
+   *    lessons", which is what a course's own page draws — one read rather than
+   *    one per lesson.
+   *
+   *  What is deliberately *not* indexed is "which quizzes ask this question".
+   *  That is the links table's own reverse index, because it is a fact about a
+   *  quiz and not about a question.
    */
   {
     id: 'QuestionsTable',
@@ -856,18 +860,78 @@ export const TABLES: TableSpec[] = [
     billingMode: 'PAY_PER_REQUEST',
     attributeDefinitions: [
       { name: 'questionId', type: 'S' },
-      { name: 'contentId', type: 'S' },
+      { name: 'bankId', type: 'S' },
       { name: 'position', type: 'N' },
+      { name: 'lessonContentId', type: 'S' },
+      { name: 'lessonSpaceId', type: 'S' },
     ],
     keySchema: [
       { name: 'questionId', keyType: 'HASH' },
     ],
     globalSecondaryIndexes: [
       {
-        name: 'ContentPositionIndex',
+        name: 'BankPositionIndex',
         keySchema: [
-          { name: 'contentId', keyType: 'HASH' },
+          { name: 'bankId', keyType: 'HASH' },
           { name: 'position', keyType: 'RANGE' },
+        ],
+        projectAll: true,
+      },
+      {
+        name: 'LessonIndex',
+        keySchema: [
+          { name: 'lessonContentId', keyType: 'HASH' },
+        ],
+        projectAll: true,
+      },
+      {
+        name: 'SpacePositionIndex',
+        keySchema: [
+          { name: 'lessonSpaceId', keyType: 'HASH' },
+          { name: 'position', keyType: 'RANGE' },
+        ],
+        projectAll: true,
+      },
+    ],
+    actions: [
+      'dynamodb:BatchGetItem',
+      'dynamodb:DeleteItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+    ],
+    grantsIndexes: true,
+  },
+  /**
+   *  An organization's question banks.
+   *
+   *  A bank is a library of questions rather than a course's assessment: the
+   *  questions in it are about *lessons*, and which lesson a question is about is
+   *  on the question. That is what lets one bank serve several courses, and what
+   *  lets a quiz ask a question that was written once and asked by others since.
+   *
+   *  Keyed by the bank, with `OrganizationCreatedIndex` answering the only list
+   *  there is: the banks one organization owns, oldest first.
+   */
+  {
+    id: 'QuestionBanksTable',
+    envVar: 'QUESTION_BANKS_TABLE',
+    billingMode: 'PAY_PER_REQUEST',
+    attributeDefinitions: [
+      { name: 'bankId', type: 'S' },
+      { name: 'organizationId', type: 'S' },
+      { name: 'createdAt', type: 'N' },
+    ],
+    keySchema: [
+      { name: 'bankId', keyType: 'HASH' },
+    ],
+    globalSecondaryIndexes: [
+      {
+        name: 'OrganizationCreatedIndex',
+        keySchema: [
+          { name: 'organizationId', keyType: 'HASH' },
+          { name: 'createdAt', keyType: 'RANGE' },
         ],
         projectAll: true,
       },
@@ -878,6 +942,53 @@ export const TABLES: TableSpec[] = [
       'dynamodb:PutItem',
       'dynamodb:Query',
       'dynamodb:UpdateItem',
+    ],
+    grantsIndexes: true,
+  },
+  /**
+   *  The questions a quiz asks.
+   *
+   *  A quiz does not own questions — it asks some, and they live in banks. This
+   *  table is that relationship and nothing else: which quiz, which question, and
+   *  where in the order a learner meets it. Everything a question *is* stays in
+   *  `QuestionsTable`, which is what makes one question usable by any number of
+   *  quizzes without a single copy of it.
+   *
+   *  Keyed by the quiz and the question together, so asking the same question
+   *  twice in one quiz is one row rather than two — a picker that sends the same
+   *  id again is somebody unsure whether the first click worked, and the key
+   *  answers that for free.
+   *
+   *  `QuestionIndex` is the reverse: the quizzes that ask one question, which is
+   *  what deleting a question has to walk — a quiz left pointing at a question
+   *  that no longer exists is a quiz with a hole nothing can fill.
+   */
+  {
+    id: 'QuizQuestionsTable',
+    envVar: 'QUIZ_QUESTIONS_TABLE',
+    billingMode: 'PAY_PER_REQUEST',
+    attributeDefinitions: [
+      { name: 'contentId', type: 'S' },
+      { name: 'questionId', type: 'S' },
+    ],
+    keySchema: [
+      { name: 'contentId', keyType: 'HASH' },
+      { name: 'questionId', keyType: 'RANGE' },
+    ],
+    globalSecondaryIndexes: [
+      {
+        name: 'QuestionIndex',
+        keySchema: [
+          { name: 'questionId', keyType: 'HASH' },
+        ],
+        projectAll: true,
+      },
+    ],
+    actions: [
+      'dynamodb:DeleteItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
     ],
     grantsIndexes: true,
   },
@@ -1711,21 +1822,85 @@ export const FUNCTIONS: FunctionSpec[] = [
     eventBridge: [],
   },
   /**
-   *  Quizzes: the questions a quiz asks, how they are written, and who has read
-   *  them.
+   *  Question banks: the libraries an organization's questions live in.
    *
-   *  Every route here authorizes as *write* — including the reads. A question
-   *  carries the answer key, and there is no reader of it who is not editing the
-   *  quiz; the day a quiz can be taken is the day a separate route hands out its
-   *  questions without the answers.
+   *  A bank is organization property — like the video library, which is what
+   *  makes "any member may read it, an editor may change it" the obvious rule —
+   *  and a question in one is about a *lesson*. That is what lets a bank serve
+   *  several courses, and a quiz ask a question written once and asked by others
+   *  since.
    */
   {
-    key: 'list-questions',
-    entry: 'src/functions/questions/list-questions.ts',
+    key: 'list-question-banks',
+    entry: 'src/functions/banks/list-banks.ts',
     handlerExport: 'handler',
     timeout: 29,
     memorySize: 512,
-    http: [{"path":"contents/{contentId}/questions","method":"GET","authorized":true}],
+    http: [{"path":"organizations/{orgId}/question-banks","method":"GET","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'create-question-bank',
+    entry: 'src/functions/banks/create-bank.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"organizations/{orgId}/question-banks","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'get-question-bank',
+    entry: 'src/functions/banks/get-bank.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"banks/{bankId}","method":"GET","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'update-question-bank',
+    entry: 'src/functions/banks/update-bank.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"banks/{bankId}","method":"PATCH","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    /**
+     *  Deleting a bank takes its questions with it — a bank *is* its questions —
+     *  and takes them out of every quiz that was asking them, which is why the
+     *  page asks twice.
+     */
+    key: 'delete-question-bank',
+    entry: 'src/functions/banks/delete-bank.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"banks/{bankId}","method":"DELETE","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  /**
+   *  The questions in a bank, and the three ways one arrives: written by hand,
+   *  read out of a file, or generated from a lesson.
+   *
+   *  Every one of them requires the lesson the question is about. That is the
+   *  model's rule rather than a validation nicety: a question without a lesson is
+   *  a question nobody can tell is still true, and it is the lesson that decides
+   *  which course's quiz may ask it.
+   */
+  {
+    key: 'list-bank-questions',
+    entry: 'src/functions/questions/list-bank-questions.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"banks/{bankId}/questions","method":"GET","authorized":true}],
     s3: [],
     eventBridge: [],
   },
@@ -1735,7 +1910,7 @@ export const FUNCTIONS: FunctionSpec[] = [
     handlerExport: 'handler',
     timeout: 29,
     memorySize: 512,
-    http: [{"path":"contents/{contentId}/questions","method":"POST","authorized":true}],
+    http: [{"path":"banks/{bankId}/questions","method":"POST","authorized":true}],
     s3: [],
     eventBridge: [],
   },
@@ -1746,7 +1921,7 @@ export const FUNCTIONS: FunctionSpec[] = [
     timeout: 29,
     memorySize: 512,
     description: 'Imports questions from an .xlsx, .csv or .json file',
-    http: [{"path":"contents/{contentId}/questions/import","method":"POST","authorized":true}],
+    http: [{"path":"banks/{bankId}/questions/import","method":"POST","authorized":true}],
     s3: [],
     eventBridge: [],
   },
@@ -1754,20 +1929,22 @@ export const FUNCTIONS: FunctionSpec[] = [
     /**
      *  Starts an AI generation, and answers before it finishes.
      *
-     *  The run is queued: the request writes the state onto the quiz and
+     *  The run is queued: the request writes the state onto the bank and
      *  publishes an event, and `generate-questions` below does the work. It has
      *  to be this way — API Gateway holds a REST request for 29 seconds at the
      *  very most, and a model reading a lesson's transcript takes longer than
      *  that often enough for a synchronous route to be a route that fails on the
      *  lessons worth generating from.
+     *
+     *  `DELETE` forgets the last run, once its author has read why it failed.
      */
     key: 'request-question-generation',
     entry: 'src/functions/questions/request-question-generation.ts',
     handlerExport: 'handler',
     timeout: 29,
     memorySize: 512,
-    description: 'Queues an AI generation of quiz questions from a lesson',
-    http: [{"path":"contents/{contentId}/questions/generation","method":"POST","authorized":true},{"path":"contents/{contentId}/questions/generation","method":"DELETE","authorized":true}],
+    description: 'Queues an AI generation of questions from a lesson',
+    http: [{"path":"banks/{bankId}/questions/generation","method":"POST","authorized":true},{"path":"banks/{bankId}/questions/generation","method":"DELETE","authorized":true}],
     s3: [],
     eventBridge: [],
   },
@@ -1777,12 +1954,23 @@ export const FUNCTIONS: FunctionSpec[] = [
     handlerExport: 'handler',
     timeout: 29,
     memorySize: 512,
-    description: 'Verifies a batch of a quiz\'s questions',
-    http: [{"path":"contents/{contentId}/questions/verification","method":"POST","authorized":true}],
+    description: "Verifies a batch of a bank's questions",
+    http: [{"path":"banks/{bankId}/questions/verification","method":"POST","authorized":true}],
     s3: [],
     eventBridge: [],
   },
   {
+    /**
+     *  One question, by its own id.
+     *
+     *  A question is addressed directly rather than through the bank it lives in
+     *  because it is shared: the id is what a quiz holds a reference to, and a
+     *  route that went through the bank would be a route that cannot edit a
+     *  question from the page asking it.
+     *
+     *  Reading is not a route: a bank's list is how questions are read, and a
+     *  quiz's list is how the ones it asks are.
+     */
     key: 'update-question',
     entry: 'src/functions/questions/update-question.ts',
     handlerExport: 'handler',
@@ -1793,6 +1981,10 @@ export const FUNCTIONS: FunctionSpec[] = [
     eventBridge: [],
   },
   {
+    /**
+     *  Deletes a question from its bank, and out of every quiz asking it. The
+     *  answer says how many of them there were.
+     */
     key: 'delete-question',
     entry: 'src/functions/questions/delete-question.ts',
     handlerExport: 'handler',
@@ -1819,19 +2011,88 @@ export const FUNCTIONS: FunctionSpec[] = [
     s3: [],
     eventBridge: [],
   },
+  /**
+   *  What a quiz asks.
+   *
+   *  A quiz owns the reference and the order, and nothing else: adding a question
+   *  to a quiz adds an id, removing one removes the row and leaves the question
+   *  in its bank. Every route here authorizes as a *write* on the quiz, reads
+   *  included, because a quiz's questions carry the answer key.
+   */
   {
-    key: 'place-question',
-    entry: 'src/functions/questions/place-question.ts',
+    /**
+     *  Every question about one course's lessons, from every bank.
+     *
+     *  The course page's own read. Questions carry the answer key, so this asks
+     *  for organization membership rather than course membership — a learner
+     *  registered for the course is not told what the answers are.
+     */
+    key: 'list-space-questions',
+    entry: 'src/functions/quiz/list-space-questions.ts',
     handlerExport: 'handler',
     timeout: 29,
     memorySize: 512,
-    http: [{"path":"questions/{questionId}/placement","method":"PUT","authorized":true}],
+    description: "Every question about a course's lessons",
+    http: [{"path":"spaces/{spaceId}/questions","method":"GET","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'list-quiz-questions',
+    entry: 'src/functions/quiz/list-quiz-questions.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"contents/{contentId}/questions","method":"GET","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'add-quiz-questions',
+    entry: 'src/functions/quiz/add-quiz-questions.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: 'Adds questions from banks to a quiz',
+    http: [{"path":"contents/{contentId}/questions","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'remove-quiz-question',
+    entry: 'src/functions/quiz/remove-quiz-question.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: 'Takes a question out of a quiz, leaving it in its bank',
+    http: [{"path":"contents/{contentId}/questions/{questionId}","method":"DELETE","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'place-quiz-question',
+    entry: 'src/functions/quiz/place-quiz-question.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"contents/{contentId}/questions/placement","method":"PUT","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'verify-quiz-questions',
+    entry: 'src/functions/quiz/verify-quiz-questions.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: "Verifies a quiz's questions in a batch",
+    http: [{"path":"contents/{contentId}/questions/verification","method":"POST","authorized":true}],
     s3: [],
     eventBridge: [],
   },
   {
     /**
-     *  The worker that writes quiz questions, driven by the event
+     *  The worker that writes a bank's questions, driven by the event
      *  `request-question-generation` publishes.
      *
      *  Its timeout is the service's longest, because it is the one function whose
@@ -1843,7 +2104,7 @@ export const FUNCTIONS: FunctionSpec[] = [
     handlerExport: 'handler',
     timeout: 120,
     memorySize: 1024,
-    description: 'Writes a quiz\'s questions from a lesson, with Bedrock',
+    description: "Writes a bank's questions from a lesson, with Bedrock",
     environment: {"BEDROCK_MODEL_ID":"us.amazon.nova-lite-v1:0"},
     http: [],
     s3: [],

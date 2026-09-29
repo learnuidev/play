@@ -11,6 +11,7 @@ const TABS = [
   { segment: '', label: 'Home' },
   { segment: 'videos', label: 'Videos' },
   { segment: 'spaces', label: 'Spaces' },
+  { segment: 'question-banks', label: 'Question banks' },
   { segment: 'members', label: 'Members' },
 ] as const;
 

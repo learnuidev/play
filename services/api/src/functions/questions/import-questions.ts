@@ -1,18 +1,25 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { ulid } from 'ulid';
-import { requireQuizAccess } from '../../lib/access';
+import { requireBankAccess } from '../../lib/access';
 import { requireUserId } from '../../lib/auth';
 import { getContent } from '../../lib/contents';
 import { HttpError, handle, jsonBody, ok, pathParam } from '../../lib/http';
 import { parseImportFile } from '../../lib/question-import';
-import { nextQuestionPosition, putQuestion, toQuestionRow, type ParsedQuestion } from '../../lib/questions';
+import { addBankQuestionCount } from '../../lib/question-banks';
+import {
+  assertLesson,
+  nextQuestionPosition,
+  putQuestion,
+  toQuestionRow,
+  type ParsedQuestion,
+} from '../../lib/questions';
 
 interface ImportQuestionsBody {
   fileName?: unknown;
   /** The file itself, base64. */
   contentBase64?: unknown;
-  /** The lesson the questions were written from, when the author says which. */
-  sourceContentId?: unknown;
+  /** The lesson every question in the file is about. */
+  lessonContentId?: unknown;
 }
 
 /**
@@ -25,6 +32,12 @@ interface ImportQuestionsBody {
  * base64'd is a string, and a string is what this service already knows how to
  * take.
  *
+ * **One file, one lesson.** The lesson is a field of the request rather than a
+ * column of the sheet: a lesson is named by a title that is not unique, and a
+ * file whose rows each meant a different lesson would need an importer that
+ * guesses. A file covering two lessons is imported twice, which is a sentence in
+ * the dialog rather than a feature nobody can explain.
+ *
  * The parsing rules — which headings mean what, how an answer is spelled, and
  * why a bad row is reported rather than thrown — are in `lib/question-import`,
  * which is also where the template this API hands out is generated from.
@@ -34,9 +47,9 @@ interface ImportQuestionsBody {
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const userId = requireUserId(event);
-  const contentId = pathParam(event, 'contentId');
+  const bankId = pathParam(event, 'bankId');
 
-  const quiz = await requireQuizAccess(contentId, userId);
+  const bank = await requireBankAccess(bankId, userId, 'write');
   const body = jsonBody<ImportQuestionsBody>(event);
 
   if (typeof body.fileName !== 'string' || !body.fileName.trim()) {
@@ -45,28 +58,20 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   if (typeof body.contentBase64 !== 'string' || !body.contentBase64.trim()) {
     throw new HttpError(400, 'contentBase64 is required');
   }
-
-  // The lesson the questions are from, when one is named: a file of questions
-  // about lesson four should say so, and a quiz may hold questions from several
-  // lessons. It is checked to be one of this course's, so a stray id cannot
-  // point a question at another organization's lesson.
-  let sourceContentId: string | undefined;
-  if (typeof body.sourceContentId === 'string' && body.sourceContentId.trim()) {
-    const source = await getContent(body.sourceContentId.trim());
-    if (!source || source.spaceId !== quiz.spaceId) {
-      throw new HttpError(400, 'sourceContentId must be a lesson of this course');
-    }
-    sourceContentId = source.contentId;
+  if (typeof body.lessonContentId !== 'string' || !body.lessonContentId.trim()) {
+    throw new HttpError(400, 'lessonContentId is required — every question is about a lesson');
   }
+
+  const lesson = await getContent(body.lessonContentId.trim());
+  assertLesson(lesson, bank.organizationId);
 
   const outcome = await parseImportFile({
     fileName: body.fileName.trim(),
     contentBase64: body.contentBase64,
-    ...(sourceContentId ? { sourceContentId } : {}),
   });
 
   const now = Date.now();
-  let position = await nextQuestionPosition(contentId);
+  let position = await nextQuestionPosition(bank.bankId);
 
   const imported = [];
   const skipped = [];
@@ -79,9 +84,10 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
     const question = toQuestionRow(
       {
-        contentId,
-        spaceId: quiz.spaceId,
-        organizationId: quiz.organizationId,
+        bankId: bank.bankId,
+        organizationId: bank.organizationId,
+        lessonContentId: lesson.contentId,
+        lessonSpaceId: lesson.spaceId,
         parsed: row.question as ParsedQuestion,
         source: 'IMPORT',
         position,
@@ -95,6 +101,8 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     imported.push(question);
     position += 1;
   }
+
+  await addBankQuestionCount(bank.bankId, imported.length);
 
   return ok({ imported, skipped, rows: outcome.total }, 201);
 }

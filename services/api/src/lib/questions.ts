@@ -10,25 +10,46 @@ import { QUESTION_STATUSES, QUESTION_TYPES } from '../types';
 import { env } from './config';
 import { documentClient as client } from './dynamodb';
 import { HttpError } from './http';
-import { moveIntoPlace } from './placement';
 
 export const QUESTIONS_TABLE = env.questionsTableName;
 
 /**
- * Orders the questions of one quiz, which is the only way they are ever read:
- * a question belongs to exactly one quiz and is never moved between them.
+ * A bank's questions, in order.
+ *
+ * A bank is what a question is read through: the bank's page lists them, an
+ * import appends to them, and the quiz picker offers them. `position` is the
+ * bank's to keep, which is why the index is bank-first.
  */
-const CONTENT_POSITION_INDEX = 'ContentPositionIndex';
+const BANK_POSITION_INDEX = 'BankPositionIndex';
 
 /**
- * How many questions one quiz may hold.
+ * The questions about one lesson, across every bank.
  *
- * A ceiling rather than a limit anybody should meet: a quiz longer than this is
- * a course's whole assessment, and reading it is not paging but one query per
- * hundred. Past it, `listAllQuestions` stops, and the count it returns says how
- * many there are rather than pretending.
+ * Read for exactly one thing, and it is a thing that cannot be avoided: deleting
+ * a lesson. A question's lesson is required, so a question whose lesson is gone
+ * is a question pointing at nothing — one that would still be offered to a quiz
+ * in a course that no longer teaches what it asks about. The cascade reads this
+ * index and takes them with it.
  */
-export const MAX_QUESTIONS_PER_QUIZ = 500;
+const LESSON_INDEX = 'LessonIndex';
+
+/**
+ * The questions about one course, across every bank.
+ *
+ * Keyed by the lesson's course rather than by the lesson, because the question a
+ * course page asks is "what has been written for *my* lessons" — one read rather
+ * than one per lesson, and the grouping by lesson is done in the library where
+ * the course's own order is known.
+ */
+const SPACE_INDEX = 'SpacePositionIndex';
+
+/**
+ * How many questions one bank will read at once.
+ *
+ * A ceiling rather than a limit anybody should meet: past it a bank is the
+ * question bank of an institution, and reading it is one query per hundred.
+ */
+export const MAX_QUESTIONS_PER_BANK = 500;
 
 /** How many option texts one multiple-choice question may offer. */
 export const MIN_OPTIONS = 2;
@@ -49,10 +70,10 @@ export const MAX_EXPLANATION_LENGTH = 1000;
 /**
  * A question that has been read and accepted: everything but its identity.
  *
- * This is what both the create route and the importer produce, which is the
- * point of it being a type of its own — a question typed by hand, read out of a
- * spreadsheet and written by a model all end up here, and everything after it
- * (ids, positions, statuses) is the same code.
+ * This is what the create route, the importer and the generator all produce,
+ * which is the point of it being a type of its own — a question typed by hand,
+ * read out of a spreadsheet and written by a model all end up here, and
+ * everything after it (ids, positions, statuses) is the same code.
  */
 export interface ParsedQuestion {
   type: QuestionType;
@@ -60,7 +81,6 @@ export interface ParsedQuestion {
   options: QuestionOption[];
   correctOptionIds: string[];
   explanation?: string;
-  sourceContentId?: string;
 }
 
 /** What a caller sent for one question. Everything is `unknown` until checked. */
@@ -70,7 +90,6 @@ export interface RawQuestionInput {
   options?: unknown;
   answer?: unknown;
   explanation?: unknown;
-  sourceContentId?: unknown;
 }
 
 /**
@@ -125,11 +144,6 @@ export function parseQuestionInput(
     if (!explanation) explanation = undefined;
   }
 
-  const sourceContentId =
-    typeof raw.sourceContentId === 'string' && raw.sourceContentId.trim()
-      ? raw.sourceContentId.trim()
-      : undefined;
-
   return {
     question: {
       type,
@@ -137,7 +151,6 @@ export function parseQuestionInput(
       options,
       correctOptionIds: [answer.id],
       ...(explanation ? { explanation } : {}),
-      ...(sourceContentId ? { sourceContentId } : {}),
     },
   };
 }
@@ -207,8 +220,6 @@ function readAnswer(
   type: QuestionType,
 ): { id: string } | { error: string } {
   if (raw === undefined || raw === null || raw === '') {
-    // A question with no answer is not a question, and "the first one" is a
-    // guess somebody would only notice when a learner was marked against it.
     return { error: 'answer is required' };
   }
 
@@ -246,24 +257,6 @@ function readAnswer(
   return { error: `answer "${value}" is not one of the options` };
 }
 
-/** One question's position, one past the last in its quiz. */
-export async function nextQuestionPosition(contentId: string): Promise<number> {
-  const res = await client.send(
-    new QueryCommand({
-      TableName: QUESTIONS_TABLE,
-      IndexName: CONTENT_POSITION_INDEX,
-      KeyConditionExpression: '#contentId = :contentId',
-      ExpressionAttributeNames: { '#contentId': 'contentId' },
-      ExpressionAttributeValues: { ':contentId': contentId },
-      ScanIndexForward: false,
-      Limit: 1,
-    }),
-  );
-
-  const last = (res.Items ?? [])[0] as QuizQuestion | undefined;
-  return (last?.position ?? 0) + 1;
-}
-
 export async function putQuestion(question: QuizQuestion): Promise<void> {
   await client.send(new PutCommand({ TableName: QUESTIONS_TABLE, Item: question }));
 }
@@ -280,14 +273,14 @@ export async function deleteQuestionItem(questionId: string): Promise<void> {
 }
 
 /**
- * Every question of one quiz, in the order it asks them.
+ * Every question in one bank, in the order it holds them.
  *
- * Read whole rather than paged, because a quiz is a document: a page of it is
- * not a quiz, and the two things that read this — the author's list and the
- * count of what still needs verifying — are both answers about all of it. The
- * ceiling is `MAX_QUESTIONS_PER_QUIZ`, and the loop stops there.
+ * Read whole rather than paged, because a bank is a list somebody works down:
+ * the page groups them by lesson, and both things it says — what is in here, and
+ * how much of it nobody has verified — are answers about all of it. The ceiling
+ * is `MAX_QUESTIONS_PER_BANK`, and the loop stops there.
  */
-export async function listAllQuestions(contentId: string): Promise<QuizQuestion[]> {
+export async function listQuestionsByBank(bankId: string): Promise<QuizQuestion[]> {
   const questions: QuizQuestion[] = [];
   let exclusiveStartKey: Record<string, unknown> | undefined;
 
@@ -295,10 +288,10 @@ export async function listAllQuestions(contentId: string): Promise<QuizQuestion[
     const res = await client.send(
       new QueryCommand({
         TableName: QUESTIONS_TABLE,
-        IndexName: CONTENT_POSITION_INDEX,
-        KeyConditionExpression: '#contentId = :contentId',
-        ExpressionAttributeNames: { '#contentId': 'contentId' },
-        ExpressionAttributeValues: { ':contentId': contentId },
+        IndexName: BANK_POSITION_INDEX,
+        KeyConditionExpression: '#bankId = :bankId',
+        ExpressionAttributeNames: { '#bankId': 'bankId' },
+        ExpressionAttributeValues: { ':bankId': bankId },
         ScanIndexForward: true,
         Limit: 100,
         ExclusiveStartKey: exclusiveStartKey,
@@ -307,7 +300,7 @@ export async function listAllQuestions(contentId: string): Promise<QuizQuestion[
 
     questions.push(...((res.Items ?? []) as QuizQuestion[]));
     exclusiveStartKey = res.LastEvaluatedKey;
-  } while (exclusiveStartKey && questions.length < MAX_QUESTIONS_PER_QUIZ);
+  } while (exclusiveStartKey && questions.length < MAX_QUESTIONS_PER_BANK);
 
   // The index orders by position, but two questions written at the same moment
   // can share one, and an order that depends on which of them DynamoDB returns
@@ -315,20 +308,107 @@ export async function listAllQuestions(contentId: string): Promise<QuizQuestion[
   return questions.sort((a, b) => a.position - b.position || a.questionId.localeCompare(b.questionId));
 }
 
+/** One question's position, one past the last in its bank. */
+export async function nextQuestionPosition(bankId: string): Promise<number> {
+  const res = await client.send(
+    new QueryCommand({
+      TableName: QUESTIONS_TABLE,
+      IndexName: BANK_POSITION_INDEX,
+      KeyConditionExpression: '#bankId = :bankId',
+      ExpressionAttributeNames: { '#bankId': 'bankId' },
+      ExpressionAttributeValues: { ':bankId': bankId },
+      ScanIndexForward: false,
+      Limit: 1,
+    }),
+  );
+
+  const last = (res.Items ?? [])[0] as QuizQuestion | undefined;
+  return (last?.position ?? 0) + 1;
+}
+
 /**
- * Removes a quiz's questions along with the quiz.
+ * Every question about one lesson, from every bank.
  *
- * Called by `purgeContent`, which is the cascade a deleted lesson already goes
- * through: its attachments and its comments go first, and the questions of a
- * quiz join them. A question left behind would be a row pointing at a content
- * nobody can name, with no route that could ever reach it again.
+ * Read by the cascade that follows a deleted lesson, which is the one caller
+ * that cannot afford to miss a question: what it does not find goes on being
+ * offered to quizzes about a lesson nobody can open any more.
  */
-export async function deleteQuestionsForContent(contentId: string): Promise<number> {
-  const questions = await listAllQuestions(contentId);
-  for (const question of questions) {
-    await deleteQuestionItem(question.questionId);
+export async function listQuestionsByLesson(lessonContentId: string): Promise<QuizQuestion[]> {
+  const questions: QuizQuestion[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: QUESTIONS_TABLE,
+        IndexName: LESSON_INDEX,
+        KeyConditionExpression: '#lessonContentId = :lessonContentId',
+        ExpressionAttributeNames: { '#lessonContentId': 'lessonContentId' },
+        ExpressionAttributeValues: { ':lessonContentId': lessonContentId },
+        Limit: 100,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    questions.push(...((res.Items ?? []) as QuizQuestion[]));
+    exclusiveStartKey = res.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return questions;
+}
+
+/**
+ * Every question about a course's lessons, from every bank, in one read.
+ *
+ * Read whole, like a bank's: a course page draws all of them at once, grouped by
+ * the lesson they are about, and the ceiling is `MAX_QUESTIONS_PER_BANK` for the
+ * same reason — past it a page is a report rather than a list somebody works
+ * down.
+ */
+export async function listQuestionsBySpace(spaceId: string): Promise<QuizQuestion[]> {
+  const questions: QuizQuestion[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: QUESTIONS_TABLE,
+        IndexName: SPACE_INDEX,
+        KeyConditionExpression: '#lessonSpaceId = :lessonSpaceId',
+        ExpressionAttributeNames: { '#lessonSpaceId': 'lessonSpaceId' },
+        ExpressionAttributeValues: { ':lessonSpaceId': spaceId },
+        ScanIndexForward: true,
+        Limit: 100,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    questions.push(...((res.Items ?? []) as QuizQuestion[]));
+    exclusiveStartKey = res.LastEvaluatedKey;
+  } while (exclusiveStartKey && questions.length < MAX_QUESTIONS_PER_BANK);
+
+  return questions.sort((a, b) => a.position - b.position || a.questionId.localeCompare(b.questionId));
+}
+
+/**
+ * One question's lesson, checked rather than taken on trust.
+ *
+ * A question names the lesson it is about, and that lesson has to *be* a lesson:
+ * not a note, not another quiz. It also has to belong to the caller's own
+ * organization, which is what stops a stray id from pointing a question at
+ * another organization's course.
+ */
+export function assertLesson(
+  lesson: { type: string; organizationId: string } | undefined,
+  organizationId: string,
+): asserts lesson is { type: string; organizationId: string } {
+  if (!lesson) throw new HttpError(400, 'That lesson does not exist');
+  if (lesson.organizationId !== organizationId) {
+    throw new HttpError(400, 'lessonContentId must be a lesson of this organization');
   }
-  return questions.length;
+  if (lesson.type !== 'VIDEO') {
+    throw new HttpError(400, 'A question is associated with a lesson, not with a quiz');
+  }
 }
 
 export interface QuestionStatusChange {
@@ -354,9 +434,6 @@ export async function updateQuestionStatus(
     throw new HttpError(400, 'Unsupported question status');
   }
 
-  // No field-by-field builder here, unlike a content patch: this write sets one
-  // status and the two attributes that record who set it, and nothing else in
-  // the row is its business.
   const verify = change.status === 'VERIFIED';
   await client.send(
     new UpdateCommand({
@@ -387,15 +464,19 @@ export interface UpdateQuestionPatch {
   correctOptionIds?: string[];
   /** Pass `null` to clear the explanation. */
   explanation?: string | null;
+  /** Move it to another lesson — which is also a change to what it is about. */
+  lessonContentId?: string;
+  lessonSpaceId?: string;
   position?: number;
   /**
    * Whether the edit is the kind that invalidates a verification.
    *
-   * Changing a question's words or its answer does — a person verified *that
-   * text*, and a question that has since been rewritten is one nobody has read.
-   * Moving it down the list does not, and neither does fixing a typo in the
-   * explanation, which is why the caller says which it is: only the code that
-   * knows what changed can tell.
+   * Changing a question's words, its answer, or the lesson it is about does — a
+   * person verified *that text about that lesson*, and a question that has since
+   * been rewritten, or moved to another lesson, is one nobody has read. Moving
+   * it down a list does not, and neither does fixing a typo in the explanation,
+   * which is why the caller says which it is: only the code that knows what
+   * changed can tell.
    */
   invalidateVerification?: boolean;
 }
@@ -426,6 +507,8 @@ export async function updateQuestion(
   if (patch.options !== undefined) assign('options', patch.options);
   if (patch.correctOptionIds !== undefined) assign('correctOptionIds', patch.correctOptionIds);
   if (patch.position !== undefined) assign('position', patch.position);
+  if (patch.lessonContentId !== undefined) assign('lessonContentId', patch.lessonContentId);
+  if (patch.lessonSpaceId !== undefined) assign('lessonSpaceId', patch.lessonSpaceId);
 
   if (patch.explanation !== undefined) {
     if (patch.explanation === null) {
@@ -461,9 +544,10 @@ export async function updateQuestion(
 
 /** What a question is created as, before it is given an id. */
 export interface NewQuestion {
-  contentId: string;
-  spaceId: string;
+  bankId: string;
   organizationId: string;
+  lessonContentId: string;
+  lessonSpaceId: string;
   parsed: ParsedQuestion;
   source: QuestionSource;
   position: number;
@@ -481,9 +565,10 @@ export interface NewQuestion {
 export function toQuestionRow(input: NewQuestion, questionId: string, now: number): QuizQuestion {
   return {
     questionId,
-    contentId: input.contentId,
-    spaceId: input.spaceId,
+    bankId: input.bankId,
     organizationId: input.organizationId,
+    lessonContentId: input.lessonContentId,
+    lessonSpaceId: input.lessonSpaceId,
     type: input.parsed.type,
     prompt: input.parsed.prompt,
     options: input.parsed.options,
@@ -491,7 +576,6 @@ export function toQuestionRow(input: NewQuestion, questionId: string, now: numbe
     ...(input.parsed.explanation ? { explanation: input.parsed.explanation } : {}),
     status: 'NEEDS_VERIFICATION',
     source: input.source,
-    ...(input.parsed.sourceContentId ? { sourceContentId: input.parsed.sourceContentId } : {}),
     position: input.position,
     createdBy: input.createdBy,
     createdAt: now,
@@ -508,10 +592,9 @@ export function countNeedingVerification(questions: QuizQuestion[]): number {
  * Writes positions 1..n over a list, touching only the rows whose position
  * actually changed.
  *
- * Dropping a question in the middle of a quiz renumbers what follows it, and
- * writing all of them every time is both more writes than the move needs and a
- * larger window in which a reader sees a half-applied order. The rows that did
- * not move are left alone.
+ * Rows that did not move are left alone: rewriting all of them every time is
+ * both more writes than the move needs and a larger window in which a reader
+ * sees a half-applied order.
  */
 export async function renumberQuestions(questions: QuizQuestion[]): Promise<void> {
   for (const [index, question] of questions.entries()) {
@@ -519,32 +602,4 @@ export async function renumberQuestions(questions: QuizQuestion[]): Promise<void
     if (question.position === position) continue;
     await updateQuestion(question.questionId, { position });
   }
-}
-
-/**
- * Moves a question to a place in its quiz: the whole of what dragging one is.
- *
- * The new order is computed here rather than accepted from the client, because
- * the client cannot know it: it sees the list it drew, and between drawing it
- * and dropping on it somebody else may have added a question. `index` is a
- * *place*, and the server is the only party that knows what is currently at each
- * one.
- *
- * The move is written as a renumber of the affected tail rather than as a
- * transaction. A write that fails part way leaves two questions sharing a
- * position, which the listing breaks by id — an order that is odd, rather than
- * a question that has gone missing.
- */
-export async function placeQuestion(question: QuizQuestion, index: number): Promise<QuizQuestion[]> {
-  const questions = await listAllQuestions(question.contentId);
-
-  const ordered = moveIntoPlace(
-    questions,
-    (entry) => entry.questionId === question.questionId,
-    question,
-    index,
-  );
-
-  await renumberQuestions(ordered);
-  return ordered;
 }

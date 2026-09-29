@@ -4,6 +4,7 @@ import { getCohort } from './cohorts';
 import { getVideo } from './dynamodb';
 import { HttpError } from './http';
 import { getMembership } from './organizations';
+import { getBank } from './question-banks';
 import { getQuestion } from './questions';
 import { getReward } from './rewards';
 import { getSection } from './sections';
@@ -16,6 +17,7 @@ import type {
   Content,
   OrgMember,
   OrgRole,
+  QuestionBank,
   QuizQuestion,
   Section,
   Space,
@@ -314,16 +316,12 @@ export async function requireContentAccess(
 /**
  * Authorizes the caller against a quiz, as somebody who may change it.
  *
- * Every question route goes through this, including the ones that only read:
- * a quiz's questions carry the answer key, and there is no reader of them who is
- * not editing the quiz. A learner who may read the lesson a quiz sits in must
- * not be able to fetch the answers out of it, and the day a quiz can be *taken*
- * is the day a separate route hands out its questions without them — which is a
- * route, and a decision, this one deliberately does not pre-empt.
- *
- * The type check is here rather than in each handler for the same reason: a
- * question belongs to a quiz, and every route that touches one is reached with
- * the id of the content it hangs off.
+ * What a quiz asks is editorial material — it carries the answer key — so every
+ * route reached with a quiz's id asks for a *write* on the organization, reads
+ * included. A course member who is not in the organization can read the lesson a
+ * quiz sits in and still cannot fetch its answers, which is the point: the day a
+ * quiz can be *taken* is the day a separate route hands out its questions
+ * without the answers, and that is a decision this one does not pre-empt.
  */
 export async function requireQuizAccess(contentId: string, userId: string): Promise<Content> {
   const content = await requireContentAccess(contentId, userId, 'write');
@@ -334,17 +332,42 @@ export async function requireQuizAccess(contentId: string, userId: string): Prom
 }
 
 /**
- * Loads a question and authorizes the caller through the quiz it belongs to.
+ * Loads a question bank and authorizes the caller against the organization that
+ * owns it.
  *
- * A question carries its own quiz and organization, so this is one read plus the
- * quiz's own rule rather than a second one — and it is the same rule, because
- * whoever may change a quiz may change what it asks.
+ * A bank is organization property, like the video library: any active member may
+ * read it — which is what lets somebody check a colleague's questions — and only
+ * an admin or an editor may change it. Nothing here is per course, because a
+ * question is worth writing once and asking in more than one place.
  */
-export async function requireQuestionAccess(questionId: string, userId: string): Promise<QuizQuestion> {
+export async function requireBankAccess(
+  bankId: string,
+  userId: string,
+  action: AccessAction,
+): Promise<QuestionBank> {
+  const bank = await getBank(bankId);
+  if (!bank) throw new HttpError(404, 'Question bank not found');
+
+  await requireOrganizationAccess(userId, bank.organizationId, action);
+  return bank;
+}
+
+/**
+ * Loads a question and authorizes the caller through the bank it lives in.
+ *
+ * A question carries its own bank and organization, so this is one read plus the
+ * bank's own rule rather than a second one — and it is the same rule, because
+ * whoever may change a bank may change what is in it.
+ */
+export async function requireQuestionAccess(
+  questionId: string,
+  userId: string,
+  action: AccessAction,
+): Promise<QuizQuestion> {
   const question = await getQuestion(questionId);
   if (!question) throw new HttpError(404, 'Question not found');
 
-  await requireQuizAccess(question.contentId, userId);
+  await requireBankAccess(question.bankId, userId, action);
   return question;
 }
 

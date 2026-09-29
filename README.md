@@ -1024,15 +1024,25 @@ All endpoints require `Authorization: Bearer <Cognito ID token>`.
 | GET    | `/contents/{contentId}/files/{fileId}`                 | Signed URL for one attachment                                          |
 | DELETE | `/contents/{contentId}/files/{fileId}`                 | Detach one attachment                                                  |
 | PUT    | `/contents/{contentId}/placement`                      | Move a lesson or quiz within or between sections (a drag)              |
-| GET    | `/contents/{contentId}/questions`                      | A quiz's questions, in order, with how many need verifying             |
-| POST   | `/contents/{contentId}/questions`                      | Write a question by hand                                               |
-| POST   | `/contents/{contentId}/questions/import`               | Import questions from .xlsx/.csv/.json (base64 in the body)             |
-| POST   | `/contents/{contentId}/questions/generation`           | Queue an AI generation from a lesson (`202`)                           |
-| POST   | `/contents/{contentId}/questions/verification`         | Verify a batch of questions (all unverified by default)                |
+| GET    | `/organizations/{orgId}/question-banks`                | The organization's question banks                                      |
+| POST   | `/organizations/{orgId}/question-banks`                | Make a question bank                                                   |
+| GET    | `/banks/{bankId}`                                      | One bank, with the last AI run against it                              |
+| PATCH  | `/banks/{bankId}`                                      | Rename a bank, or rewrite what it says                                 |
+| DELETE | `/banks/{bankId}`                                      | Delete a bank **and its questions**, out of every quiz asking them     |
+| GET    | `/banks/{bankId}/questions`                            | A bank's questions, with the bank and the unverified count             |
+| POST   | `/banks/{bankId}/questions`                            | Write a question (a lesson is required)                                |
+| POST   | `/banks/{bankId}/questions/import`                     | Import questions from .xlsx/.csv/.json (base64 in the body)            |
+| POST   | `/banks/{bankId}/questions/generation`                 | Queue an AI generation from a lesson (`202`); `DELETE` forgets it      |
+| POST   | `/banks/{bankId}/questions/verification`               | Verify a batch of a bank's questions                                   |
 | PATCH  | `/questions/{questionId}`                              | Edit a question (takes its verification away)                          |
-| DELETE | `/questions/{questionId}`                              | Delete a question                                                      |
+| DELETE | `/questions/{questionId}`                              | Delete it from its bank, and out of every quiz asking it               |
 | PUT    | `/questions/{questionId}/verification`                 | Verify it (`DELETE` takes that back)                                   |
-| PUT    | `/questions/{questionId}/placement`                    | Move it inside its quiz                                                |
+| GET    | `/spaces/{spaceId}/questions`                          | Every question about a course's lessons, from every bank               |
+| GET    | `/contents/{contentId}/questions`                      | What a quiz asks, in order, each with its bank and lesson              |
+| POST   | `/contents/{contentId}/questions`                      | Add questions from banks to a quiz                                     |
+| DELETE | `/contents/{contentId}/questions/{questionId}`         | Stop asking it — the question stays in its bank                        |
+| PUT    | `/contents/{contentId}/questions/placement`            | Move it in the quiz's order                                            |
+| POST   | `/contents/{contentId}/questions/verification`         | Verify a batch of the quiz's questions                                 |
 | PUT    | `/contents/{contentId}/favourite`                      | Favourite it (any member)                                              |
 | DELETE | `/contents/{contentId}/favourite`                      | Unfavourite it                                                         |
 | PUT    | `/contents/{contentId}/playlist`                       | Add it to the caller's learning playlist                               |
@@ -1447,57 +1457,74 @@ and deletable rather than unreachable rows. Favourites and playlist entries aime
 at deleted content are deliberately left alone: they are a learner's own
 pointers, and a pointer whose target is gone is skipped when their list is read.
 
-### Quizzes and questions
+### Quizzes and question banks
 
-A course can check what it taught. A **quiz** is content — a row in a section,
-beside the lessons and sorted with them — and what it holds is **questions**:
-true/false, or multiple choice with one right answer.
+A course can check what it taught. Two records make that work, and the split
+between them is the design:
 
 ```
-ContentsTable ─── QUIZ row ─┬─ QuizQuestion (QuestionsTable, ContentPositionIndex)
-                            └─ generation (the last AI run, on the same row)
+QuestionBank ─── Question ─── Lesson (a VIDEO content)
+                    │
+                    └── QuizQuestionLink ─── Quiz (a QUIZ content)
 ```
 
-**Questions live in their own table**, for the reason a lesson's attachments do:
-each one is written, verified, reordered and deleted on its own, so a list stored
-inside the content row would make every one of those a rewrite of the whole quiz
-— two authors would overwrite each other, and a long quiz would be 400 KB away
-from not saving at all.
+**A question belongs to a bank and is about a lesson.** That is the rule: a
+question without a lesson is a question nobody can tell is still true — the lesson
+is re-recorded, the words that made the question correct change, and the question
+goes on being asked. A **quiz** does not own questions; it *asks* them, one link
+row each with a position, so a question written once and read once can be asked
+by a quiz in this course, by a retake, and by next term's version of the same
+course. A **bank** belongs to the organization rather than to a course, because a
+course-shaped bank would mean writing the same question again the moment two
+courses shared a lesson's subject.
 
 **A machine's question is a draft.** Anything generated or imported arrives
 `NEEDS_VERIFICATION`, and no parameter anywhere creates a verified question: a
 person reads it and verifies it (`PUT /questions/{id}/verification`, recording
-who and when), or deletes it. Editing what a question *asks* takes the
-verification away — somebody approved a sentence, and that sentence has changed.
+who and when), or deletes it. Verifying is once, wherever it is done — a question
+is shared. Editing what a question *asks*, or the lesson it is about, takes the
+verification away.
 
 **Generation is queued, not awaited.** `POST
-/contents/{contentId}/questions/generation` writes the run onto the quiz, publishes
-an EventBridge event (`play.questions` / `Quiz Generation Requested`), and answers
-`202` with the quiz. `play-<stage>-generate-questions` reads the lesson's
+/banks/{bankId}/questions/generation` writes the run onto the bank, publishes an
+EventBridge event (`play.questions` / `Quiz Generation Requested`), and answers
+`202` with the bank. `play-<stage>-generate-questions` reads the lesson's
 transcript and notes, calls Bedrock's model-agnostic `Converse` API, validates
-every question it gets back, and writes them `NEEDS_VERIFICATION`. The quiz page
-polls the content row until the run is `READY` or `FAILED`. A REST request cannot
-be held open long enough for a model to read a lesson, which is the whole reason
-for the event in the middle.
+every question it gets back, and writes them `NEEDS_VERIFICATION` — adding them
+to a quiz too when the run was started from one. A REST request cannot be held
+open long enough for a model to read a lesson, which is the whole reason for the
+event in the middle.
 
 **Import reads the file the author already has**: `.xlsx` (first sheet), `.csv`
 (delimiter sniffed) or `.json`, base64 inside a JSON body because API Gateway's
-REST integration has no multipart parser. Headings are matched by name and the
-type is inferred when absent, so a plain question/answer sheet imports as it was
-written; a row that cannot be read is reported with its line number rather than
-failing the file.
+REST integration has no multipart parser. One file is about one lesson — a lesson
+*column* would be a column the importer had to guess at, since a lesson title is
+not unique. A row that cannot be read is reported with its line number rather
+than failing the file.
+
+**A quiz asks about its own course's lessons**, enforced in `addQuestionsToQuiz`
+rather than in the picker: a question about another course's lesson is one its
+learners cannot answer. Adding one twice is one row, not an error.
 
 **Moving is a place, not an order.** `PUT …/placement { index }` says *where* a
 row lands — the server renumbers from what the container currently holds — so a
 client that sends a stale view of a list cannot delete a row somebody else added
 while the drag was in flight.
 
-`QuestionsTable` is the first table added since the CDK migration, so it is the
-first one no deploy creates: `node
-infra/scripts/create-questions-table.mjs --yes` creates it once per stage and
-records its name in `infra/config/play-<stage>.json`. [docs/quizzes.md](docs/quizzes.md)
-is the full map — the model, the flows, the import format and what is deliberately
-not built yet (nobody takes a quiz; there are no attempts or scores).
+A course's own page carries the third view of the same questions — a **Question
+banks** tab beside Content — which is every question about *this course's*
+lessons, from every bank, grouped by lesson and including the lessons nothing has
+been written about yet. It reads through the questions table's
+`SpacePositionIndex`, so the tab is one query, and it authorizes as organization
+membership: a learner registered for the course is not told what the answers are.
+
+Three tables arrived with this feature and no deploy creates them:
+`QuestionsTable`, `QuestionBanksTable` and `QuizQuestionsTable` are made by
+`node infra/scripts/create-quiz-tables.mjs --yes`, once per stage, and recorded in
+`infra/config/play-<stage>.json`. [docs/quizzes.md](docs/quizzes.md) is the full
+map — the model, the routes, the import format, what deleting what takes with it,
+and what is deliberately not built yet (nobody takes a quiz; there are no
+attempts or scores).
 
 ### Learner state
 

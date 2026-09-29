@@ -15,8 +15,9 @@ import {
   DialogTitle,
 } from '@ui/components/ui/dialog';
 import { Label } from '@ui/components/ui/label';
-import { useSections } from '@api/modules/section/section.queries';
 import { useGenerateQuestions } from '@api/modules/question/question.queries';
+import { BankPicker } from './bank-picker';
+import { LessonPicker } from './lesson-picker';
 import { QUESTION_TYPE_LABELS, QUESTION_TYPES, type QuestionType } from '@play/types';
 
 /**
@@ -33,11 +34,10 @@ const MAX_COUNT = 20;
 /**
  * Asking a model to write questions from a lesson.
  *
- * The lesson is a choice rather than something the dialog knows, because a quiz
- * may draw on any lesson of its course — the one before it is the common case
- * and only the author knows which. The list is the course's own lessons: a
- * question written from something outside the course would be a question its
- * learners cannot answer.
+ * Three things are chosen, and each is required by the model rather than by the
+ * form: **the bank** the questions are written into (where questions live),
+ * **the lesson** they are about (which is also what they are written from, and
+ * what decides which courses' quizzes may ask them), and how many of which kind.
  *
  * It does not wait for the questions. The run is queued, the dialog closes, and
  * the page shows the run's progress where the questions will appear — which is
@@ -45,53 +45,44 @@ const MAX_COUNT = 20;
  * request that starts it returns in a moment.
  */
 export function GenerateQuestionsDialog({
-  contentId,
+  orgId,
+  bankId,
   spaceId,
+  lessonContentId,
+  addToContentId,
   open,
   onOpenChange,
-  defaultSourceContentId,
+  onStarted,
 }: {
-  contentId: string;
-  spaceId: string;
+  orgId: string;
+  /** The bank to write into. Omit to let the author choose one. */
+  bankId?: string;
+  /** The course whose lessons are on offer. Omit to let the author choose one. */
+  spaceId?: string;
+  /** The lesson to start on, when the page that opened this knows one. */
+  lessonContentId?: string;
+  /** A quiz to add what is written to, when the run was started from one. */
+  addToContentId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The lesson to preselect, when the page that opened this knows one. */
-  defaultSourceContentId?: string;
+  /** The bank the run was started in, so the page can watch it. */
+  onStarted?: (bankId: string) => void;
 }) {
-  const [sourceContentId, setSourceContentId] = useState('');
+  const [pickedBankId, setPickedBankId] = useState('');
+  const [lesson, setLesson] = useState('');
   const [count, setCount] = useState(DEFAULT_COUNT);
   const [types, setTypes] = useState<QuestionType[]>([...QUESTION_TYPES]);
 
-  const { data: outline } = useSections(spaceId);
-  const generate = useGenerateQuestions(spaceId);
-
-  // Every lesson of the course that has something to write from — a video, or
-  // notes. A lesson with neither is a title, and a model given a title writes
-  // questions about the title.
-  const sources = (outline?.sections ?? []).flatMap((section) =>
-    section.contents
-      .filter((content) => content.type === 'VIDEO' && (content.videoId || content.notes))
-      .map((content) => ({ contentId: content.contentId, title: content.title, sectionTitle: section.title })),
-  );
+  const generate = useGenerateQuestions();
+  const destinationBankId = bankId ?? pickedBankId;
 
   useEffect(() => {
     if (!open) return;
-    setSourceContentId(defaultSourceContentId ?? '');
+    setPickedBankId('');
+    setLesson(lessonContentId ?? '');
     setCount(DEFAULT_COUNT);
     setTypes([...QUESTION_TYPES]);
-  }, [open, defaultSourceContentId]);
-
-  /**
-   * Which lesson the form is on.
-   *
-   * The state stands for "what the author chose"; when they have not chosen, the
-   * first lesson of the course is the answer. It is computed here rather than
-   * written into the state when the dialog opens because the course's outline may
-   * still be on its way — a dialog that opened onto an empty select and stayed
-   * disabled would be a dialog that looked broken for the second the request
-   * takes.
-   */
-  const selected = sourceContentId || sources[0]?.contentId || '';
+  }, [open, lessonContentId]);
 
   function toggleType(type: QuestionType) {
     setTypes((current) => {
@@ -103,8 +94,17 @@ export function GenerateQuestionsDialog({
   }
 
   async function submit() {
+    if (!destinationBankId || !lesson) return;
+
     try {
-      await generate.mutateAsync({ contentId, sourceContentId: selected, count, types });
+      await generate.mutateAsync({
+        bankId: destinationBankId,
+        lessonContentId: lesson,
+        count,
+        types,
+        ...(addToContentId ? { addToContentId } : {}),
+      });
+      onStarted?.(destinationBankId);
       toast.success('Writing questions…', {
         description: 'They will appear here. You can leave this page.',
       });
@@ -120,34 +120,24 @@ export function GenerateQuestionsDialog({
         <DialogHeader>
           <DialogTitle>Generate questions</DialogTitle>
           <DialogDescription>
-            A model reads the lesson you choose and writes questions from it. Every one arrives
-            needing verification — nothing it writes is trusted until somebody here has read it.
+            A model reads the lesson you choose and writes questions about it into the bank you
+            choose. Every one arrives needing verification — nothing it writes is trusted until
+            somebody here has read it.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="generation-source">Lesson</Label>
-            {sources.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                This course has no lesson with a video or notes yet. There is nothing to write
-                questions from.
-              </p>
-            ) : (
-              <select
-                id="generation-source"
-                value={selected}
-                onChange={(event) => setSourceContentId(event.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
-              >
-                {sources.map((source) => (
-                  <option key={source.contentId} value={source.contentId}>
-                    {source.title} — {source.sectionTitle}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+          {!bankId && (
+            <BankPicker orgId={orgId} value={pickedBankId} onChange={setPickedBankId} disabled={generate.isPending} />
+          )}
+
+          <LessonPicker
+            orgId={orgId}
+            spaceId={spaceId}
+            value={lesson}
+            onChange={setLesson}
+            disabled={generate.isPending}
+          />
 
           <div className="grid gap-2">
             <Label htmlFor="generation-count">How many</Label>
@@ -194,7 +184,11 @@ export function GenerateQuestionsDialog({
               Cancel
             </Button>
           </DialogClose>
-          <Button type="button" onClick={submit} disabled={!selected || generate.isPending}>
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={!destinationBankId || !lesson || generate.isPending}
+          >
             {generate.isPending ? <Loader2Icon className="animate-spin" /> : <SparklesIcon />}
             Generate {count} questions
           </Button>

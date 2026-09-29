@@ -1034,15 +1034,72 @@ export interface QuestionOption {
   text: string;
 }
 
-/** One question of a quiz, as the API stores and hands it out. */
+/**
+ * A question bank: an organization's library of questions.
+ *
+ * A bank is where questions *live*. A quiz does not own questions — it asks
+ * some of them — so one question written once can be asked by a quiz in this
+ * course, a retake, and next term's version of the same course. That is the
+ * whole reason banks exist: a question is worth writing carefully once, and
+ * worth asking more than once.
+ *
+ * A bank belongs to the organization rather than to a course, because the
+ * questions in it are about *lessons*, and which lesson a question is about is
+ * on the question. A course-shaped bank would mean writing the same question
+ * again the moment two courses share a lesson's subject.
+ */
+export interface QuestionBank {
+  /** ULID, the table key. */
+  bankId: string;
+  /** The organization that owns it. A bank never exists outside one. */
+  organizationId: string;
+  /** Required, 2–80 characters (whitespace collapsed). */
+  name: string;
+  /** Optional, ≤ 500 characters. */
+  description: string;
+  /** How many questions it holds, kept on the row so a list needs no query each. */
+  questionCount: number;
+  /**
+   * The last AI generation asked of this bank.
+   *
+   * On the bank rather than on a table of its own for the reason a quiz's run is
+   * on its content row: there is one live run per bank at most — asking twice
+   * replaces the first — and a job row nobody lists is a row that exists to be
+   * deleted. The page that asked for it is the page that polls it.
+   */
+  generation?: QuizGeneration;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * One question, as the API stores and hands it out.
+ *
+ * Two things about it are the model's whole shape:
+ *
+ * - **It belongs to a bank**, which is where it is written, imported, generated,
+ *   verified and deleted.
+ * - **It is associated with a lesson** — required, not optional. A question
+ *   without a lesson is a question nobody can tell is still true: the lesson
+ *   moves, the words that made the question correct change, and the question
+ *   goes on being asked. Naming the lesson is also what lets a quiz in a course
+ *   pick the questions that are about *its* lessons and no others.
+ */
 export interface QuizQuestion {
   /** ULID, the table key. */
   questionId: string;
-  /** The quiz content this belongs to. */
-  contentId: string;
-  /** Denormalized from the content, so a question authorizes in one hop. */
-  spaceId: string;
+  /** The bank it lives in. */
+  bankId: string;
+  /** Denormalized from the bank, so a question authorizes in one hop. */
   organizationId: string;
+  /** The lesson it is about — a `VIDEO` content. Required. */
+  lessonContentId: string;
+  /**
+   * Denormalized from that lesson, so a quiz can be told which of its own
+   * course's questions this is without a second read.
+   */
+  lessonSpaceId: string;
   type: QuestionType;
   /** The statement to judge, or the question to answer. */
   prompt: string;
@@ -1059,13 +1116,7 @@ export interface QuizQuestion {
   explanation?: string;
   status: QuestionStatus;
   source: QuestionSource;
-  /**
-   * The lesson the question was generated from, when it was generated or
-   * imported from one. It is what lets the quiz page say where a question came
-   * from, and what the "from this lesson" bulk actions address.
-   */
-  sourceContentId?: string;
-  /** 1-based order inside the quiz. Sparse: gaps are legal. */
+  /** 1-based order inside the bank. Sparse: gaps are legal. */
   position: number;
   createdBy: string;
   createdAt: number;
@@ -1073,6 +1124,26 @@ export interface QuizQuestion {
   /** Who read it and said it was right, and when. */
   verifiedBy?: string;
   verifiedAt?: number;
+}
+
+/**
+ * One question a quiz asks, and where it sits in it.
+ *
+ * A row of its own rather than a list on the quiz, because the two halves have
+ * different owners: the question belongs to a bank and outlives the quiz, and
+ * the quiz owns only the fact that it asks it and in what order. Removing a
+ * question from a quiz deletes this row and leaves the question alone — which is
+ * what makes a bank worth having.
+ */
+export interface QuizQuestionLink {
+  /** The quiz content. */
+  contentId: string;
+  /** The question it asks. */
+  questionId: string;
+  /** 1-based order inside the quiz. Sparse: gaps are legal. */
+  position: number;
+  addedBy: string;
+  addedAt: number;
 }
 
 /**
@@ -1092,11 +1163,18 @@ export type QuizGenerationStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
 
 export interface QuizGeneration {
   status: QuizGenerationStatus;
-  /** The lesson the questions are being written from. */
-  sourceContentId: string;
+  /** The bank the questions are being written into. */
+  bankId: string;
+  /** The lesson they are being written from — which is also what they are about. */
+  lessonContentId: string;
   /** How many were asked for, and which kinds. */
   count: number;
   types: QuestionType[];
+  /**
+   * The quiz to add them to once they are written, when a run was started from
+   * a quiz. Absent for a run started in the bank, which is the ordinary case.
+   */
+  addToContentId?: string;
   /** Cognito `sub` of whoever asked. */
   requestedBy: string;
   requestedAt: number;
@@ -1104,7 +1182,7 @@ export interface QuizGeneration {
   finishedAt?: number;
   /** How many questions the run actually wrote. Set on `READY`. */
   created?: number;
-  /** Why it failed, in words a person reading the quiz page can act on. */
+  /** Why it failed, in words a person reading the page can act on. */
   error?: string;
   /** The Bedrock model that wrote them, for `READY` runs. */
   model?: string;
@@ -1265,8 +1343,19 @@ export interface QuestionInput {
    */
   answer?: number | string | boolean;
   explanation?: string;
-  /** The lesson it was written from, when an importer knows. */
-  sourceContentId?: string;
+}
+
+/**
+ * Writing a question into a bank.
+ *
+ * `lessonContentId` is required here rather than on `QuestionInput`, because it
+ * is a fact about the *call* rather than about the question's words: a bank's
+ * questions are grouped by the lesson they are about, and an import or a
+ * generation writes a whole file's worth for one lesson in one go.
+ */
+export interface CreateQuestionPayload extends QuestionInput {
+  /** The lesson the question is about — a `VIDEO` content of this organization. */
+  lessonContentId: string;
 }
 
 /** One question as an import read it: the input, or the row that failed. */
@@ -1278,12 +1367,12 @@ export interface ImportedQuestionRow {
 }
 
 export interface ImportQuestionsPayload {
-  /** `book.xlsx`, `questions.csv` or `questions.json` — the extension decides. */
+  /** `questions.xlsx`, `questions.csv` or `questions.json` — the extension decides. */
   fileName: string;
   /** The file itself, base64. */
   contentBase64: string;
-  /** The lesson the questions were written from, when the author names one. */
-  sourceContentId?: string;
+  /** The lesson every question in the file is about. Required. */
+  lessonContentId: string;
 }
 
 export interface ImportQuestionsResponse {
@@ -1295,8 +1384,6 @@ export interface ImportQuestionsResponse {
   rows: number;
 }
 
-export interface CreateQuestionPayload extends QuestionInput {}
-
 export interface UpdateQuestionPayload {
   type?: QuestionType;
   prompt?: string;
@@ -1304,23 +1391,30 @@ export interface UpdateQuestionPayload {
   answer?: number | string | boolean;
   /** `null` clears the explanation. */
   explanation?: string | null;
+  /** Point the question at a different lesson. */
+  lessonContentId?: string;
 }
 
 /**
  * What asking for AI generation answers with.
  *
- * Not the questions: the run has only just been queued. This is the job, which
- * is why it comes back on the content row and why the page polls it.
+ * Not the questions: the run has only just been queued, and it lands on the
+ * *bank's* row, which is what the page polls. The bank carries it rather than
+ * the quiz because a run writes questions into the bank — a quiz that asked for
+ * one may be gone by the time the questions arrive, and the questions are not.
  */
 export interface GenerateQuestionsPayload {
-  /** The lesson to write questions from. */
-  sourceContentId: string;
+  /** The lesson to write questions from — which is also what they are about. */
+  lessonContentId: string;
   /** How many to write, 1–20. */
   count?: number;
   /** Which kinds to write. Defaults to both. */
   types?: QuestionType[];
+  /** A quiz to add them to once they are written. Same course as the lesson. */
+  addToContentId?: string;
 }
 
+/** A bank's questions, or a quiz's, in the order they are asked. */
 export interface ListQuestionsResponse {
   questions: QuizQuestion[];
   /** How many are still waiting for somebody to read them. */
@@ -1331,16 +1425,61 @@ export interface QuestionResponse {
   question: QuizQuestion;
 }
 
-/** A quiz's questions, as the routes that move or accept them answer. */
+/** A list of questions, as the routes that move them answer. */
 export interface QuestionsResponse {
   questions: QuizQuestion[];
 }
 
-/** What a batch verification did, and what the quiz looks like now. */
+/** What adding questions to a quiz did. */
+export interface AddQuizQuestionsResponse {
+  /** How many this call added. */
+  added: number;
+  /** How many were already asked by this quiz, and so left alone. */
+  alreadyAsked: number;
+  questions: QuizQuestion[];
+}
+
+/**
+ * Where a question now sits in the quiz that asks it.
+ *
+ * The quiz is the path and the question is in the body, because a quiz's order
+ * belongs to the quiz: dropping a row third from the top renumbers what follows
+ * it, and the server works that out from what the quiz currently asks.
+ */
+export interface PlaceQuizQuestionPayload {
+  questionId: string;
+  /** Zero-based index inside the quiz, counting from the top. */
+  index: number;
+}
+
+/** What a batch verification did, and what the list looks like now. */
 export interface BatchVerificationResponse {
   /** How many this call verified. */
   verified: number;
   questions: QuizQuestion[];
+}
+
+export interface CreateQuestionBankPayload {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateQuestionBankPayload {
+  name?: string;
+  description?: string;
+}
+
+export interface ListQuestionBanksResponse {
+  banks: QuestionBank[];
+}
+
+export interface QuestionBankResponse {
+  bank: QuestionBank;
+}
+
+export interface ListBankQuestionsResponse extends ListQuestionsResponse {
+  /** The bank the questions are in, so a page needs one request to draw itself. */
+  bank: QuestionBank;
 }
 
 export interface UploadContentFilePayload {

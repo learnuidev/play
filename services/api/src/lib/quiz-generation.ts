@@ -1,8 +1,10 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { ulid } from 'ulid';
-import type { Content, QuestionType, QuizGeneration } from '../types';
-import { getContent, updateContent } from './contents';
+import type { Content, QuestionType, QuizGeneration, QuizQuestion } from '../types';
+import { getContent } from './contents';
+import { addBankQuestionCount, getBank, updateBank } from './question-banks';
+import { addQuestionsToQuiz } from './quiz-questions';
 import { getVideo } from './dynamodb';
 import { parseVtt } from './vtt';
 import { getObjectText } from './s3';
@@ -67,7 +69,7 @@ export const MAX_SOURCE_CHARS = 36_000;
 const DEFAULT_QUESTION_COUNT = 5;
 
 /**
- * The lesson a run reads from, as text.
+ * The lesson a run reads, as text.
  *
  * A lesson is taught twice over: in what is said, and in what is written beside
  * it. Both go in — the transcript first, because it is the lesson — and a
@@ -373,10 +375,14 @@ export const GENERATION_DETAIL_TYPE = 'Quiz Generation Requested';
 
 /** What a queued run carries to the worker. */
 export interface GenerationJobDetail {
-  contentId: string;
-  sourceContentId: string;
+  /** The bank the questions are written into. */
+  bankId: string;
+  /** The lesson they are written from, which is also what they are about. */
+  lessonContentId: string;
   count: number;
   types: QuestionType[];
+  /** A quiz to add them to when they arrive, when the run started from one. */
+  addToContentId?: string;
   requestedBy: string;
   /** When the run was asked for, which is also what makes a delivery a duplicate. */
   requestedAt: number;
@@ -441,46 +447,51 @@ export async function publishGeneration(detail: GenerationJobDetail): Promise<vo
  * Written to be run by an event and to never throw: a worker that fails loudly
  * is a worker whose failure is a CloudWatch entry nobody reads, and the author
  * waiting on the page is the person who needs to be told. Everything that goes
- * wrong is written onto the quiz's own `generation` record, which is what the
+ * wrong is written onto the *bank's* own `generation` record, which is what the
  * page is polling — so the failure arrives exactly where the progress would
  * have.
  *
- * Two guards matter before any work happens:
+ * Three guards matter before any work happens:
  *
- * - the quiz may have been deleted between the event and the invocation, which
+ * - the bank may have been deleted between the event and the invocation, which
  *   is not an error — there is simply nothing to write to;
  * - the record may name a *different* run, because a stale delivery of an
  *   earlier request arrived after a newer one. `requestedAt` is the identity of
- *   a run, and a duplicate is dropped rather than allowed to overwrite the
- *   newer run's questions with the older run's answer.
+ *   a run, and a duplicate is dropped rather than allowed to overwrite the newer
+ *   run's questions;
+ * - the lesson may have been deleted, in which case there is nothing to write
+ *   questions about and the run fails with a sentence saying so.
+ *
+ * A run appends to the bank: questions already in it are the author's, and a
+ * generation that replaced them would be a generation that deletes work.
  */
 export async function runGeneration(detail: GenerationJobDetail): Promise<void> {
-  const quiz = await getContent(detail.contentId);
-  if (!quiz) return;
+  const bank = await getBank(detail.bankId);
+  if (!bank) return;
 
-  if (quiz.generation?.requestedAt !== detail.requestedAt) return;
+  if (bank.generation?.requestedAt !== detail.requestedAt) return;
 
   const running: QuizGeneration = {
-    ...quiz.generation,
+    ...bank.generation,
     status: 'RUNNING',
     startedAt: Date.now(),
   };
-  await updateContent(quiz.contentId, { generation: running });
+  await updateBank(bank.bankId, { generation: running });
 
   try {
-    const source = await getContent(detail.sourceContentId);
-    if (!source) {
+    const lesson = await getContent(detail.lessonContentId);
+    if (!lesson) {
       throw new Error('The lesson these questions were to be written from no longer exists');
     }
 
-    const lesson = await readLessonSource(source);
-    if (!lesson.text.trim()) {
+    const source = await readLessonSource(lesson);
+    if (!source.text.trim()) {
       throw new Error(
         'That lesson has nothing to write from yet — it needs subtitles or notes before questions can be made from it',
       );
     }
 
-    const result = await generateQuestions(lesson, detail.count, detail.types);
+    const result = await generateQuestions(source, detail.count, detail.types);
     if (result.questions.length === 0) {
       throw new Error(
         result.rejected.length > 0
@@ -490,17 +501,20 @@ export async function runGeneration(detail: GenerationJobDetail): Promise<void> 
     }
 
     const now = Date.now();
-    let position = await nextQuestionPosition(quiz.contentId);
+    let position = await nextQuestionPosition(bank.bankId);
+    const written: QuizQuestion[] = [];
 
     for (const parsed of result.questions) {
       const question = toQuestionRow(
         {
-          contentId: quiz.contentId,
-          spaceId: quiz.spaceId,
-          organizationId: quiz.organizationId,
-          // The lesson they were written from rides on every question: the page
-          // says where a question came from, and a quiz may draw on several.
-          parsed: { ...parsed, sourceContentId: detail.sourceContentId },
+          bankId: bank.bankId,
+          organizationId: bank.organizationId,
+          // Every question names the lesson it is about — written or generated,
+          // it is the same rule, and for a generated question it is also what it
+          // was written *from*.
+          lessonContentId: lesson.contentId,
+          lessonSpaceId: lesson.spaceId,
+          parsed,
           source: 'AI',
           position,
           createdBy: detail.requestedBy,
@@ -510,22 +524,41 @@ export async function runGeneration(detail: GenerationJobDetail): Promise<void> 
       );
 
       await putQuestion(question);
+      written.push(question);
       position += 1;
     }
 
-    await updateContent(quiz.contentId, {
+    await addBankQuestionCount(bank.bankId, written.length);
+
+    // A run started from a quiz adds what it wrote to that quiz, which is the
+    // one-click path: watch a lesson, ask for a quiz, and come back to a quiz
+    // that already asks them. A failure here is not a failed run — the questions
+    // exist and are verified the same way — so it is logged rather than
+    // reported, and the quiz's own list can add them afterwards.
+    if (detail.addToContentId) {
+      try {
+        const quiz = await getContent(detail.addToContentId);
+        if (quiz && quiz.type === 'QUIZ') {
+          await addQuestionsToQuiz(quiz, written, detail.requestedBy);
+        }
+      } catch (err) {
+        console.error('Questions were written but not added to the quiz', err);
+      }
+    }
+
+    await updateBank(bank.bankId, {
       generation: {
         ...running,
         status: 'READY',
         finishedAt: Date.now(),
-        created: result.questions.length,
+        created: written.length,
         model: result.model,
       },
     });
   } catch (err) {
     console.error('Quiz generation failed', err);
 
-    await updateContent(quiz.contentId, {
+    await updateBank(bank.bankId, {
       generation: {
         ...running,
         status: 'FAILED',
