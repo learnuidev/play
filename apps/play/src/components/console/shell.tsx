@@ -66,8 +66,8 @@ const NAV = [
 ] as const;
 
 const INTEGRATIONS = [
-  { href: "/integrations/aws", label: "AWS", icon: RocketIcon, hint: "who we act as" },
-  { href: "/integrations/vercel", label: "Vercel", icon: GlobeIcon, hint: "where the apps run" },
+  { href: "/integrations/aws", label: "AWS", icon: RocketIcon },
+  { href: "/integrations/vercel", label: "Vercel", icon: GlobeIcon },
 ] as const;
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
@@ -187,7 +187,12 @@ function NavItem({
   href: string;
   label: string;
   icon: typeof RocketIcon;
-  hint: string;
+  /**
+   * The line under the name. The integrations have none: the two of them are
+   * named by what they are, and a subtitle nobody reads is a row that says the
+   * same thing twice.
+   */
+  hint?: string;
   /** Integrations sit inside a group, so they are one line rather than two. */
   compact?: boolean;
 }) {
@@ -206,11 +211,11 @@ function NavItem({
       <Icon className="size-4 shrink-0" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-sm font-medium">{label}</span>
-        {compact ? null : (
+        {!compact && hint ? (
           <span className="text-muted-foreground truncate text-xs">{hint}</span>
-        )}
+        ) : null}
       </span>
-      {compact ? (
+      {compact && hint ? (
         <span className="text-muted-foreground shrink-0 truncate text-xs">{hint}</span>
       ) : null}
     </Link>

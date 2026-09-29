@@ -363,9 +363,55 @@ export interface VercelProjectView {
   error: string | null;
 }
 
+/**
+ * Where the console's Vercel token came from.
+ *
+ * `cli` is the `vercel` CLI's own session — what the Connect button creates —
+ * and `file` is the token the form writes into `apps/play/.env.local`.
+ */
+export type VercelTokenSource = "environment" | "cli" | "file";
+
+/** What the Vercel CLI looks like from here. */
+export interface VercelCliView {
+  installed: boolean;
+  /** The binary that would be run, when there is one. */
+  path: string | null;
+  /** Unix seconds. The CLI's own store says when its token lapses. */
+  tokenExpiresAt: number | null;
+}
+
+export type VercelLoginStatus = "idle" | "running" | "done" | "failed" | "cancelled";
+
+/** Which command the sign-in is on: the install, or the login itself. */
+export type VercelLoginStep = "install" | "login";
+
+export interface VercelLoginView {
+  status: VercelLoginStatus;
+  step: VercelLoginStep | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+  /**
+   * The device page the CLI printed, absolute and ready to open.
+   *
+   * Surfaced rather than left in the transcript because it is the one thing the
+   * person has to *do*: the CLI is polling until somebody approves the code.
+   */
+  url: string | null;
+  error: string | null;
+  lineCount: number;
+}
+
+export type VercelLoginEvent =
+  | { type: "login"; login: VercelLoginView; at: number }
+  | { type: "log"; line: LogLine }
+  | { type: "end"; login: VercelLoginView; at: number };
+
 export interface VercelOverview {
   connected: boolean;
-  tokenSource: "environment" | "file" | null;
+  tokenSource: VercelTokenSource | null;
+  cli: VercelCliView;
+  /** The sign-in run, so a page reloaded mid-flow rejoins it. */
+  login: VercelLoginView;
   projects: VercelProjectView[];
   error: string | null;
 }

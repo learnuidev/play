@@ -7,7 +7,8 @@ the three that otherwise live in a shell history nobody can read:
   what this environment is saying;
 - **Frontends** — the three apps, what each one is handed, and where they run;
 - **Integrations** — the AWS account the console acts as, and the Vercel account
-  the two deployed apps live on.
+  the two deployed apps live on, which the console can sign in to by running the
+  Vercel CLI for you.
 
 ```bash
 npm run play            # from the repository root
@@ -31,7 +32,8 @@ Backends         play              Env variables · Deployments · Logs
                                    ×  an environment
 
 Integrations     AWS      who the console acts as, and what is deployed
-                 Vercel   where the two deployed apps run, read-only
+                 Vercel   where the two deployed apps run — read-only, plus the
+                          CLI sign-in that gets it a token
 ```
 
 Which one, and against what, are **two dropdowns at the top of the page they
@@ -252,6 +254,52 @@ Each dev server is spawned **detached**, in its own process group, because
 `next dev` starts a compiler and workers underneath itself and killing only the
 process the console holds leaves the rest holding the port. Stop kills the group.
 
+## Vercel: three places a token can live
+
+The console reads Vercel and never writes to it — no project is created, no
+variable is set, no deployment is triggered — and a read needs a token. There are
+three, and the order between them is a decision:
+
+| Token | Put there by | Beats |
+| --- | --- | --- |
+| `VERCEL_TOKEN` in the shell | you, for one `npm run play` | everything |
+| the CLI's session | **Connect** on the page — that is, `vercel login` | the file |
+| `apps/play/.env.local` | the token form on the same page | — |
+
+**Connect runs the CLI.** If this machine has no `vercel`, it installs one first
+(`pnpm i -g vercel`, or npm when there is no pnpm), then runs `vercel login` and
+streams it into the card. The CLI prints a device URL and waits; the page lifts
+that URL out beside the button, because it is the one thing somebody has to act
+on, and the process is left alone until the code is approved in a browser. It is
+a transcript rather than a spinner because that is what a device flow is: two
+lines of output, then nothing, then either a session or a sentence about why not.
+
+The token itself is **read from the CLI's store, not copied**: `vercel logout` in
+a terminal is how it goes away, and the page says which of the three sources it
+is reading. Vercel gives the CLI a short-lived access token, so a CLI source that
+has lapsed steps aside for whatever else is configured and the card says so —
+renewing it is the CLI's business in the CLI's own process, and a console that
+drove that exchange would be writing to a store it does not own. Pressing Connect
+again is the way back.
+
+One case is worth knowing about, because its error message says nothing about
+its cause. If the console's **process cannot write the CLI's own store** — it was
+started inside a sandbox, a container, or a CI job that confines it to the
+repository — `vercel login` completes the device flow and then fails to keep what
+it got:
+
+```
+Error: Not able to create ~/Library/Application Support/com.vercel.cli/auth.json
+(operation not permitted).
+```
+
+So when that store is not writable the CLI is pointed at `apps/play/.vercel-cli`
+instead, the transcript says so, and the session is read from there. That
+directory is gitignored, like the `.env.local` a pasted token goes in. Started
+the normal way — `npm run play` in your own terminal — the CLI's own store is
+used, and a session created by `vercel login` anywhere on the machine is the
+console's too.
+
 ## Settings: what a deploy cannot discover
 
 A new environment creates its own user pool, and a pool is built with a Google
@@ -333,6 +381,8 @@ src/server/
   plan.ts          THE PLAN: the thirteen steps, their checks and their work
   run.ts           one run at a time, its transcript, and its event stream
   services.ts      the three dev servers, and cleaning up after them
+  vercel.ts        the three frontends on Vercel — read-only, over the REST API
+  vercel-cli.ts    the Vercel CLI: where it is, its session, and the sign-in run
 
 src/app/api/
   state            who we are, and what exists            (GET, cached 5s)
@@ -355,12 +405,15 @@ src/app/api/
   frontends/[app]/env
                    what one app is handed, for one stage   (GET)
   vercel           projects, deployments and env vars     (GET / PUT)
+  vercel/login     start or cancel the CLI sign-in         (POST / DELETE)
+  vercel/login/events
+                   its output, as it happens                (SSE)
 
 src/components/
   console/         the frame: the rail, the environment picker, the theme
   backends/        the three tabs for a backend
   frontends/       the list, one app's page, and the environment picker both use
-  integrations/    AWS and Vercel
+  integrations/    AWS and Vercel, and the sign-in stream
   deploy/          the checklist, the step rows, the transcript, the result
   apps/            the service hook the frontend pages are built on
   settings/        the credentials form, and the hook that loads it

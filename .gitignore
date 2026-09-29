@@ -29,6 +29,11 @@ npm-debug.log*
 !.env.example
 !.env.local.example
 
+# A Vercel CLI session the console had to keep inside the repository, because
+# its process could not write the CLI's own store (`apps/play/.vercel-cli`).
+# A credential, exactly like the `.env.local` above it.
+apps/play/.vercel-cli/
+
 # pem
 *.pem
 

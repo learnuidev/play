@@ -6,8 +6,10 @@ import type {
   VercelEnvVar,
   VercelOverview,
   VercelProjectView,
+  VercelTokenSource,
 } from "@/lib/types";
 import { repoPath } from "./repo";
+import { cliToken, lapsed, vercelCliView, vercelLoginView } from "./vercel-cli";
 
 /**
  * Vercel, read-only.
@@ -37,25 +39,46 @@ function tokenFile(): string {
 }
 
 /**
- * The token, from the environment first.
+ * The token, from the three places this machine can keep one.
  *
- * `VERCEL_TOKEN` in the shell wins over the file, so a one-off
- * `VERCEL_TOKEN=… npm run play` does not overwrite what is stored.
+ * `VERCEL_TOKEN` in the shell first, so a one-off `VERCEL_TOKEN=… npm run play`
+ * does not overwrite what is stored. Then **the CLI's session**, because that is
+ * what the page's Connect button creates and what `vercel whoami` reports — a
+ * token that a person can inspect with their own tool outranks one typed into a
+ * form once and forgotten. Then the file the form writes.
+ *
+ * The trade-off is worth naming: while the CLI is signed in, a token saved in
+ * `apps/play/.env.local` is not what the console uses. The page says which
+ * source is in play for exactly that reason, and `vercel logout` — in a
+ * terminal, where the CLI's session belongs — hands the file its turn back.
  */
-export function vercelToken(): { token: string | null; source: "environment" | "file" | null } {
+export function vercelToken(): {
+  token: string | null;
+  source: VercelTokenSource | null;
+  expiresAt: number | null;
+} {
   const fromEnv = process.env.VERCEL_TOKEN?.trim();
-  if (fromEnv) return { token: fromEnv, source: "environment" };
+  if (fromEnv) return { token: fromEnv, source: "environment", expiresAt: null };
+
+  // A CLI session that has lapsed is not a token anything can use, and renewing
+  // it is the CLI's business in the CLI's own process — so it steps aside for
+  // whatever else this machine has, and `cli.tokenExpiresAt` carries the reason
+  // to the page that reports it.
+  const fromCli = cliToken();
+  if (fromCli && !lapsed(fromCli.expiresAt)) {
+    return { token: fromCli.token, source: "cli", expiresAt: fromCli.expiresAt };
+  }
 
   try {
     const text = fs.readFileSync(tokenFile(), "utf8");
     const line = text.split("\n").find((candidate) => candidate.startsWith("VERCEL_TOKEN="));
     const value = line?.slice("VERCEL_TOKEN=".length).trim();
-    if (value) return { token: value, source: "file" };
+    if (value) return { token: value, source: "file", expiresAt: null };
   } catch {
     // No file, no token.
   }
 
-  return { token: null, source: null };
+  return { token: null, source: null, expiresAt: null };
 }
 
 /**
@@ -180,96 +203,115 @@ function toEnvVars(raw: RawEnv[]): VercelEnvVar[] {
  * repository builds, rather than searched for: `docs/deploy.md` says the names
  * are whatever you like, so a project that is *not* found is reported as such
  * instead of being guessed at.
+ *
+ * A token that Vercel refuses is reported, not retried. The one source with a
+ * refresh token behind it is the CLI's session, and that renewal is the CLI's to
+ * make in its own process — a console that drove it would be writing to a store
+ * it does not own. What the page does instead is say which session was refused
+ * and offer the sign-in that replaces it.
  */
 export async function vercelOverview(): Promise<VercelOverview> {
-  const { token, source } = vercelToken();
+  const login = vercelLoginView();
+  const session = vercelToken();
 
-  if (!token) {
+  if (!session.token) {
     return {
       connected: false,
       tokenSource: null,
-      projects: VERCEL_PROJECTS.map((project) => ({
-        ...project,
-        found: false,
-        id: null,
-        prodUrl: null,
-        deployments: [],
-        env: [],
-        error: null,
-      })),
+      cli: vercelCliView(),
+      login,
+      projects: projectsNotFound(),
       error: null,
     };
   }
 
   try {
-    const [{ projects }, deployments] = await Promise.all([
-      call<{ projects: RawProject[] }>(token, "/v9/projects?limit=100"),
-      call<{ deployments: RawDeployment[] }>(token, "/v6/deployments?limit=30").catch(() => ({
-        deployments: [] as RawDeployment[],
-      })),
-    ]);
-
-    const byName = new Map(projects.map((project) => [project.name, project]));
-
-    const views: VercelProjectView[] = await Promise.all(
-      VERCEL_PROJECTS.map(async (wanted) => {
-        const project = byName.get(wanted.name);
-        if (!project) {
-          return {
-            ...wanted,
-            found: false,
-            id: null,
-            prodUrl: null,
-            deployments: [],
-            env: [],
-            error: null,
-          };
-        }
-
-        // The project's own list when it has one, else the account-wide list
-        // filtered by project id — the deployments endpoint takes one or the
-        // other, and a project with no deployments is not an error.
-        const forProject = deployments.deployments.filter(
-          (deployment) => (deployment as RawDeployment & { projectId?: string }).projectId === project.id,
-        );
-        const recent = (project.latestDeployments?.length ? project.latestDeployments : forProject)
-          .slice(0, 6)
-          .map(toDeployment);
-
-        const env = await call<{ envs: RawEnv[] }>(token, `/v9/projects/${project.id}/env?decrypt=true`)
-          .then((body) => toEnvVars(body.envs ?? []))
-          .catch(() => [] as VercelEnvVar[]);
-
-        return {
-          ...wanted,
-          found: true,
-          id: project.id,
-          rootDirectory: project.rootDirectory ?? null,
-          prodUrl: project.targets?.production?.url
-            ? `https://${project.targets.production.url}`
-            : (project.targets?.production?.alias?.[0] ?? null),
-          deployments: recent,
-          env,
-          error: null,
-        };
-      }),
-    );
-
-    return { connected: true, tokenSource: source, projects: views, error: null };
+    return {
+      connected: true,
+      tokenSource: session.source,
+      cli: vercelCliView(),
+      login,
+      projects: await readProjects(session.token),
+      error: null,
+    };
   } catch (error) {
     return {
       connected: true,
-      tokenSource: source,
-      projects: VERCEL_PROJECTS.map((project) => ({
-        ...project,
-        found: false,
-        id: null,
-        prodUrl: null,
-        deployments: [],
-        env: [],
-        error: null,
-      })),
+      tokenSource: session.source,
+      cli: vercelCliView(),
+      login,
+      projects: projectsNotFound(),
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/** The two wanted projects, reported rather than guessed at. */
+function projectsNotFound(): VercelProjectView[] {
+  return VERCEL_PROJECTS.map((project) => ({
+    ...project,
+    found: false,
+    id: null,
+    prodUrl: null,
+    deployments: [],
+    env: [],
+    error: null,
+  }));
+}
+
+async function readProjects(token: string): Promise<VercelProjectView[]> {
+  const [{ projects }, deployments] = await Promise.all([
+    call<{ projects: RawProject[] }>(token, "/v9/projects?limit=100"),
+    call<{ deployments: RawDeployment[] }>(token, "/v6/deployments?limit=30").catch(() => ({
+      deployments: [] as RawDeployment[],
+    })),
+  ]);
+
+  const byName = new Map(projects.map((project) => [project.name, project]));
+
+  const views: VercelProjectView[] = await Promise.all(
+    VERCEL_PROJECTS.map(async (wanted) => {
+      const project = byName.get(wanted.name);
+      if (!project) {
+        return {
+          ...wanted,
+          found: false,
+          id: null,
+          prodUrl: null,
+          deployments: [],
+          env: [],
+          error: null,
+        };
+      }
+
+      // The project's own list when it has one, else the account-wide list
+      // filtered by project id — the deployments endpoint takes one or the
+      // other, and a project with no deployments is not an error.
+      const forProject = deployments.deployments.filter(
+        (deployment) => (deployment as RawDeployment & { projectId?: string }).projectId === project.id,
+      );
+      const recent = (project.latestDeployments?.length ? project.latestDeployments : forProject)
+        .slice(0, 6)
+        .map(toDeployment);
+
+      const env = await call<{ envs: RawEnv[] }>(token, `/v9/projects/${project.id}/env?decrypt=true`)
+        .then((body) => toEnvVars(body.envs ?? []))
+        .catch(() => [] as VercelEnvVar[]);
+
+      return {
+        ...wanted,
+        found: true,
+        id: project.id,
+        rootDirectory: project.rootDirectory ?? null,
+        prodUrl: project.targets?.production?.url
+          ? `https://${project.targets.production.url}`
+          : (project.targets?.production?.alias?.[0] ?? null),
+        deployments: recent,
+        env,
+        error: null,
+      };
+    }),
+  );
+
+  return views;
 }
