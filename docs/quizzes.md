@@ -173,6 +173,12 @@ or JSON, which is how the format gets used by the people who have to live with i
 A course's own page has a **Question banks** tab — between Content and Members —
 which is the third way into the same questions: every question about *this
 course's* lessons, from every bank, grouped by lesson in the course's own order.
+**This is the door to them, and the community's own bar no longer has one.** The
+organization-wide page (`/o/{orgId}/question-banks`) is still there and still
+works — the tab's "All banks" button goes to it — but a top-bar tab named after
+it was a list of everything a community had ever written with no course attached
+to any of it: the questions are about *lessons*, so the page that knows what to
+do with them is the course they belong to.
 Every lesson appears, including the ones nothing has been written about yet,
 because a list of only the finished lessons is a list that cannot tell you what
 is left; a lesson with no questions offers to have some generated. It reads

@@ -7,11 +7,27 @@ import { lessonRoute, spaceRoute } from '@/lib/routes';
 import { ThemeToggle } from '@ui/components/theme-toggle';
 import { AccountMenu } from './account-menu';
 
+/**
+ * The sections of a community, in the order they are reached for.
+ *
+ * **Question banks are not one of them.** They had a tab here — between Spaces
+ * and Members — and it was the wrong door: a bank belongs to an organization but
+ * the questions in it are about *lessons*, so the page that wants them is the
+ * course they belong to, whose own strip carries a Question banks tab beside
+ * Content. From here the tab was a list of everything a community had ever
+ * written, with no course attached to any of it, which is a library nobody can
+ * use without opening two more pages to find out what a question is about.
+ *
+ * `/o/{orgId}/question-banks` is still a page, and still works: dropping a link
+ * is not the same as dropping the route. Its door is now the Question banks tab
+ * on a course's own page, whose "All banks" button leads here — which is the
+ * right way round, because a reader arrives having just been looking at the
+ * lessons a bank is about.
+ */
 const TABS = [
   { segment: '', label: 'Home' },
   { segment: 'videos', label: 'Videos' },
   { segment: 'spaces', label: 'Spaces' },
-  { segment: 'question-banks', label: 'Question banks' },
   { segment: 'members', label: 'Members' },
 ] as const;
 
