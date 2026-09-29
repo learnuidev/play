@@ -103,9 +103,11 @@ whenever something is missing: a page that told you the credentials were absent
 and then made you go and find the form would have wasted the hint. A stage with
 no config file gets a **draft** rather than an error — the product's values under
 this stage's name, carried over from a stage that has them — so the first save is
-what creates the environment. The card above the client id field prints the two
-values Google has to be told, derived from the pool's future domain, because
-registering the OAuth client is the step *before* pasting the id and secret.
+what creates the environment. The card above it prints the two values Google has
+to be told, derived from the pool's future domain, because registering the OAuth
+client is the step *before* pasting the id and secret — and it is there on every
+stage, not only on one that is missing something, since the values are outputs to
+copy rather than fields to fill in.
 
 ### Env variables — inputs, and outputs
 
@@ -518,10 +520,17 @@ surfacing as a Cognito rejection in the middle of an auth-stack rollback.
 
 A federated sign-in involves Google, Cognito and the app, and **Google has to be
 told two things it cannot derive** — so the page prints them, ready to copy, in a
-"What Google has to be told" card. It is the **first** card on the page, because
-it is first in the workflow: you register the OAuth client in Google, Google asks
-for these two, and only then does it hand back the client id and secret that the
-next card wants.
+"What Google has to be told" card. It sits directly **above** the credentials
+form, because it is first in the workflow: you register the OAuth client in
+Google, Google asks for these two, and only then does it hand back the client id
+and secret the form below wants.
+
+It is deliberately **outside** that form. The form collapses to a single *Edit*
+card once nothing is missing — the right behaviour for fields nobody needs to see
+on an environment that is already configured — and the two values here are not
+fields: they are outputs, read off the deployment, with nothing to edit and two
+buttons whose whole purpose is to be pressed. Inside the form they were reachable
+only on an environment that was *missing* something, which is exactly backwards.
 
 | Google client field | Value |
 | --- | --- |
@@ -555,11 +564,15 @@ src/server/
   aws.ts           the AWS CLI as a function or two — every call is a read
   environments.ts  infra/config/play-<stage>.json, and the stack outputs an app needs
   settings.ts      what a person supplies: the config file, and the secret
-  plan.ts          THE PLAN: the fourteen steps, their checks and their work
+  plan.ts          THE BACKEND PLAN: the fourteen steps, their checks and their work
   signing-key.ts   the CloudFront key pair: is it in SSM, and putting it there
-  run.ts           one run at a time, its transcript, and its event stream
+  run.ts           the run engine — steps, transcript, cancel, result — for both
+                   kinds of run
+  run-api.ts       one step's transcript after the fact, and the live stream
   services.ts      the three dev servers, and cleaning up after them
-  vercel.ts        the three frontends on Vercel — read-only, over the REST API
+  vercel.ts        the Vercel client: the projects, and the one place a token is
+                   attached, read or written
+  vercel-plan.ts   THE FRONTEND PLAN: variables → domain → build → alias → ready
   vercel-cli.ts    the Vercel CLI: where it is, its session, and the sign-in run
 
 src/app/api/
@@ -587,7 +600,12 @@ src/app/api/
                    the stage's functions, or one's logs    (GET)
   frontends/[app]/env
                    what one app is handed, for one stage   (GET)
-  vercel           projects, deployments and env vars     (GET / PUT)
+  vercel           projects, deployments, env vars,       (GET / PUT)
+                   domains — and the token itself
+  vercel/deploy    deploy one frontend to Vercel, the     (GET / POST / DELETE)
+                   run's checklist, and its transcript —
+                   with the matching /deploy/events (SSE)
+                   and /deploy/transcript (GET)
   vercel/login     start or cancel the CLI sign-in         (POST / DELETE)
   vercel/login/events
                    its output, as it happens                (SSE)
@@ -596,9 +614,11 @@ src/components/
   console/         the frame: the rail, the environment picker, the theme
   backends/        the list of environments, one environment's four tabs, and
                    the checklist of what it needs from a person
-  frontends/       the list, one app's page, and the environment picker both use
+  frontends/       the list, one app's page, the environment picker both use,
+                   and the Vercel deploy card
   integrations/    AWS and Vercel, and the sign-in stream
-  deploy/          the checklist, the step rows, the transcript, the result
+  deploy/          the checklist, the step rows, the transcript, the result,
+                   and the hook both kinds of run are read through
   apps/            the service hook the frontend pages are built on
   settings/        the credentials form, and the hook that loads it
   ui/              button, card, chip, field, tabs, picker — the design system

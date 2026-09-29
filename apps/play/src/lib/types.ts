@@ -60,6 +60,18 @@ export interface StepView {
 
 export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
 
+/**
+ * What a run is about.
+ *
+ * Two runs, one engine: a **backend** run takes an environment from nothing to
+ * four complete CloudFormation stacks, and a **frontend** run takes one app from
+ * "the variables on the Vercel project point somewhere else" to a deployment
+ * serving it on its own domain. They share a checklist, a transcript and a
+ * cancel button, and they are told apart by this — which is what the page reads
+ * to know whether to draw stacks or a deployment beside the result.
+ */
+export type RunKind = "backend" | "frontend";
+
 export interface StackSummary {
   name: string;
   status: string;
@@ -81,15 +93,29 @@ export interface RunResult {
 
 export interface RunView {
   id: string;
+  kind: RunKind;
+  /**
+   * The backend environment, in both cases — a frontend run deploys *against*
+   * one, because the values it writes to Vercel are that environment's outputs.
+   */
   stage: string;
   profile: string;
   region: string;
   account: string | null;
+  /**
+   * A frontend run only: which app, for which Vercel environment, on what
+   * domain. Kept on the view rather than in the page's state so a reload finds
+   * the run it left and can still say what it was doing.
+   */
+  vercel: VercelDeployTarget | null;
   status: RunStatus;
   startedAt: number;
   finishedAt: number | null;
   steps: StepView[];
+  /** A backend run's four stacks, and the outputs an app needs. */
   result: RunResult | null;
+  /** A frontend run's own deployment — the one it created, not the latest one. */
+  deployment: VercelDeployResult | null;
   /** Why the run stopped, when it did. */
   error: string | null;
 }
@@ -399,13 +425,87 @@ export interface VercelDeploymentView {
   branch: string | null;
   commitMessage: string | null;
   commitSha: string | null;
+  /**
+   * The domains pointing at this deployment.
+   *
+   * Read rather than assumed because attaching a domain is one of the things a
+   * frontend deploy does, and "did it take" is a question only Vercel can
+   * answer — the console's own record of what it asked for is not evidence.
+   */
+  aliases: string[];
 }
 
 export interface VercelEnvVar {
   key: string;
-  /** Null for a sensitive variable — Vercel does not return those. */
+  /**
+   * Null when Vercel will not return the value: `sensitive` ones never come
+   * back, and `encrypted` ones come back as an envelope rather than a value.
+   */
   value: string | null;
+  /** `plain`, `encrypted`, `sensitive` or `system`. */
+  type: string;
   targets: string[];
+}
+
+/**
+ * The three environments a Vercel project builds for.
+ *
+ * Not the same thing as a Play environment, and the two are easy to confuse:
+ * `target` is *where in Vercel* a value lands, and a Play stage is *which
+ * backend* the value points at. Writing `staging`'s API URL to the `preview`
+ * target is the whole point of the distinction.
+ */
+export type VercelTarget = "production" | "preview" | "development";
+
+/** A domain on a project, and whether it is actually serving. */
+export interface VercelDomainView {
+  name: string;
+  /** Vercel has seen the DNS record and the domain answers for the project. */
+  verified: boolean;
+  /** The branch the domain is linked to. `null` is production. */
+  gitBranch: string | null;
+  /** What Vercel wants in DNS, when it is not verified yet. */
+  records: string[];
+}
+
+/**
+ * What a frontend deployment is: one app, against one environment, in one of
+ * Vercel's three targets, on one domain.
+ *
+ * All four are asked for because none of them can be derived from the others —
+ * and the pair that is easiest to conflate is `stage` and `target`, which is
+ * exactly why the form asks for both.
+ */
+export interface VercelDeployTarget {
+  app: AppKey;
+  stage: string;
+  target: VercelTarget;
+  /** The custom domain to put this deployment on. Optional. */
+  domain: string | null;
+}
+
+/** One row of what the run wrote to the project, and what it did about it. */
+export interface VercelVariableWrite {
+  key: string;
+  value: string;
+  target: VercelTarget;
+  /** `created`, `updated`, or `narrowed` when an existing record spanned targets. */
+  action: "created" | "updated" | "unchanged" | "narrowed";
+}
+
+/**
+ * Everything a frontend run produced.
+ *
+ * Three things rather than one, because they are three different claims and
+ * only the first is a deployment: the variables were *written*, the domain was
+ * *attached*, and the build is *the one this run made*. Reporting them as a
+ * deployment URL alone would hide which of the three actually happened.
+ */
+export interface VercelDeployResult {
+  deployment: VercelDeploymentView | null;
+  variables: VercelVariableWrite[];
+  /** The domain, as Vercel reports it after the write — not as it was asked for. */
+  domain: VercelDomainView | null;
 }
 
 export interface VercelProjectView {
@@ -422,7 +522,47 @@ export interface VercelProjectView {
   prodUrl: string | null;
   deployments: VercelDeploymentView[];
   env: VercelEnvVar[];
+  /** The project's own domains, which is what a custom-domain deploy adds to. */
+  domains: VercelDomainView[];
+  /** The repository Vercel builds from, so a deployment can name a ref. */
+  repo: VercelRepoView | null;
   error: string | null;
+}
+
+/** Where Vercel gets the code it builds, when the project is linked to Git. */
+export interface VercelRepoView {
+  type: string;
+  org: string;
+  repo: string;
+  /** Vercel's own id for the repository, which a new deployment has to name. */
+  repoId: number | null;
+  /** The branch a production deployment is built from. */
+  productionBranch: string | null;
+}
+
+/**
+ * What a frontend's deploy page reads before anything has run.
+ *
+ * The same shape as the backend's `GET /api/plan` — a checklist built from the
+ * steps a run would execute — plus the two things a *Vercel* deploy has to show
+ * because they are the reason to be on the page at all: the values it is about
+ * to write, and where the build would come from.
+ */
+export interface VercelDeployPreview {
+  target: VercelDeployTarget;
+  /** Null when the account has no project by that name — reported, not guessed. */
+  project: VercelProjectView | null;
+  /** The `NEXT_PUBLIC_*` values this deploy would write, and where each came from. */
+  variables: EnvRow[];
+  /** Where the build would come from, in one sentence. */
+  source: string | null;
+  /**
+   * Why there is nothing to deploy, when there is nothing to deploy — no token,
+   * no project, or a stage whose backend has not been deployed. One sentence
+   * above the checklist beats six steps that each fail on their own.
+   */
+  note: string | null;
+  steps: StepView[];
 }
 
 /**

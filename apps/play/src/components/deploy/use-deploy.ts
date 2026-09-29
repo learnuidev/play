@@ -9,20 +9,27 @@ import type { DeployEvent, LogLine, RunView, StepView } from "@/lib/types";
  *
  * Three sources, and each has a job:
  *
- * - `GET /api/deploy` once on mount, so a console opened while a run is going —
+ * - the run endpoint once on mount, so a console opened while a run is going —
  *   or reopened after one finished — draws it instead of an empty checklist;
- * - `GET /api/deploy/events` for everything after that, which is the lines;
- * - `GET /api/deploy/transcript` for one step's lines when the run is over,
- *   because the live stream deliberately does not replay a finished transcript
- *   in full.
+ * - its `/events` stream for everything after that, which is the lines;
+ * - its `/transcript` route for one step's lines when the run is over, because
+ *   the live stream deliberately does not replay a finished transcript in full.
+ *
+ * ## One hook, two runs
+ *
+ * `base` is the only difference between the backend's deploy and a frontend's:
+ * `/api/deploy` and `/api/vercel/deploy` answer the same three questions in the
+ * same three shapes, because `server/run.ts` is one engine. A second hook would
+ * be a second place where the line buffering, the step selection and the
+ * reconnect-when-a-run-starts are subtlely different.
  *
  * ## Why the lines are batched
  *
- * `cdk deploy` emits a few hundred lines in a burst. One React state update per
- * line is a few hundred renders of a list, which is the difference between a
- * transcript that flows and one that stutters — so lines land in a buffer and
- * are flushed on an animation frame, which caps it at sixty renders a second
- * however fast the lines arrive.
+ * `cdk deploy` emits a few hundred lines in a burst and a Next build emits more.
+ * One React state update per line is a few hundred renders of a list, which is
+ * the difference between a transcript that flows and one that stutters — so lines
+ * land in a buffer and are flushed on an animation frame, which caps it at sixty
+ * renders a second however fast the lines arrive.
  */
 
 export interface DeployLine extends LogLine {
@@ -36,7 +43,8 @@ export interface DeployState {
   following: boolean;
   selected: string | null;
   select: (stepId: string | null) => void;
-  start: (stage: string) => Promise<string | null>;
+  /** Starts a run. The body is the route's own — a stage, or a Vercel target. */
+  start: (body: unknown) => Promise<string | null>;
   stop: () => Promise<void>;
   starting: boolean;
   /** A line of explanation for whatever just went wrong. */
@@ -46,7 +54,11 @@ export interface DeployState {
 
 const EMPTY = new Map<string, DeployLine[]>();
 
-export function useDeploy(): DeployState {
+/** Where a run's three endpoints live. The default is the backend's. */
+export const BACKEND_RUN = "/api/deploy";
+export const FRONTEND_RUN = "/api/vercel/deploy";
+
+export function useDeploy(base: string = BACKEND_RUN): DeployState {
   const [run, setRun] = useState<RunView | null>(null);
   const [lines, setLines] = useState<Map<string, DeployLine[]>>(EMPTY);
   const [starting, setStarting] = useState(false);
@@ -100,7 +112,7 @@ export function useDeploy(): DeployState {
    */
   const open = useCallback(() => {
     source.current?.close();
-    const events = new EventSource("/api/deploy/events");
+    const events = new EventSource(`${base}/events`);
 
     events.onmessage = (message) => {
       let event: DeployEvent | { type: "idle" };
@@ -145,14 +157,14 @@ export function useDeploy(): DeployState {
     };
 
     source.current = events;
-  }, [push]);
+  }, [base, push]);
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
       try {
-        const response = await fetch("/api/deploy", { cache: "no-store" });
+        const response = await fetch(base, { cache: "no-store" });
         if (!response.ok) return;
         const { run: current } = (await response.json()) as { run: RunView | null };
         if (!cancelled && current) setRun(current);
@@ -202,7 +214,7 @@ export function useDeploy(): DeployState {
     void (async () => {
       try {
         const response = await fetch(
-          `/api/deploy/transcript?run=${encodeURIComponent(runId)}&step=${encodeURIComponent(selected)}`,
+          `${base}/transcript?run=${encodeURIComponent(runId)}&step=${encodeURIComponent(selected)}`,
           { cache: "no-store" },
         );
         if (!response.ok) return;
@@ -212,35 +224,35 @@ export function useDeploy(): DeployState {
         // A transcript that will not load is a collapsed row, not a failure.
       }
     })();
-  }, [runId, selected, running, lines, push]);
+  }, [base, runId, selected, running, lines, push]);
 
   /* ---------------------------------------------------------------- *
    * Starting and stopping
    * ---------------------------------------------------------------- */
 
   const start = useCallback(
-    async (stage: string): Promise<string | null> => {
+    async (body: unknown): Promise<string | null> => {
       setStarting(true);
       setError(null);
       try {
-        const response = await fetch("/api/deploy", {
+        const response = await fetch(base, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ stage }),
+          body: JSON.stringify(body),
         });
-        const body = (await response.json()) as { run?: RunView; error?: string };
+        const payload = (await response.json()) as { run?: RunView; error?: string };
         if (!response.ok) {
-          setError(body.error ?? `The deploy could not start (HTTP ${response.status}).`);
-          return body.error ?? null;
+          setError(payload.error ?? `The run could not start (HTTP ${response.status}).`);
+          return payload.error ?? null;
         }
-        if (body.run) {
+        if (payload.run) {
           // A new run: everything the page is holding belongs to the old one.
           setLines(new Map());
           fetched.current = new Set();
           buffer.current = [];
           setFollowing(true);
           setSelected(null);
-          setRun(body.run);
+          setRun(payload.run);
           // And a stream that is attached to it rather than to the absence of
           // one it found when the page loaded.
           open();
@@ -254,16 +266,16 @@ export function useDeploy(): DeployState {
         setStarting(false);
       }
     },
-    [open],
+    [base, open],
   );
 
   const stop = useCallback(async () => {
     try {
-      await fetch("/api/deploy", { method: "DELETE" });
+      await fetch(base, { method: "DELETE" });
     } catch {
       setError("The run could not be stopped. It may still be going.");
     }
-  }, []);
+  }, [base]);
 
   const select = useCallback((stepId: string | null) => {
     setSelected(stepId);

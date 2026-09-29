@@ -30,6 +30,58 @@ export function frontendOf(slug: string): FrontendChoice | undefined {
 }
 
 /**
+ * The apps that are deployed, and what each one is called on Vercel.
+ *
+ * One list, read by both halves of the console: the server's Vercel integration
+ * uses it to find the project and to name the ref it builds, and the browser's
+ * deploy form uses it to suggest a domain. Two copies would be two answers to
+ * "which project is this app", and the failure mode of that is a deploy writing
+ * `staging`'s API URL into the production project.
+ *
+ * [docs/deploy.md](../../../docs/deploy.md) is the contract and the walk-through;
+ * this is the console's one transcription of it. The demo is absent on purpose —
+ * it is a third-party OAuth client of the same API rather than a product surface,
+ * so it has no project and is deployed nowhere.
+ */
+export const VERCEL_APPS = [
+  {
+    app: "studio" as const,
+    name: "play-studio",
+    rootDirectory: "apps/studio",
+    /** The domain the project is expected to serve. */
+    domain: "studio.lets-play.xyz",
+  },
+  {
+    app: "marketplace" as const,
+    name: "play-marketplace",
+    rootDirectory: "apps/marketplace",
+    domain: "lets-play.xyz",
+  },
+] as const;
+
+export type VercelApp = (typeof VERCEL_APPS)[number];
+
+/** The project name and domain of a deployed app, or undefined for the demo. */
+export function vercelAppOf(app: AppKey): VercelApp | undefined {
+  return VERCEL_APPS.find((candidate) => candidate.app === app);
+}
+
+/**
+ * The domain a stage's deploy would put an app on, as a *default* for the form.
+ *
+ * A suggestion rather than a fact: it is prefilled into an editable field because
+ * `staging.studio.lets-play.xyz` is the obvious name for staging's studio and
+ * retyping it every time is how it ends up misspelt. `dev` is where the bare
+ * domains belong; every other stage gets a subdomain of its own. What is actually
+ * attached is read back from Vercel, never from this rule.
+ */
+export function suggestDomain(app: AppKey, stage: string): string {
+  const deployed = vercelAppOf(app);
+  if (!deployed) return "";
+  return stage === "dev" ? deployed.domain : `${stage}.${deployed.domain}`;
+}
+
+/**
  * The words the console uses for a dev server, and the tone each one carries.
  *
  * `stopped` is the one that is not a verdict: a frontend nobody started is the

@@ -5,7 +5,6 @@ import { CheckIcon, KeyRoundIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
-import { CopyRow } from "@/components/ui/copy-row";
 import { Field, TextArea, TextInput } from "@/components/ui/field";
 import type {
   EnvironmentSettings,
@@ -110,55 +109,6 @@ export function SettingsForm({
         });
       }}
     >
-      {/* First, because it is first in the workflow: you register the OAuth
-          client in Google, Google asks for these two, and only then does it hand
-          back the client id and secret the next card wants. */}
-      <Card>
-        <CardHeading
-          title="What Google has to be told"
-          hint={
-            settings.needsGoogleSecret
-              ? `Register an OAuth client in the Google Cloud console, paste both values below into it, then paste the client id and secret Google gives you into the next card. This environment creates its own user pool, so these are the origins Google must recognise.`
-              : `These are the values ${stage}'s pool already answers on. They are read off the deployment rather than editable — the origin and the /oauth2/idpresponse path belong to Cognito.`
-          }
-        />
-
-        <div className="mt-5 flex flex-col gap-3">
-          {settings.oauth.javaScriptOrigin && settings.oauth.redirectUri ? (
-            <>
-              <CopyRow
-                label="Authorized JavaScript origins"
-                value={settings.oauth.javaScriptOrigin}
-                labelClassName="w-56"
-              />
-              <CopyRow
-                label="Authorized redirect URIs"
-                value={settings.oauth.redirectUri}
-                labelClassName="w-56"
-              />
-            </>
-          ) : (
-            <p className="text-muted-foreground text-xs">
-              No Cognito domain yet — it is created with the user pool, so this appears once{" "}
-              <span className="font-mono">{stage}</span> has been deployed. Until then these are the
-              two fields to fill in on the Google OAuth client.
-            </p>
-          )}
-        </div>
-
-        <div className="text-muted-foreground mt-5 flex flex-col gap-2 border-t border-border/40 pt-4 text-xs leading-relaxed">
-          <p>
-            <span className="text-foreground/80">Two lists, both required.</span> These two say where{" "}
-            <span className="text-foreground/80">Google</span> may send somebody; the callback URLs in
-            the next card say where <span className="text-foreground/80">Cognito</span> may send them
-            afterwards. Google returns to Cognito, Cognito returns to your app — missing either one
-            fails sign-in, and this one fails as a{" "}
-            <span className="font-mono">redirect_uri_mismatch</span> page that names nothing in this
-            repository.
-          </p>
-        </div>
-      </Card>
-
       <Card>
         <CardHeading
           title="Google sign-in"

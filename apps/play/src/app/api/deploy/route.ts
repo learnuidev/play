@@ -4,6 +4,9 @@ import { cancelRun, currentRun, isRunning, startDeploy } from "@/server/run";
 import { consoleDefaults } from "@/server/environments";
 import { listStages } from "@/server/environments";
 
+/** The backend's run — the frontend's is `/api/vercel/deploy`. */
+const KIND = "backend" as const;
+
 /**
  * The deploy — one at a time, and the reason why is in `server/run.ts`.
  *
@@ -16,7 +19,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ run: currentRun(), running: isRunning() });
+  return NextResponse.json({ run: currentRun(KIND), running: isRunning(KIND) });
 }
 
 export async function POST(request: Request) {
@@ -66,10 +69,10 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
-  const run = currentRun();
-  if (!run || !isRunning()) {
+  const run = currentRun(KIND);
+  if (!run || !isRunning(KIND)) {
     return NextResponse.json({ error: "Nothing is running." }, { status: 409 });
   }
-  cancelRun(run.id);
+  cancelRun(KIND, run.id);
   return NextResponse.json({ ok: true });
 }

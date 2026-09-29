@@ -72,6 +72,15 @@ export interface StepContext {
   data: Record<string, unknown>;
   /** Hands the live process over, so cancelling the run can kill it. */
   own: (child: PipedChild) => void;
+  /**
+   * Whether somebody has pressed Stop.
+   *
+   * A step that runs a command does not need this — the process is killed under
+   * it and it returns a signal. A step that *waits* does: a Vercel build is
+   * polled until it is ready, and a run whose Stop button took twenty minutes to
+   * be obeyed would be a run nobody can stop. The loop asks this between polls.
+   */
+  stopped: () => boolean;
 }
 
 export interface StepOutcome {

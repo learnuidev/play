@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   ExternalLinkIcon,
@@ -18,27 +19,31 @@ import { relative } from "@/lib/format";
 import type { VercelLoginView, VercelOverview, VercelTokenSource } from "@/lib/types";
 
 /**
- * Vercel, read-only — with one way in.
+ * Vercel: the account, and the way in.
  *
  * The two frontends are deployed as two Vercel projects built from this one
  * repository — `docs/deploy.md` is the document, and this page is the state of
- * what it describes. **The console never writes to Vercel**: no project is
- * created, no variable is set, no deployment is triggered. `docs/deploy.md` is
- * still how a deploy happens.
+ * what it describes: which projects exist, what they last deployed, what
+ * `NEXT_PUBLIC_*` each was built with, and which domains each answers on.
  *
- * What it does write is this machine: **Connect runs the Vercel CLI's own login**
- * — installing the CLI first if there is none — and the console then reads the
+ * **Deploying is not here.** It lives on a frontend's own page — Frontends →
+ * studio → Deployments — because a deploy is about *one app in one environment*,
+ * and this page is about the account. What it does is the account-level half:
+ * the state of both projects, and the token all of it is read and written with.
+ *
+ * What it writes is this machine: **Connect runs the Vercel CLI's own login** —
+ * installing the CLI first if there is none — and the console then reads the
  * session the CLI keeps. That is the difference between a page that reports and a
  * page somebody can set up without leaving it, and it is why the button is a
  * transcript rather than a dialog: the CLI prints a device URL, and the person
  * approves it in a browser while the console watches the process it started.
  *
- * What it is for is the one failure that is invisible from both ends: a deployed
- * frontend is built with `NEXT_PUBLIC_*` inlined, so it talks to whichever API
- * URL the *project* had when it was built. Set the wrong one, or change it
- * without redeploying, and the deployed app is pointed at `dev` while every file
- * in the repository says `staging`. Neither side looks wrong until somebody
- * reads the project, which is this.
+ * What the read is for is the one failure that is invisible from both ends: a
+ * deployed frontend is built with `NEXT_PUBLIC_*` inlined, so it talks to
+ * whichever API URL the *project* had when it was built. Set the wrong one, or
+ * change it without redeploying, and the deployed app is pointed at `dev` while
+ * every file in the repository says `staging`. Neither side looks wrong until
+ * somebody reads the project, which is this.
  */
 export function VercelView() {
   const [overview, setOverview] = useState<VercelOverview | null>(null);
@@ -94,8 +99,8 @@ export function VercelView() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Vercel</h1>
           <p className="text-muted-foreground mt-1.5 text-sm">
-            Where the studio and the marketplace are deployed. Read-only — the console reports, it
-            never deploys.
+            The account both frontends are deployed to. This page reads it; deploying one happens
+            on the frontend&rsquo;s own page, under Deployments.
           </p>
         </div>
         {overview ? (
@@ -197,17 +202,45 @@ export function VercelView() {
 
               {project.found ? (
                 <>
-                  {project.prodUrl ? (
-                    <a
-                      href={project.prodUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-muted-foreground hover:text-foreground mt-4 inline-flex items-center gap-1.5 font-mono text-xs underline underline-offset-4"
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    {project.prodUrl ? (
+                      <a
+                        href={project.prodUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 font-mono text-xs underline underline-offset-4"
+                      >
+                        {project.prodUrl.replace("https://", "")}
+                        <ExternalLinkIcon className="size-3" />
+                      </a>
+                    ) : null}
+
+                    <Link
+                      href={`/frontends/${project.app}?tab=deployments`}
+                      className="text-muted-foreground hover:text-foreground ml-auto text-xs underline underline-offset-4"
                     >
-                      {project.prodUrl.replace("https://", "")}
-                      <ExternalLinkIcon className="size-3" />
-                    </a>
-                  ) : null}
+                      Deploy {project.app}
+                    </Link>
+                  </div>
+
+                  <p className="text-muted-foreground mt-5 text-xs font-medium tracking-wide uppercase">
+                    Domains
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {project.domains.length ? (
+                      project.domains.map((domain) => (
+                        <Chip key={domain.name} tone={domain.verified ? "ok" : "warn"} monospace>
+                          {domain.name}
+                        </Chip>
+                      ))
+                    ) : (
+                      <p className="text-muted-foreground text-xs">
+                        None on the project — it answers on{" "}
+                        <span className="font-mono">*.vercel.app</span> only. A frontend&rsquo;s
+                        Deployments tab can add one.
+                      </p>
+                    )}
+                  </div>
 
                   <p className="text-muted-foreground mt-5 text-xs font-medium tracking-wide uppercase">
                     Variables inlined at build time
@@ -221,7 +254,10 @@ export function VercelView() {
                         >
                           <span className="w-64 shrink-0 font-mono">{variable.key}</span>
                           <code className="min-w-0 flex-1 truncate" title={variable.value ?? ""}>
-                            {variable.value ?? "— sensitive, not returned"}
+                            {variable.value ??
+                              (variable.type === "sensitive"
+                                ? "— sensitive, never returned"
+                                : "— stored encrypted, so Vercel will not return it")}
                           </code>
                           <span className="text-muted-foreground shrink-0">
                             {variable.targets.join(", ")}
@@ -295,9 +331,17 @@ export function VercelView() {
             <span className="font-mono">staging</span>.
           </p>
           <p>
+            <span className="text-foreground/80">Deploying lives on the frontend, not here.</span>{" "}
+            Frontends → an app → <span className="font-mono">Deployments</span> writes a backend
+            environment&rsquo;s five stack outputs into one of Vercel&rsquo;s three targets, puts the
+            app on a domain, and builds it — as a checklist you can read before pressing the button,
+            with the build&rsquo;s own output underneath. It is there rather than here because a
+            deploy is about one app in one environment, and this page is about the account.
+          </p>
+          <p>
             Comparing the table above with{" "}
-            <span className="font-mono">Frontends → Env variables</span> is how that is caught —
-            the two should agree for the backend you mean.
+            <span className="font-mono">Frontends → Env variables</span> is how a mismatch is caught
+            — the two should agree for the backend you mean.
           </p>
           <p>
             <span className="text-foreground/80">The demo is not here.</span> It is a third-party

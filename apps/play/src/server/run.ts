@@ -3,25 +3,45 @@ import { randomUUID } from "node:crypto";
 import type {
   DeployEvent,
   LogLine,
+  RunKind,
+  RunResult,
   RunView,
   StackSummary,
   StepView,
+  VercelDeployResult,
+  VercelDeployTarget,
 } from "@/lib/types";
 import { buildPlan, type PlanStep, type StepContext } from "./plan";
 import type { PipedChild } from "./exec";
 import { repoRoot } from "./repo";
 
 /**
- * One deploy run, and the transcript that comes out of it.
+ * A run, and the transcript that comes out of it.
  *
- * ## Why this is a singleton
+ * ## One engine, two runs
  *
- * There is one of these at a time, and that is a decision rather than a
+ * There is a backend run and a frontend run, and they are the same machine: a
+ * list of steps, each with a check and an apply, a transcript per step, a
+ * cancel, and a result. What differs is what they are about — four
+ * CloudFormation stacks, or one app on Vercel — and that is what `RunSpec` is:
+ * the steps, plus the two hooks that turn whatever the steps left behind into
+ * the run's own answer. Everything else in this file is shared on purpose. A
+ * second copy of this store for Vercel would be a second place where a reload
+ * loses a running deploy.
+ *
+ * ## Why this is a singleton, per kind
+ *
+ * There is one of each at a time, and that is a decision rather than a
  * limitation. Two `cdk deploy --all` runs against one account do not compose:
  * they contend for the same stacks, CloudFormation serialises them anyway, and
  * whichever loses reports the other's half-finished state as a rollback. A
  * console that let you start the second one would be offering a way to make a
  * mess; one that refuses, and names the run already going, is the honest shape.
+ *
+ * The two kinds are separate locks because they cannot collide: a backend run
+ * writes to AWS and a frontend run writes to Vercel, and a staging backend
+ * deploy is exactly the thing somebody wants to watch while a frontend build
+ * against `dev` finishes.
  *
  * ## Why it lives on `globalThis`
  *
@@ -42,14 +62,15 @@ interface InternalRun {
   listeners: Set<(event: DeployEvent) => void>;
   /** Values the steps pass to each other: the identity, the outputs, the stacks. */
   data: Record<string, unknown>;
+  /** What turns those values into this run's answer, once it is over. */
+  spec: RunSpec;
   child: PipedChild | null;
   cancelled: boolean;
   seq: number;
 }
 
 interface Store {
-  active: InternalRun | null;
-  latest: InternalRun | null;
+  runs: Record<RunKind, { active: InternalRun | null; latest: InternalRun | null }>;
   /** On the store rather than in a module, so a hot reload cannot double up. */
   cleanupInstalled: boolean;
 }
@@ -60,8 +81,7 @@ declare global {
 }
 
 const store: Store = (globalThis.__playConsoleStore ??= {
-  active: null,
-  latest: null,
+  runs: { backend: { active: null, latest: null }, frontend: { active: null, latest: null } },
   cleanupInstalled: false,
 });
 
@@ -73,18 +93,24 @@ const store: Store = (globalThis.__playConsoleStore ??= {
  * of your own is that it is nobody else's to clean up: a console that exited
  * without this would leave a `cdk deploy` mid-flight, writing to four stacks,
  * with no transcript and nobody holding the handle.
+ *
+ * A frontend run owns no process — it is HTTP calls — so it has nothing to
+ * kill here, and the loop over both kinds is what keeps that a fact about the
+ * run rather than an assumption in this function.
  */
 function installRunCleanup(): void {
   if (store.cleanupInstalled) return;
   store.cleanupInstalled = true;
 
   const kill = () => {
-    const child = store.active?.child;
-    if (!child?.pid) return;
-    try {
-      process.kill(-child.pid, "SIGKILL");
-    } catch {
-      // Already gone, or never got a group of its own.
+    for (const kind of ["backend", "frontend"] as const) {
+      const child = store.runs[kind].active?.child;
+      if (!child?.pid) continue;
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        // Already gone, or never got a group of its own.
+      }
     }
   };
 
@@ -101,22 +127,24 @@ function installRunCleanup(): void {
  * Reading
  * ------------------------------------------------------------------ */
 
-export function currentRun(): RunView | null {
-  return (store.active ?? store.latest)?.view ?? null;
+export function currentRun(kind: RunKind = "backend"): RunView | null {
+  const runs = store.runs[kind];
+  return (runs.active ?? runs.latest)?.view ?? null;
 }
 
-export function isRunning(): boolean {
-  return store.active !== null;
+export function isRunning(kind: RunKind = "backend"): boolean {
+  return store.runs[kind].active !== null;
 }
 
-export function runTranscript(runId: string, stepId: string): LogLine[] {
-  const run = findRun(runId);
+export function runTranscript(kind: RunKind, runId: string, stepId: string): LogLine[] {
+  const run = findRun(kind, runId);
   return run ? [...(run.transcripts.get(stepId) ?? [])] : [];
 }
 
-function findRun(runId: string): InternalRun | null {
-  if (store.active?.view.id === runId) return store.active;
-  if (store.latest?.view.id === runId) return store.latest;
+function findRun(kind: RunKind, runId: string): InternalRun | null {
+  const runs = store.runs[kind];
+  if (runs.active?.view.id === runId) return runs.active;
+  if (runs.latest?.view.id === runId) return runs.latest;
   return null;
 }
 
@@ -132,8 +160,8 @@ function findRun(runId: string): InternalRun | null {
  * next line onwards. This is the run, its steps, and every buffered line, which
  * is exactly what a live listener would have received.
  */
-export function backlog(runId: string): DeployEvent[] {
-  const run = findRun(runId);
+export function backlog(kind: RunKind, runId: string): DeployEvent[] {
+  const run = findRun(kind, runId);
   if (!run) return [];
   const events: DeployEvent[] = [{ type: "run", run: run.view, at: Date.now() }];
   for (const step of run.view.steps) {
@@ -145,10 +173,11 @@ export function backlog(runId: string): DeployEvent[] {
 }
 
 export function subscribe(
+  kind: RunKind,
   runId: string,
   listener: (event: DeployEvent) => void,
 ): () => void {
-  const run = findRun(runId);
+  const run = findRun(kind, runId);
   if (!run) return () => {};
   run.listeners.add(listener);
   return () => {
@@ -171,6 +200,37 @@ function emit(run: InternalRun, event: DeployEvent): void {
  * Starting and stopping
  * ------------------------------------------------------------------ */
 
+/**
+ * What a run is, beyond its steps.
+ *
+ * The steps do the work and leave what they learned in `ctx.data`; these hooks
+ * are how that becomes the run's answer. They are separate from `execute` so
+ * the engine never has to know what a stack or a deployment is.
+ */
+export interface RunSpec {
+  kind: RunKind;
+  /** What the run is about, for the refusal a second start gets. */
+  subject: string;
+  stage: string;
+  profile: string;
+  region: string;
+  steps: PlanStep[];
+  /** A frontend run's app, target and domain. Null for a backend run. */
+  vercel?: VercelDeployTarget | null;
+  /** A backend run's four stacks and the outputs an app needs. */
+  result?: (data: Record<string, unknown>) => RunResult | null;
+  /** A frontend run's own deployment. */
+  deployment?: (data: Record<string, unknown>) => VercelDeployResult | null;
+  /** The AWS account the steps acted on, when they learned one. */
+  account?: (data: Record<string, unknown>) => string | null;
+}
+
+/**
+ * The backend's own spec: `buildPlan`, and the outputs the run's result reads.
+ *
+ * Kept here rather than in `plan.ts` because the spec is the engine's shape and
+ * `plan.ts` is deliberately only about AWS.
+ */
 export interface StartOptions {
   stage: string;
   profile: string;
@@ -178,49 +238,80 @@ export interface StartOptions {
 }
 
 export function startDeploy(options: StartOptions): RunView {
-  if (store.active) {
+  return startRun({
+    kind: "backend",
+    subject: `'${options.stage}'`,
+    stage: options.stage,
+    profile: options.profile,
+    region: options.region,
+    steps: buildPlan(options.stage),
+    result: (data) => {
+      const outputs = data.outputs as Outputs | undefined;
+      const stacks = data.stacks as StackSummary[] | undefined;
+      if (!outputs && !stacks) return null;
+      return {
+        apiUrl: outputs?.apiUrl ?? null,
+        userPoolId: outputs?.userPoolId ?? null,
+        userPoolClientId: outputs?.userPoolClientId ?? null,
+        cognitoDomain: outputs?.cognitoDomain ?? null,
+        googleAuthEnabled: outputs?.googleAuthEnabled ?? false,
+        stacks: stacks ?? [],
+      };
+    },
+    account: (data) => (data.identity as { account?: string } | undefined)?.account ?? null,
+  });
+}
+
+export function startRun(spec: RunSpec): RunView {
+  const runs = store.runs[spec.kind];
+
+  if (runs.active) {
     const error = new Error(
-      `A deploy is already running against '${store.active.view.stage}'. Wait for it, or stop it.`,
+      `A ${spec.kind === "backend" ? "deploy" : "frontend deploy"} is already running against ` +
+        `${runs.active.view.vercel ? `'${runs.active.view.vercel.app} → ${runs.active.view.stage}'` : runs.active.view.stage}. ` +
+        "Wait for it, or stop it.",
     );
     Object.assign(error, { status: 409 });
     throw error;
   }
 
-  const plan = buildPlan(options.stage);
-
   const run: InternalRun = {
     view: {
       id: randomUUID(),
-      stage: options.stage,
-      profile: options.profile,
-      region: options.region,
+      kind: spec.kind,
+      stage: spec.stage,
+      profile: spec.profile,
+      region: spec.region,
       account: null,
+      vercel: spec.vercel ?? null,
       status: "running",
       startedAt: Date.now(),
       finishedAt: null,
-      steps: plan.map(toStepView),
+      steps: spec.steps.map(toStepView),
       result: null,
+      deployment: null,
       error: null,
     },
     transcripts: new Map(),
     listeners: new Set(),
     data: {},
+    spec,
     child: null,
     cancelled: false,
     seq: 0,
   };
 
   installRunCleanup();
-  store.active = run;
-  store.latest = run;
+  runs.active = run;
+  runs.latest = run;
 
-  void execute(run, plan);
+  void execute(run, spec.steps);
 
   return run.view;
 }
 
-export function cancelRun(runId: string): boolean {
-  const run = store.active;
+export function cancelRun(kind: RunKind, runId: string): boolean {
+  const run = store.runs[kind].active;
   if (!run || run.view.id !== runId) return false;
   run.cancelled = true;
 
@@ -273,6 +364,11 @@ function toStepView(step: PlanStep): StepView {
  */
 export function previewSteps(stage: string): StepView[] {
   return buildPlan(stage).map(toStepView);
+}
+
+/** The same, for a plan built by something other than `plan.ts`. */
+export function stepsOf(steps: PlanStep[]): StepView[] {
+  return steps.map(toStepView);
 }
 
 function stepOf(run: InternalRun, id: string): StepView {
@@ -358,6 +454,7 @@ async function execute(run: InternalRun, plan: PlanStep[]): Promise<void> {
       own: (child) => {
         run.child = child;
       },
+      stopped: () => run.cancelled,
     };
 
     try {
@@ -454,6 +551,7 @@ function appendLine(
   emit(run, { type: "log", stepId: step.id, line });
 }
 
+/** The outputs `stageOutputs` hands a run, as the backend spec reads them. */
 interface Outputs {
   apiUrl?: string | null;
   userPoolId?: string | null;
@@ -468,24 +566,14 @@ function finish(run: InternalRun, failure: string | null): void {
   view.error = failure;
   view.status = run.cancelled ? "cancelled" : failure ? "failed" : "succeeded";
 
-  const identity = run.data.identity as { account?: string } | undefined;
-  if (identity?.account) view.account = identity.account;
+  // Built from what the steps left behind rather than tracked beside them, so a
+  // run that failed halfway still reports whatever it did get to.
+  view.account = run.spec.account?.(run.data) ?? null;
+  view.result = run.spec.result?.(run.data) ?? null;
+  view.deployment = run.spec.deployment?.(run.data) ?? null;
 
-  const outputs = run.data.outputs as Outputs | undefined;
-  const stacks = run.data.stacks as StackSummary[] | undefined;
-
-  if (outputs || stacks) {
-    view.result = {
-      apiUrl: outputs?.apiUrl ?? null,
-      userPoolId: outputs?.userPoolId ?? null,
-      userPoolClientId: outputs?.userPoolClientId ?? null,
-      cognitoDomain: outputs?.cognitoDomain ?? null,
-      googleAuthEnabled: outputs?.googleAuthEnabled ?? false,
-      stacks: stacks ?? [],
-    };
-  }
-
-  store.active = null;
-  store.latest = run;
+  const runs = store.runs[run.view.kind];
+  runs.active = null;
+  runs.latest = run;
   emit(run, { type: "end", run: view, at: Date.now() });
 }

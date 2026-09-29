@@ -19,16 +19,16 @@
       "http://localhost:3000/auth/callback",
       "http://localhost:3001",
       "http://localhost:3001/auth/callback",
-      "https://lets-play.xyz",
-      "https://lets-play.xyz/auth/callback",
-      "https://studio.lets-play.xyz",
-      "https://studio.lets-play.xyz/auth/callback"
+      "https://test.lets-play.xyz",
+      "https://test.lets-play.xyz/auth/callback",
+      "https://test.studio.lets-play.xyz",
+      "https://test.studio.lets-play.xyz/auth/callback"
     ],
     "logoutUrls": [
       "http://localhost:3000",
       "http://localhost:3001",
-      "https://lets-play.xyz",
-      "https://studio.lets-play.xyz"
+      "https://test.lets-play.xyz",
+      "https://test.studio.lets-play.xyz"
     ]
   },
   "cloudFrontPrivateKeyParam": "/play/test/cloudfront/private-key",

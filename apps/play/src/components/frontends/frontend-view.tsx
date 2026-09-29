@@ -13,6 +13,7 @@ import {
 import { useServices } from "@/components/apps/use-services";
 import { useShell } from "@/components/console/state";
 import { EnvironmentPicker } from "@/components/frontends/environment-picker";
+import { VercelDeployCard } from "@/components/frontends/vercel-deploy-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
 import { Chip, Dot } from "@/components/ui/chip";
@@ -198,7 +199,7 @@ export function FrontendView({ app }: { app: AppKey }) {
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
 
       {tab === "env" ? <EnvTab app={app} stage={stage} /> : null}
-      {tab === "deployments" ? <DeploymentsTab app={app} service={service} /> : null}
+      {tab === "deployments" ? <DeploymentsTab app={app} service={service} stage={stage} /> : null}
       {tab === "logs" ? (
         <LogsTab stage={stage} lines={lines.get(app) ?? []} status={status} />
       ) : null}
@@ -283,10 +284,22 @@ function EnvTab({ app, stage }: { app: AppKey; stage: string }) {
  * Tab 2 — deployments
  * ------------------------------------------------------------------ */
 
-function DeploymentsTab({ app, service }: { app: AppKey; service: ServiceView | undefined }) {
+function DeploymentsTab({
+  app,
+  service,
+  stage,
+}: {
+  app: AppKey;
+  service: ServiceView | undefined;
+  stage: string;
+}) {
   const [vercel, setVercel] = useState<VercelProjectView | null>(null);
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [reload, setReload] = useState(0);
 
+  // A finished deploy changes what this card should say — the project's
+  // variables, its domains and its deployment list all moved — and the run is
+  // the only thing that knows when. `reload` is that wake-up.
   useEffect(() => {
     let cancelled = false;
     fetch("/api/vercel", { cache: "no-store" })
@@ -304,7 +317,7 @@ function DeploymentsTab({ app, service }: { app: AppKey; service: ServiceView | 
     return () => {
       cancelled = true;
     };
-  }, [app]);
+  }, [app, reload]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -345,10 +358,17 @@ function DeploymentsTab({ app, service }: { app: AppKey; service: ServiceView | 
         </div>
       </Card>
 
+      <VercelDeployCard
+        key={app}
+        app={app}
+        stage={stage}
+        onFinished={() => setReload((count) => count + 1)}
+      />
+
       <Card>
         <CardHeading
           title="On Vercel"
-          hint="Read-only. The console reports what is there; docs/deploy.md is how it gets there."
+          hint="What is on the project now — the variables it would build with, the domains it answers on, and what it last deployed."
         />
 
         {connected === false ? (
@@ -375,38 +395,89 @@ function DeploymentsTab({ app, service }: { app: AppKey; service: ServiceView | 
                 </a>
               ) : null}
             </div>
-            {vercel.deployments.map((deployment) => (
-              <div
-                key={deployment.id || `${deployment.createdAt}`}
-                className="border-border/40 flex flex-wrap items-baseline gap-3 border-t py-2.5 text-xs"
-              >
-                <Chip tone={deploymentTone(deployment.state)} className="shrink-0">
-                  {deployment.state}
-                </Chip>
-                <span className="text-muted-foreground shrink-0 tabular-nums">
-                  {deployment.createdAt ? relative(deployment.createdAt, Date.now()) : "—"}
+
+            {vercel.domains.length > 0 ? (
+              <div className="text-muted-foreground border-border/40 flex flex-wrap items-center gap-2 border-t pt-3 text-xs">
+                <span className="text-muted-foreground/70 text-xs font-medium tracking-wide uppercase">
+                  Domains
                 </span>
-                <span className="min-w-0 flex-1 truncate">
-                  {deployment.commitMessage ?? deployment.branch ?? "—"}
-                  {deployment.commitSha ? (
-                    <span className="text-muted-foreground font-mono"> {deployment.commitSha}</span>
-                  ) : null}
-                </span>
-                {deployment.url ? (
-                  <a
-                    href={deployment.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-muted-foreground hover:text-foreground shrink-0 font-mono"
-                  >
-                    open
-                  </a>
-                ) : null}
+                {vercel.domains.map((domain) => (
+                  <Chip key={domain.name} tone={domain.verified ? "ok" : "warn"} monospace>
+                    {domain.name}
+                  </Chip>
+                ))}
               </div>
-            ))}
-            {vercel.deployments.length === 0 ? (
-              <p className="text-muted-foreground text-xs">No deployments recorded.</p>
             ) : null}
+
+            <p className="text-muted-foreground mt-4 text-xs font-medium tracking-wide uppercase">
+              Variables, by target
+            </p>
+            <div className="mt-2 flex flex-col">
+              {vercel.env.length ? (
+                vercel.env.map((variable) => (
+                  <div
+                    key={variable.key}
+                    className="border-border/40 flex flex-wrap items-baseline gap-3 border-t py-2 text-xs"
+                  >
+                    <span className="w-64 shrink-0 font-mono">{variable.key}</span>
+                    <code className="min-w-0 flex-1 truncate" title={variable.value ?? ""}>
+                      {variable.value ??
+                        (variable.type === "sensitive"
+                          ? "— sensitive, never returned"
+                          : "— stored encrypted, so Vercel will not return it")}
+                    </code>
+                    <span className="text-muted-foreground shrink-0">
+                      {variable.targets.join(", ")}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-muted-foreground text-xs">
+                  No NEXT_PUBLIC_* variables on this project — a build would have no API URL.
+                </p>
+              )}
+            </div>
+
+            <p className="text-muted-foreground mt-6 text-xs font-medium tracking-wide uppercase">
+              Recent deployments
+            </p>
+            <div className="mt-2 flex flex-col">
+              {vercel.deployments.map((deployment) => (
+                <div
+                  key={deployment.id || `${deployment.createdAt}`}
+                  className="border-border/40 flex flex-wrap items-baseline gap-3 border-t py-2.5 text-xs"
+                >
+                  <Chip tone={deploymentTone(deployment.state)} className="shrink-0">
+                    {deployment.state}
+                  </Chip>
+                  <span className="text-muted-foreground shrink-0 tabular-nums">
+                    {deployment.createdAt ? relative(deployment.createdAt, Date.now()) : "—"}
+                  </span>
+                  <span className="text-muted-foreground shrink-0">
+                    {deployment.target ?? "preview"}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {deployment.commitMessage ?? deployment.branch ?? "—"}
+                    {deployment.commitSha ? (
+                      <span className="text-muted-foreground font-mono"> {deployment.commitSha}</span>
+                    ) : null}
+                  </span>
+                  {deployment.url ? (
+                    <a
+                      href={deployment.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-foreground shrink-0 font-mono"
+                    >
+                      open
+                    </a>
+                  ) : null}
+                </div>
+              ))}
+              {vercel.deployments.length === 0 ? (
+                <p className="text-muted-foreground text-xs">No deployments recorded.</p>
+              ) : null}
+            </div>
           </div>
         ) : connected === null ? (
           <p className="text-muted-foreground mt-4 text-xs">Reading…</p>

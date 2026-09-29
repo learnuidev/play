@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ArrowRightIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 
 import { SettingsForm } from "@/components/settings/settings-form";
+import { GoogleCard } from "@/components/settings/google-card";
 import { useSettings } from "@/components/settings/use-settings";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
@@ -56,18 +57,11 @@ export function ChecklistView({ stage }: { stage: string }) {
     ensureSigningKey,
   } = useSettings(stage);
 
-  const [editing, setEditing] = useState(false);
-
   const rows = useMemo(
     () => (settings ? requirements(stage, settings, signingKey) : []),
     [stage, settings, signingKey],
   );
   const ready = rows.filter((row) => row.done).length;
-
-  // Open when there is something to supply, closed when there is not — and
-  // reopenable either way, because "I want to change the callback URLs" is not a
-  // missing requirement.
-  const missing = rows.some((row) => !row.done);
 
   // The signing key is the one requirement with a button, and which button
   // depends on why the row is unticked: a pair that is not there is created, and
@@ -79,7 +73,6 @@ export function ChecklistView({ stage }: { stage: string }) {
       : signingKey.ready
         ? undefined
         : { label: "Create it", onClick: () => void ensureSigningKey(), busy: keyBusy };
-  const showForm = Boolean(settings) && (editing || missing);
 
   return (
     <div className="flex flex-col gap-6">
@@ -127,7 +120,19 @@ export function ChecklistView({ stage }: { stage: string }) {
         </div>
       ) : null}
 
-      {settings && showForm ? (
+      {/* Above the credentials, and **outside** the form: these two are outputs
+          to copy rather than inputs to fill in, so they must not sit behind the
+          collapse that hides the fields once nothing is missing. */}
+      {settings ? <GoogleCard stage={stage} settings={settings} /> : null}
+
+      {/* Always open. It used to be collapsed behind an "Edit" button whenever
+          the four rows above were all satisfied, on the reasoning that nobody
+          needs the client id field on an environment that has one — except that
+          "change the callback URLs" and "replace the client secret" are not
+          missing requirements, and they are exactly what this form is for. A
+          page whose whole subject is the values a person has to supply should
+          show them. */}
+      {settings ? (
         <SettingsForm
           key={stage}
           stage={stage}
@@ -138,20 +143,6 @@ export function ChecklistView({ stage }: { stage: string }) {
           write={write}
           onSubmit={save}
         />
-      ) : null}
-
-      {settings && !showForm ? (
-        <Card>
-          <CardHeading
-            title="The credentials"
-            hint={`Saved in infra/config/play-${stage}.json and required to be, because a deploy reads them — except the client secret, which is in Secrets Manager and never in the repository.`}
-            action={
-              <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
-                Edit
-              </Button>
-            }
-          />
-        </Card>
       ) : null}
 
       <Card>
