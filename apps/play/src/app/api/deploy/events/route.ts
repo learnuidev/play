@@ -16,7 +16,7 @@ import { backlog, currentRun, subscribe } from "@/server/run";
  * The run and every step first, so a page that reloads mid-deploy redraws the
  * checklist immediately; then the lines buffered so far, but **only while the
  * run is going**. A finished run's transcript is fetched a step at a time from
- * `/api/deploy/transcript`, because replaying thirteen steps of `cdk deploy`
+ * `/api/deploy/transcript`, because replaying fourteen steps of `cdk deploy`
  * output on every page load is a megabyte spent to draw a collapsed row.
  */
 

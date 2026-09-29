@@ -4,7 +4,8 @@ A local control room for the backend. It answers three questions, and they are
 the three that otherwise live in a shell history nobody can read:
 
 - **Backends** — every environment the API has been deployed to, what each one
-  was deployed with, and how a new one starts;
+  was deployed with, what a new one needs before it can be deployed at all, and
+  how a new one starts;
 - **Frontends** — the three apps, what each one is handed, and where they run;
 - **Integrations** — the AWS account the console acts as, and the Vercel account
   the two deployed apps live on, which the console can sign in to by running the
@@ -30,7 +31,8 @@ Frontends        /frontends        all three, what is up, and Start
 
 Backends         /backends         every environment, what is deployed, and
                                    Deploy to a new backend env
-                 /backends/<stage> one of them — Env variables · Deployments · Logs
+                 /backends/<stage> one of them — Checklist · Env variables ·
+                                   Deployments · Logs
 
 Integrations     AWS      who the console acts as, and what is deployed
                  Vercel   where the two deployed apps run — read-only, plus the
@@ -83,15 +85,39 @@ place to select the same thing, which is a second answer to one question — and
 naming a new one lives on the list where the environments are, rather than in the
 chrome, so the rail is left with the three parts of the problem instead of a menu.
 
+### Checklist — what a person has to supply
+
+The tab a new environment starts on, and the only one that is a *question* rather
+than a report. Four rows, each a requirement with a tick or a sentence about what
+is missing:
+
+| Row | Met when |
+| --- | --- |
+| The config file | `infra/config/play-<stage>.json` exists — saving the credentials below is what writes a new environment's |
+| Google sign-in | there is a client id, a secret in Secrets Manager, and callback and logout URLs |
+| Mail and origins | the invitation sender and the two app base URLs |
+| The CloudFront signing key | both halves are in SSM — the one row with a button, because it is generated rather than typed |
+
+The form below the rows is the credentials form, and it is open by default
+whenever something is missing: a page that told you the credentials were absent
+and then made you go and find the form would have wasted the hint. A stage with
+no config file gets a **draft** rather than an error — the product's values under
+this stage's name, carried over from a stage that has them — so the first save is
+what creates the environment. The card above the client id field prints the two
+values Google has to be told, derived from the pool's future domain, because
+registering the OAuth client is the step *before* pasting the id and secret.
+
 ### Env variables — inputs, and outputs
 
 The one tab that is not the same on both pages, because the two directions are
-opposite:
+opposite. It is read-only on both — a backend's values are *written* on the
+Checklist tab, a frontend's are handed to it when it starts — and what it adds is
+where each one comes from and who reads it.
 
 - **A backend's inputs** are what a *person* supplies, because nothing can
   discover them: the Google OAuth client, its secret, the origins Cognito will
-  accept, the address invitations come from. They are written by the form on that
-  tab and read by a deploy.
+  accept, the address invitations come from. They are written by the form on the
+  Checklist tab and read by a deploy.
 - **A backend's outputs** are what the *deploy* produces — the API URL, the pool,
   its app client, the Hosted UI domain, the distribution.
 - **A frontend's variables** are those same outputs with different names. A
@@ -103,7 +129,7 @@ about any of it: which direction the value travels, and who reads it.
 
 ### Deployments
 
-For a backend, this tab *is* the deploy page — the thirteen-step checklist, the
+For a backend, this tab *is* the deploy page — the fourteen-step checklist, the
 transcript, the button — plus what CloudFormation has actually done, read from
 the stacks rather than remembered by this process. A history kept on
 `globalThis` would begin when you opened the page. The environment it is about
@@ -135,7 +161,7 @@ some of which fail in ways that name nothing anybody can act on. Two of them are
 idempotent scripts it is easy to run twice and hard to know you needed to run
 once.
 
-So the plan is written down, in `src/server/plan.ts`, as thirteen steps. Each step
+So the plan is written down, in `src/server/plan.ts`, as fourteen steps. Each step
 is a **check** and an **apply**: the check asks "is this already true?", and when
 it is, the step is a check mark with the reason beside it and nothing is run.
 That is what makes a second press of the button cheap — on an environment that is
@@ -146,24 +172,49 @@ already up, most of the plan reports *already satisfied*.
 | 1 | The tools are on this machine | `aws`, the workspace's `cdk` and a Node ≥ 20 all resolve |
 | 2 | This machine can act on the account | `sts get-caller-identity` works **and matches the account the config names** |
 | 3 | The environment's resources are named | `infra/config/play-<stage>.json` exists, parses, and names the caller's account |
-| 4 | CDK is bootstrapped in this account and region | the `CDKToolkit` stack is settled |
-| 5 | The handlers are bundled | the bundler reports nothing to rebuild |
-| 6 | The templates synthesize | never — this one validates |
-| 7 | The videos bucket has one owner | the bucket is this environment's, **or** the S3 handover finds nothing overlapping |
-| 8 | The Google client secret can be read at deploy | the pool is imported, **or** the secret is already in Secrets Manager |
-| 9 | The four stacks deploy | never — `cdk deploy` is run, and reports "nothing to change" |
-| 10 | Every stack is complete, with its outputs | all four root stacks are settled and carry `ApiUrl`, the pool and its client |
-| 11 | The three apps point at it | every `.env.local` already reads this stage's `ApiUrl` |
-| 12 | The API answers | `GET /catalog/courses` returns 200 |
-| 13 | The pool's pre sign-up trigger points here | the pool is this environment's, **or** it already calls `play-<stage>-link-federated-user` |
+| 4 | The CloudFront signing key is in SSM | both halves — the private parameter the handlers read by name, and the public one the media stack creates the distribution's key from |
+| 5 | CDK is bootstrapped in this account and region | the `CDKToolkit` stack is settled |
+| 6 | The handlers are bundled | the bundler reports nothing to rebuild |
+| 7 | The templates synthesize | never — this one validates |
+| 8 | The videos bucket has one owner | the bucket is this environment's, **or** the S3 handover finds nothing overlapping |
+| 9 | The Google client secret can be read at deploy | the pool is imported, **or** the secret is already in Secrets Manager |
+| 10 | The four stacks deploy | never — `cdk deploy` is run, and reports "nothing to change" |
+| 11 | Every stack is complete, with its outputs | all four root stacks are settled and carry `ApiUrl`, the pool and its client |
+| 12 | The three apps point at it | every `.env.local` already reads this stage's `ApiUrl` |
+| 13 | The API answers | `GET /catalog/courses` returns 200 |
+| 14 | The pool's pre sign-up trigger points here | the pool is this environment's, **or** it already calls `play-<stage>-link-federated-user` |
 
-Steps 5 and 9 have no check on purpose, and they are the two where running the
+Steps 6 and 10 have no check on purpose, and they are the two where running the
 tool *is* the check: `bundle.mjs` keeps esbuild's metafile and knows what is
 stale, and `cdk deploy` against an unchanged environment is a no-op. Both report
 "nothing to do" as a success, and the run draws that as a satisfied step rather
 than a tick for work that did not happen.
 
-### Step 8, and a CloudFormation limitation worth knowing
+### Step 4: the one thing a deployment needs that nobody can type
+
+Every video plays through a CloudFront signed URL, which needs a key pair, and
+neither half is in this repository: `cloudFrontPrivateKeyParam` holds the private
+half as a **SecureString** the handlers read by *name* at request time — that is
+what keeps a 1.7 KB credential out of a hundred Lambdas' environments — and
+`cloudFrontPublicKeyParam` holds the public half, which `PlayMediaStack` creates
+the distribution's `PublicKey` from at deploy. So a stage that creates its own
+media cannot deploy without both.
+
+`infra/scripts/ensure-cloudfront-key.mjs` is what puts them there, and it is
+**idempotent in the direction that matters: it never rotates a key that exists.**
+CloudFront signs with the public key a distribution was *created* against, so a
+new pair would invalidate every URL already handed out — rotation is a deploy of
+a new public key, not a repair. The four cases are in the script's header: both
+there is a check mark, a missing public half is derived from the private one, a
+missing private half beside an existing public one is **refused**, and both
+missing generates a 2048-bit RSA pair.
+
+The same script is what the console's Checklist tab calls when a new environment
+is created, so the step is usually a check mark with nothing behind it. On every
+stage here the two names are the same shared parameters: the pair is product
+configuration, like the Google client id, rather than per-environment state.
+
+### Step 9, and a CloudFormation limitation worth knowing
 
 `AWS::Cognito::UserPoolIdentityProvider` **cannot take an SSM Secure string**.
 CloudFormation rejects the reference and names the property:
@@ -334,12 +385,13 @@ the normal way — `npm run play` in your own terminal — the CLI's own store i
 used, and a session created by `vercel login` anywhere on the machine is the
 console's too.
 
-## Settings: what a deploy cannot discover
+## The Checklist tab: what a deploy cannot discover
 
 A new environment creates its own user pool, and a pool is built with a Google
 identity provider — which needs a client id, a client secret and a list of
 callback URLs. There is nowhere to look those up. They are the one input a deploy
-cannot derive, which is why they have a screen: **Settings**, per environment.
+cannot derive, which is why they have a screen: **Backends → the environment →
+Checklist**.
 
 | Field | Lands in |
 | --- | --- |
@@ -412,7 +464,8 @@ src/server/
   aws.ts           the AWS CLI as a function or two — every call is a read
   environments.ts  infra/config/play-<stage>.json, and the stack outputs an app needs
   settings.ts      what a person supplies: the config file, and the secret
-  plan.ts          THE PLAN: the thirteen steps, their checks and their work
+  plan.ts          THE PLAN: the fourteen steps, their checks and their work
+  signing-key.ts   the CloudFront key pair: is it in SSM, and putting it there
   run.ts           one run at a time, its transcript, and its event stream
   services.ts      the three dev servers, and cleaning up after them
   vercel.ts        the three frontends on Vercel — read-only, over the REST API
@@ -428,8 +481,13 @@ src/app/api/
   services/[app]   start or stop one                      (POST / DELETE)
   services/events  all three on one stream                (SSE)
   environments/[stage]/settings
-                   read or write one environment's        (GET / PUT)
-                   credentials and mail settings
+                   one environment's credentials and      (GET / PUT)
+                   mail settings — a draft until the
+                   file exists, and the write that
+                   creates it
+  environments/[stage]/signing-key
+                   is the CloudFront key pair in SSM,     (GET / POST)
+                   and putting it there
   backends/[stage]/env
                    inputs and outputs                      (GET)
   backends/[stage]/deployments
@@ -445,7 +503,8 @@ src/app/api/
 
 src/components/
   console/         the frame: the rail, the environment picker, the theme
-  backends/        the list of environments, and one environment's three tabs
+  backends/        the list of environments, one environment's four tabs, and
+                   the checklist of what it needs from a person
   frontends/       the list, one app's page, and the environment picker both use
   integrations/    AWS and Vercel, and the sign-in stream
   deploy/          the checklist, the step rows, the transcript, the result
@@ -463,8 +522,11 @@ src/components/
   refused by name. Two `cdk deploy --all` runs against one account contend for
   the same stacks, and the loser reports the other's state as a rollback.
 - **Write to AWS outside the plan.** Every read on the state endpoint is a
-  `describe` or a `list`. The writes are the ones in the table above, and the
-  transcript shows the `cdk` and `aws` invocations they amount to.
+  `describe`, a `list` or a `get-parameters`. The writes are three, all behind a
+  button and none of them a deploy: the credential save (the config file, and the
+  secret into Secrets Manager), the signing key when it is missing, and nothing
+  else. The plan's transcript shows the `cdk` and `aws` invocations it amounts
+  to.
 - **Survive its own dev server restarting.** The run and the service registry
   live on `globalThis`, so a hot reload keeps them. Restarting the console
   process stops the dev servers it started, rather than orphaning them; one that

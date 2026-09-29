@@ -8,6 +8,7 @@ import {
   saveSettings,
   settingsContext,
 } from "@/server/settings";
+import { signingKeyState } from "@/server/signing-key";
 
 /**
  * One environment's settings — read them, write them.
@@ -16,6 +17,21 @@ import {
  * accepts one and sends it to Secrets Manager; it is write-only in both
  * directions, which is why the form has to be told "a secret is set" rather
  * than being handed the secret to prefill.
+ *
+ * ## A stage with no config file gets a draft, not a 404
+ *
+ * That stage is a **new environment**, and these settings are exactly what it
+ * needs first: its user pool is built from the Google client id and secret, so
+ * there is nothing to deploy until somebody has supplied them. `GET` therefore
+ * answers with the product's own values under this stage's name — the mail
+ * addresses, the client id, the callback URLs, carried over from a stage that
+ * has them — and `PUT` is what writes the file.
+ *
+ * That is also why the response carries the **signing key's** state: it is the
+ * other thing a first deploy cannot run without, and the one piece of it that is
+ * generated rather than typed. A 404 therefore means something narrower than it
+ * used to — no file here, **and** no other stage's file to take the product
+ * settings from.
  */
 
 export const dynamic = "force-dynamic";
@@ -30,16 +46,22 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json(
       {
         error:
-          `There is no infra/config/play-${params.stage}.json yet. Deploy ${params.stage} once — ` +
-          "its third step writes the file — and then set these values.",
+          `There is no infra/config/play-${params.stage}.json yet, and no completed config to take ` +
+          "the product settings from. Write one by hand — it is the file that says what this " +
+          "environment creates or imports — and then set these values.",
       },
       { status: 404 },
     );
   }
 
   settings.googleClientSecretSet = await googleSecretStatus(params.stage, ctx);
-  settings.oauth = await googleOAuthValues(params.stage, ctx);
-  return NextResponse.json({ settings });
+  settings.oauth = await googleOAuthValues(params.stage, ctx, settings.account);
+
+  // A signing-key read that fails is not a broken form: the form is about the
+  // credentials, and the row that draws this says it could not be read.
+  const signingKey = await signingKeyState(params.stage, ctx).catch(() => null);
+
+  return NextResponse.json({ settings, signingKey });
 }
 
 export async function PUT(request: Request, { params }: Params) {
@@ -58,8 +80,10 @@ export async function PUT(request: Request, { params }: Params) {
   }
 
   try {
-    const settings = await saveSettings(params.stage, body, settingsContext());
-    return NextResponse.json({ settings });
+    const ctx = settingsContext();
+    const { settings, write } = await saveSettings(params.stage, body, ctx);
+    const signingKey = await signingKeyState(params.stage, ctx).catch(() => null);
+    return NextResponse.json({ settings, write, signingKey });
   } catch (error) {
     // A validation problem is the user's to fix and reads as a sentence; a CLI
     // failure is ours and arrives with the CLI's own last lines.

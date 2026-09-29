@@ -120,8 +120,31 @@ export function ownsEverything(config: PlayConfig): boolean {
   return ownership.tables && ownership.media && ownership.auth;
 }
 
-/** Where the CloudFront public key lives when the config does not say. */
-export const DEFAULT_CLOUDFRONT_PUBLIC_KEY_PARAM = '/play/cloudfront/public-key';
+/**
+ * Where an environment's CloudFront signing key pair lives when the config does
+ * not say.
+ *
+ * **Per stage**, like the Google client secret and unlike anything the config
+ * discovers: the pair signs one environment's URLs, and one environment's
+ * handlers have no business being able to mint URLs for another's distribution.
+ * One pair per environment also means a compromised or rotated key is one
+ * environment's problem.
+ *
+ * A *migrated* stage is the exception, and it says so in its own config: `dev`
+ * imports the distribution the legacy key group already gates, so its private
+ * half has to be the parameter holding the key that distribution was created
+ * against — the shared `/play/cloudfront/private-key` — and no default can know
+ * that. Which is why these are only defaults: a config that names its parameters
+ * is read as it says.
+ */
+export function defaultCloudFrontPrivateKeyParam(stage: string): string {
+  return `/play/${stage}/cloudfront/private-key`;
+}
+
+/** The public half of the same pair, which the media stack creates a key from. */
+export function defaultCloudFrontPublicKeyParam(stage: string): string {
+  return `/play/${stage}/cloudfront/public-key`;
+}
 
 /**
  * Where a **created** user pool reads the Google client secret from.
@@ -135,7 +158,7 @@ export const DEFAULT_CLOUDFRONT_PUBLIC_KEY_PARAM = '/play/cloudfront/public-key'
  *
  * **Per stage**, unlike the CloudFront signing key: this is a credential an
  * environment is configured with rather than shared state, and the console's
- * Settings view writes one per environment. The name is derived from the stage
+ * Checklist tab writes one per environment. The name is derived from the stage
  * so two environments cannot overwrite each other's.
  */
 export function googleClientSecretName(stage: string): string {
@@ -189,8 +212,10 @@ export function loadConfig(stage: string): PlayConfig {
   const config: PlayConfig = {
     ...parsed,
     ownership: ownershipOf(parsed),
+    cloudFrontPrivateKeyParam:
+      parsed.cloudFrontPrivateKeyParam ?? defaultCloudFrontPrivateKeyParam(parsed.stage),
     cloudFrontPublicKeyParam:
-      parsed.cloudFrontPublicKeyParam ?? DEFAULT_CLOUDFRONT_PUBLIC_KEY_PARAM,
+      parsed.cloudFrontPublicKeyParam ?? defaultCloudFrontPublicKeyParam(parsed.stage),
     googleClientSecretName:
       parsed.googleClientSecretName ?? googleClientSecretName(parsed.stage),
   };

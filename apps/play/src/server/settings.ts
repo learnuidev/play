@@ -1,13 +1,21 @@
-import fs from "node:fs";
-import path from "node:path";
-
 import type {
   EnvironmentSettings,
   EnvironmentSettingsInput,
   GoogleOAuthValues,
+  SettingsWriteView,
 } from "@/lib/types";
-import { awsJson } from "./aws";
-import { configFile, consoleDefaults, ownershipOf, readConfig, stageOutputs } from "./environments";
+import { awsJson, getIdentity } from "./aws";
+import {
+  configFile,
+  consoleDefaults,
+  newStageConfig,
+  ownershipOf,
+  pickSeedStage,
+  readConfig,
+  stageOutputs,
+  writeConfig,
+} from "./environments";
+import { ensureSigningKey } from "./signing-key";
 
 /**
  * The settings a person supplies for an environment, rather than discovers.
@@ -42,30 +50,58 @@ export function googleClientSecretName(stage: string): string {
 
 const EMPTY = { fromAddress: "", appBaseUrl: "", marketplaceBaseUrl: "" };
 
-/** The settings on disk, with the defaults an absent block would have. */
+/**
+ * The settings on disk, with the defaults an absent block would have.
+ *
+ * **A stage with no config file gets a draft rather than null.** That is the
+ * state a new environment is in before anything has been written, and it is
+ * exactly when somebody has to supply the Google client id and secret: the pool
+ * this environment will create is built from them. So the draft is the *seed's*
+ * values — the product's mail addresses, its client id, its callback URLs —
+ * under this stage's name, and the console shows it as a form with one thing
+ * missing, which is the credential only a person has.
+ *
+ * Nothing about the seed's *data* is in it: not a table name, not a bucket, not
+ * a pool. `hasConfig: false` is what tells the page it is looking at a draft.
+ *
+ * Null still means "nothing to say": no file here, and no other stage's file
+ * complete enough to borrow the product settings from.
+ */
 export function readSettings(stage: string): EnvironmentSettings | null {
   const config = readConfig(stage);
-  if (!config) return null;
+  const seedStage = config ? null : pickSeedStage(stage);
+  const source = config ?? (seedStage ? readConfig(seedStage) : null);
+  if (!source) return null;
 
-  const ownership = ownershipOf(config);
+  const draft = config === null;
+  const ownership = draft
+    ? { tables: true, media: true, auth: true }
+    : ownershipOf(config);
+
   return {
     stage,
     configPath: configFile(stage),
+    hasConfig: !draft,
+    seededFrom: draft ? seedStage : null,
+    account: source.account ?? null,
+    region: source.region ?? null,
     ownership,
-    // A secret is only *needed* when this environment creates the pool. On an
-    // imported pool the provider is already attached and no deploy reads it.
-    needsGoogleSecret: ownership.auth,
+    // A draft is a *new environment*: it creates the tables, the media and the
+    // pool, so it needs a secret for the provider its pool is built with. An
+    // imported pool already has its provider attached and a deploy never reads
+    // the secret.
+    needsGoogleSecret: draft ? true : ownership.auth,
     googleClientSecretName: googleClientSecretName(stage),
     googleClientSecretSet: false,
     auth: {
-      googleClientId: config.auth?.googleClientId ?? "",
-      callbackUrls: config.auth?.callbackUrls ?? [],
-      logoutUrls: config.auth?.logoutUrls ?? [],
+      googleClientId: source.auth?.googleClientId ?? "",
+      callbackUrls: source.auth?.callbackUrls ?? [],
+      logoutUrls: source.auth?.logoutUrls ?? [],
     },
     mail: {
-      fromAddress: config.mail?.fromAddress ?? EMPTY.fromAddress,
-      appBaseUrl: config.mail?.appBaseUrl ?? EMPTY.appBaseUrl,
-      marketplaceBaseUrl: config.mail?.marketplaceBaseUrl ?? EMPTY.marketplaceBaseUrl,
+      fromAddress: source.mail?.fromAddress ?? EMPTY.fromAddress,
+      appBaseUrl: source.mail?.appBaseUrl ?? EMPTY.appBaseUrl,
+      marketplaceBaseUrl: source.mail?.marketplaceBaseUrl ?? EMPTY.marketplaceBaseUrl,
     },
     // Filled in by the route, which is where the auth stack gets read.
     oauth: { cognitoDomain: null, javaScriptOrigin: null, redirectUri: null },
@@ -110,6 +146,7 @@ export async function googleSecretStatus(
 export async function googleOAuthValues(
   stage: string,
   ctx: { profile?: string; region?: string } = {},
+  account?: string | null,
 ): Promise<GoogleOAuthValues> {
   const config = readConfig(stage);
   const outputs = await stageOutputs(stage, ctx).catch(() => null);
@@ -120,12 +157,17 @@ export async function googleOAuthValues(
   // Appending unconditionally is how this becomes
   // `…amazoncognito.com.amazoncognito.com`, which Google accepts as a valid
   // origin and then never matches.
+  //
+  // `account` is the fallback for a stage with no config file yet: a new
+  // environment has no pool to read a domain off, and the domain it *will* have
+  // is derived from the account the deploy is about to use — which is the one
+  // thing the console has to be told while the file is still a draft.
   const host = outputs?.cognitoDomain
     ? outputs.cognitoDomain
     : config?.existing?.userPoolDomain
       ? `${config.existing.userPoolDomain}.auth.${config.region}.amazoncognito.com`
-      : config?.account
-        ? `play-${stage}-${config.account}.auth.${config.region}.amazoncognito.com`
+      : (config?.account ?? account)
+        ? `play-${stage}-${config?.account ?? account}.auth.${config?.region ?? ctx.region}.amazoncognito.com`
         : null;
 
   if (!host) return { cognitoDomain: null, javaScriptOrigin: null, redirectUri: null };
@@ -141,22 +183,34 @@ export async function googleOAuthValues(
 /**
  * Writes the settings for an environment.
  *
- * Two destinations, deliberately kept apart: the configuration goes into the
- * committed config file, and the secret goes to Secrets Manager. Nothing else
- * in the file is touched — it is read, the two blocks are replaced, and it is
- * written back — so a field this view does not know about survives a save.
+ * Three destinations, deliberately kept apart:
+ *
+ * - the **configuration** goes into the committed config file. When there is no
+ *   file yet, this creates one — a *new environment*, `ownership` all `true` and
+ *   no `existing` block — which is what makes this form the way an environment
+ *   is created rather than something to fill in afterwards;
+ * - the **secret** goes to Secrets Manager, write-only in both directions;
+ * - the **signing key**, which is the one thing nobody can type, is created if
+ *   it is missing and left alone if it is there.
+ *
+ * Nothing else in an existing file is touched — it is read, two blocks are
+ * replaced, and it is written back — so a field this view does not know about
+ * survives a save.
  */
 export async function saveSettings(
   stage: string,
   input: EnvironmentSettingsInput,
   ctx: { profile?: string; region?: string } = {},
-): Promise<EnvironmentSettings> {
-  const file = configFile(stage);
+): Promise<{ settings: EnvironmentSettings; write: SettingsWriteView }> {
   const before = readConfig(stage);
-  if (!before) {
+  const seedStage = before ? null : pickSeedStage(stage);
+  const seed = seedStage ? readConfig(seedStage) : null;
+
+  if (!before && !seed) {
     throw new Error(
-      `There is no infra/config/play-${stage}.json yet. Deploy ${stage} once — its third step ` +
-        "writes the file — and then set these values.",
+      `There is no infra/config/play-${stage}.json yet, and no other environment's config to ` +
+        "take the product settings from. Write one by hand — it is the file that says what this " +
+        "environment creates or imports.",
     );
   }
 
@@ -174,9 +228,26 @@ export async function saveSettings(
   const problems = validate({ auth, mail, secret: input.googleClientSecret });
   if (problems.length > 0) throw new Error(problems.join("\n"));
 
-  const next = { ...before, auth, mail } as Record<string, unknown>;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
+  const created = before === null;
+  let file: string;
+  if (before) {
+    file = writeConfig({ ...before, auth, mail });
+  } else {
+    // The account the console is acting as, not the seed's: the file has to name
+    // the account the deploy will actually use, and the two are compared in the
+    // plan's second step.
+    const identity = await getIdentity({ profile: ctx.profile, region: ctx.region }).catch(
+      () => null,
+    );
+    file = writeConfig(
+      newStageConfig(stage, seed, {
+        account: identity?.account ?? seed?.account ?? null,
+        region: ctx.region ?? seed?.region ?? null,
+        auth,
+        mail,
+      }),
+    );
+  }
 
   if (input.googleClientSecret) {
     await writeGoogleSecret(stage, input.googleClientSecret, ctx);
@@ -185,8 +256,47 @@ export async function saveSettings(
   const settings = readSettings(stage);
   if (!settings) throw new Error(`Wrote ${file}, but it could not be read back.`);
   settings.googleClientSecretSet = await googleSecretStatus(stage, ctx);
-  settings.oauth = await googleOAuthValues(stage, ctx);
-  return settings;
+  settings.oauth = await googleOAuthValues(stage, ctx, settings.account);
+
+  return {
+    settings,
+    write: {
+      configPath: file,
+      created,
+      secretWritten: Boolean(input.googleClientSecret),
+      ...(await keyNote(stage, settings, ctx)),
+    },
+  };
+}
+
+/**
+ * The signing key, as part of a save.
+ *
+ * Only for an environment that creates its own media — one that imports a
+ * distribution has a key pair already, and the pair it signs with is the one
+ * that distribution was created against. A failure here does **not** fail the
+ * save: the settings are the thing this request asked for, and they are on disk.
+ * What happened to the key is reported either way, because "saved" without it
+ * would be a summary that hides the half of it that matters.
+ */
+async function keyNote(
+  stage: string,
+  settings: EnvironmentSettings,
+  ctx: { profile?: string; region?: string },
+): Promise<{ signingKeyNote: string | null; signingKeyReady: boolean }> {
+  if (!settings.ownership.media) return { signingKeyNote: null, signingKeyReady: true };
+
+  try {
+    const ensured = await ensureSigningKey(stage, ctx);
+    return { signingKeyNote: ensured.note, signingKeyReady: ensured.key.ready };
+  } catch (error) {
+    return {
+      signingKeyNote: `the signing key was not created — ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      signingKeyReady: false,
+    };
+  }
 }
 
 /**

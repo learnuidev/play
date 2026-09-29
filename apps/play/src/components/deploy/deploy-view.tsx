@@ -30,7 +30,7 @@ import type { RunStatus, StepView } from "@/lib/types";
  * The deploy page.
  *
  * Four things, in the order somebody reads them: what this environment is, the
- * thirteen steps the plan will take and which of them are already satisfied, the
+ * fourteen steps the plan will take and which of them are already satisfied, the
  * transcript of the one being worked on, and — when it is over — what came out
  * of it.
  *
@@ -145,7 +145,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
 
       {/* A new environment creates its own user pool, and a pool needs a Google
           OAuth client that nothing can discover. Raising it here rather than at
-          step 8 is the difference between reading one sentence and reading a
+          step 9 is the difference between reading one sentence and reading a
           failed deploy. */}
       {credentialsNeeded ? (
         <div className="border-warn/40 bg-warn/10 flex flex-wrap items-start gap-2.5 rounded-3xl border px-5 py-4 text-xs leading-relaxed">
@@ -161,10 +161,10 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
             </span>
           </span>
           <Link
-            href={`/backends/${encodeURIComponent(stage)}`}
+            href={`/backends/${encodeURIComponent(stage)}?tab=checklist`}
             className="text-foreground/90 hover:text-foreground shrink-0 font-medium underline underline-offset-4"
           >
-            Open Env variables
+            Open the Checklist
           </Link>
         </div>
       ) : null}

@@ -23,7 +23,7 @@ import { cn } from "@/lib/cn";
  * One thing about it is a decision rather than layout.
  *
  * **The chrome never moves.** The rail is `h-screen` and the bar is sticky and
- * translucent, so scrolling a thirteen-step checklist and a thousand-line
+ * translucent, so scrolling a fourteen-step checklist and a thousand-line
  * transcript never takes the controls off screen. That is the whole reason the
  * console exists rather than a shell script and a `tail -f`.
  */

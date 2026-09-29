@@ -188,7 +188,7 @@ export interface ConsoleState {
  * The half of a federated sign-in that lives in the Google Cloud console.
  *
  * These are not inputs — they are *outputs*, read off the deployment, and the
- * Settings view shows them so nobody has to derive a Cognito domain by hand and
+ * Checklist tab shows them so nobody has to derive a Cognito domain by hand and
  * get `redirect_uri_mismatch` for it.
  */
 export interface GoogleOAuthValues {
@@ -206,6 +206,16 @@ export interface GoogleOAuthValues {
 export interface EnvironmentSettings {
   stage: string;
   configPath: string;
+  /**
+   * False until the file is written — which is the state a **new** environment
+   * is in. Its settings are then a draft: what the deploy *would* configure,
+   * carried over from a stage that already has the product's values.
+   */
+  hasConfig: boolean;
+  /** Which environment a draft's product settings were copied from. */
+  seededFrom: string | null;
+  account: string | null;
+  region: string | null;
   ownership: { tables: boolean; media: boolean; auth: boolean };
   /** True when this environment creates its pool, so a provider and secret are needed. */
   needsGoogleSecret: boolean;
@@ -223,6 +233,49 @@ export interface EnvironmentSettings {
   };
   /** What to paste into the Google Cloud console. */
   oauth: GoogleOAuthValues;
+}
+
+/**
+ * What a save wrote, so the page can say it rather than guess.
+ *
+ * A save is up to three writes with three destinations — the committed config
+ * file, Secrets Manager, and the signing key's parameters — and "Saved" is not
+ * an honest summary of all three.
+ */
+export interface SettingsWriteView {
+  configPath: string;
+  /** The file was created by this save rather than updated. */
+  created: boolean;
+  secretWritten: boolean;
+  /** What the signing-key check found. Null when this environment imports its media. */
+  signingKeyNote: string | null;
+}
+
+/**
+ * The CloudFront URL-signing key pair, as the console can see it.
+ *
+ * Neither half is ever part of this: the public one is read by the media stack
+ * at deploy time, the private one by the handlers at request time, and all this
+ * says is whether they are there.
+ */
+export interface SigningKeyView {
+  /** Holds the private half, as a SecureString the handlers read by name. */
+  privateParam: string;
+  /** Holds the public half, which the distribution's public key is created from. */
+  publicParam: string;
+  /** Where the two names came from: this environment's config, or the defaults. */
+  source: "config" | "default";
+  /**
+   * Whether these are this environment's *own* parameters. False only where a
+   * config names the shared pair — `dev`, whose distribution imports the key
+   * group that pair gates, and stages seeded before the pair was per
+   * environment.
+   */
+  own: boolean;
+  privateExists: boolean;
+  publicExists: boolean;
+  /** Both halves are in SSM, so a deploy can build a distribution that signs URLs. */
+  ready: boolean;
 }
 
 export interface EnvironmentSettingsInput {

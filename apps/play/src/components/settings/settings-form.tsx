@@ -1,116 +1,59 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckIcon, KeyRoundIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { CheckIcon, KeyRoundIcon } from "lucide-react";
 
-import { useShell } from "@/components/console/state";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
-import { Chip } from "@/components/ui/chip";
 import { CopyRow } from "@/components/ui/copy-row";
 import { Field, TextArea, TextInput } from "@/components/ui/field";
-import type { EnvironmentSettingsInput } from "@/lib/types";
-import { useSettings } from "./use-settings";
+import type {
+  EnvironmentSettings,
+  EnvironmentSettingsInput,
+  SettingsWriteView,
+} from "@/lib/types";
 
 /**
- * What an environment is *configured* with, as opposed to what it is discovered
- * to be.
+ * The credentials form: what an environment is *configured* with, as opposed to
+ * what is discovered about it.
  *
- * A new environment creates its own user pool, and a pool needs a Google OAuth
- * client before it can be deployed — the credentials cannot be discovered from
- * anywhere, so somebody has to supply them. This is where.
+ * A new environment creates its own user pool, and a pool is built with a Google
+ * OAuth client before it can be deployed — the client id, the secret and the
+ * URLs Cognito will accept. Nothing can look those up, so somebody has to supply
+ * them, and this is where.
  *
  * The values land in `infra/config/play-<stage>.json` (`auth` and `mail`), which
  * is committed and readable. **The client secret does not.** It is write-only:
  * sent to Secrets Manager and never read back, because CloudFormation refuses an
- * SSM Secure reference in the identity provider and the repository is not a
+ * SSM Secure reference in the identity provider, and the repository is not a
  * place for a credential.
  *
- * Everything here is editable at any time, not only during a first deploy. What
- * changes afterwards depends on the pool:
+ * The form holds no state of its own beyond its fields — the page that draws it
+ * owns the request, because the same response is also the answer to "can this
+ * environment deploy yet", and two copies of that answer is one too many.
  *
- * - On an environment that **creates** its pool — a new one — the next deploy
- *   applies whatever is saved here.
- * - On `dev`, whose pool is imported, nothing here reaches Cognito: the live
- *   pool is changed by `services/api/scripts/set-auth-urls.mjs`, and these values
- *   are the record of what it should be.
+ * `creating` is the difference between editing an environment's settings and
+ * writing the first file of one: there is nothing on disk to compare against, so
+ * the button is always available and it says what it will do.
  */
 
-export function SettingsView({ embedded = false }: { embedded?: boolean } = {}) {
-  const { stage } = useShell();
-  const { settings, loading, saving, error, saved, dismissError, save } = useSettings(stage);
-
-  // The form is a copy of the server's answer, so it can be edited without a
-  // round trip; `key` on the form below resets it when the stage changes.
-  return (
-    <div className="flex flex-col gap-6">
-      {embedded ? null : (
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-            <p className="text-muted-foreground mt-1.5 text-sm">
-              What <span className="font-mono">{stage}</span> is configured with — the values that
-              cannot be discovered from AWS.
-            </p>
-          </div>
-          {settings?.needsGoogleSecret ? (
-            <Chip tone={settings.googleClientSecretSet ? "ok" : "warn"}>
-              {settings.googleClientSecretSet ? "Google credentials set" : "Google credentials needed"}
-            </Chip>
-          ) : null}
-        </header>
-      )}
-
-      {error ? (
-        <div className="border-destructive/35 bg-destructive/10 text-destructive flex items-start gap-3 rounded-3xl border px-5 py-4 text-sm">
-          <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
-          <pre className="flex-1 font-sans whitespace-pre-wrap">{error}</pre>
-          <IconButton onClick={dismissError} aria-label="Dismiss">
-            <XIcon className="size-3.5" />
-          </IconButton>
-        </div>
-      ) : null}
-
-      {loading && !settings ? (
-        <Card>
-          <p className="text-muted-foreground text-sm">Reading the environment&rsquo;s config…</p>
-        </Card>
-      ) : settings ? (
-        <SettingsForm
-          key={stage}
-          stage={stage}
-          settings={settings}
-          saving={saving}
-          saved={saved}
-          onSubmit={save}
-        />
-      ) : (
-        <Card>
-          <CardHeading
-            title="No config file yet"
-            hint={`Deploy ${stage} once — its third step writes infra/config/play-${stage}.json — and these settings become editable.`}
-          />
-        </Card>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * The form
- * ------------------------------------------------------------------ */
-
-function SettingsForm({
+export function SettingsForm({
   stage,
   settings,
+  creating,
   saving,
   saved,
+  write,
   onSubmit,
 }: {
   stage: string;
-  settings: NonNullable<ReturnType<typeof useSettings>["settings"]>;
+  settings: EnvironmentSettings;
+  /** No config file yet: this save is the one that writes it. */
+  creating: boolean;
   saving: boolean;
   saved: boolean;
+  /** What the last save wrote, so the line beside the button can say it exactly. */
+  write: SettingsWriteView | null;
   onSubmit: (input: EnvironmentSettingsInput) => Promise<boolean>;
 }) {
   const [googleClientId, setGoogleClientId] = useState(settings.auth.googleClientId);
@@ -350,22 +293,44 @@ function SettingsForm({
       </Card>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" variant="primary" busy={saving} disabled={!dirty && !googleClientSecret}>
-          {dirty || googleClientSecret ? "Save settings" : "Saved"}
+        {/* Nothing to compare a first save against: there is no file, so the
+            button is always available and it says what it is about to do. */}
+        <Button
+          type="submit"
+          variant="primary"
+          busy={saving}
+          disabled={!creating && !dirty && !googleClientSecret}
+        >
+          {creating ? `Create ${stage}'s config` : dirty || googleClientSecret ? "Save settings" : "Saved"}
         </Button>
 
-        {showSaved ? (
-          <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <CheckIcon className="text-ok size-3.5" />
-            Written to{" "}
-            <span className="font-mono">
-              infra/config/play-{stage}.json
+        {showSaved && write ? (
+          <span className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className="flex items-center gap-1.5">
+              <CheckIcon className="text-ok size-3.5" />
+              {write.created ? "Created" : "Written to"}{" "}
+              <span className="font-mono">infra/config/play-{stage}.json</span>
             </span>
-            {googleClientSecret ? "" : " — the stored secret was left alone"}
+            <span className="text-border">·</span>
+            <span>
+              {write.secretWritten
+                ? `secret stored at ${settings.googleClientSecretName}`
+                : "the stored secret was left alone"}
+            </span>
+            {write.signingKeyNote ? (
+              <>
+                <span className="text-border">·</span>
+                <span>
+                  signing key: <span className="text-foreground/80">{write.signingKeyNote}</span>
+                </span>
+              </>
+            ) : null}
           </span>
         ) : (
           <span className="text-muted-foreground font-mono text-xs">
-            infra/config/play-{stage}.json
+            {creating
+              ? `nothing is deployed — this writes play-${stage}.json as a new environment`
+              : `infra/config/play-${stage}.json`}
           </span>
         )}
       </div>

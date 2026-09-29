@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeftIcon, ExternalLinkIcon, RefreshCwIcon, TerminalIcon } from "lucide-react";
 
+import { ChecklistView } from "@/components/backends/checklist-view";
 import { useNameStage, useShell } from "@/components/console/state";
 import { DeployView } from "@/components/deploy/deploy-view";
-import { SettingsView } from "@/components/settings/settings-view";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
 import { Chip, Dot } from "@/components/ui/chip";
@@ -36,7 +36,10 @@ import type {
  * `/frontends/<app>` makes and for the same reasons: a link to one environment's
  * backend can be sent to somebody, the back button returns to the list, and the
  * list keeps saying what every environment is doing while you read about one.
- * The three tabs below are that page's three views.
+ * The four tabs below are that page's four views, in the order they are asked:
+ * **is this environment ready** (Checklist — the things a person supplies), what
+ * is in it and what came out (Env variables), what has been deployed to it, and
+ * what it is saying.
  *
  * There is deliberately no 404 here, unlike `/frontends/<app>`. The set of
  * frontends is three names the console knows; the set of environments is open,
@@ -110,6 +113,7 @@ export function BackendView({ stage, tab: initialTab }: { stage: string; tab: Ba
 
       <Tabs tabs={BACKEND_TABS} value={tab} onChange={setTab} />
 
+      {tab === "checklist" ? <ChecklistView stage={stage} /> : null}
       {tab === "env" ? (
         <EnvTab stage={stage} environment={environment} reading={reading} />
       ) : null}
@@ -180,7 +184,7 @@ function EnvTab({
       <Card>
         <CardHeading
           title="No config file yet"
-          hint={`${stage} has no infra/config/play-${stage}.json. The deploy plan's third step writes one — a new environment, with its own tables, bucket, distribution and user pool — so its checklist is where this environment starts.`}
+          hint={`${stage} has no infra/config/play-${stage}.json. Nothing has read a config, so there is nothing to show — the Checklist tab is where one is written, and the Deployments tab is where it is deployed.`}
         />
       </Card>
     );
@@ -196,11 +200,10 @@ function EnvTab({
 
   return (
     <div className="flex flex-col gap-6">
-      {/* The inputs half is the Settings form itself, unchanged: it is the
-          editable surface, and duplicating it as a table would be a second
-          place for the same seven fields to drift. */}
-      <SettingsView embedded />
-
+      {/* Two tables and no form. The values are *written* on the Checklist tab —
+          the same seven fields, one place — and what this tab adds is the
+          direction each one travels and who reads it, which is what makes a
+          backend's variables different from a frontend's. */}
       <Card>
         <CardHeading
           title="Outputs"
@@ -218,7 +221,7 @@ function EnvTab({
       <Card>
         <CardHeading
           title="Inputs, as the deploy sees them"
-          hint="The same values the form above writes, listed with where each one is read from and which part of the deployment consumes it."
+          hint="The same values the Checklist tab writes, listed with where each one is read from and which part of the deployment consumes it."
         />
         <div className="mt-5">
           {env ? (

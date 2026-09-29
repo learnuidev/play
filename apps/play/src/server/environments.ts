@@ -92,6 +92,28 @@ export function configFile(stage: string): string {
   return repoPath("infra", "config", `play-${stage}.json`);
 }
 
+/**
+ * Where an environment's CloudFront signing key pair lives.
+ *
+ * Mirrors `infra/src/config.ts`'s two defaults, and they are **per stage**: the
+ * pair signs one environment's URLs, and one environment's handlers should not
+ * be able to mint URLs for another's distribution. The names are derived from
+ * the stage rather than discovered, which is why a new environment's config can
+ * name them before anything exists.
+ *
+ * A *migrated* stage names its own, and has to: `dev` imports the distribution
+ * the legacy key group already gates, so its private half is the shared
+ * `/play/cloudfront/private-key` — the pair that distribution was created
+ * against. Nothing here decides that; the config says it.
+ */
+export function defaultCloudFrontPrivateKeyParam(stage: string): string {
+  return `/play/${stage}/cloudfront/private-key`;
+}
+
+export function defaultCloudFrontPublicKeyParam(stage: string): string {
+  return `/play/${stage}/cloudfront/public-key`;
+}
+
 export function readConfig(stage: string): StageConfig | null {
   try {
     const text = fs.readFileSync(configFile(stage), "utf8");
@@ -101,6 +123,84 @@ export function readConfig(stage: string): StageConfig | null {
   } catch {
     return null;
   }
+}
+
+/** Writes a config file, creating `infra/config` if it is not there. */
+export function writeConfig(config: StageConfig): string {
+  const file = configFile(config.stage);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+  return file;
+}
+
+/**
+ * The stage a **new** environment's product settings are copied from.
+ *
+ * `dev` first — it is the stage that exists in every checkout — then any other
+ * stage whose file is complete. A stage in a different account is refused rather
+ * than noticed later, because the account is what the borrowed ARNs are built
+ * from.
+ *
+ * What is copied is deliberately only the settings that describe *the product*
+ * rather than this environment: the mail addresses, the Google client id, the
+ * callback URLs and the CloudFront key parameter names. The data — the physical
+ * table names, the bucket, the pool — never is, and that is the difference
+ * between a new environment and a second front door to `dev`'s database.
+ */
+export function pickSeedStage(stage: string): string | null {
+  const candidates = listStages().filter((candidate) => candidate !== stage);
+  const ordered = candidates.sort((a, b) => (a === "dev" ? -1 : b === "dev" ? 1 : 0));
+  for (const candidate of ordered) {
+    const loaded = readConfig(candidate);
+    if (loaded && configProblems(loaded).length === 0) return candidate;
+  }
+  return null;
+}
+
+export interface NewStageInput {
+  /** The account the console is acting as, which is what the deploy will use. */
+  account?: string | null;
+  region?: string | null;
+  /** What a person supplied, when the console has asked them. Beats the seed's copy. */
+  auth?: StageConfig["auth"];
+  mail?: StageConfig["mail"];
+}
+
+/**
+ * The config file a **new environment** gets.
+ *
+ * `ownership` is all three `true`, which is the whole of the difference between
+ * creating the tables, the bucket, the distribution and the pool and importing
+ * somebody else's — and there is deliberately no `existing` block, because there
+ * is nothing to name. Seeding a new stage with `dev`'s file would copy
+ * `ownership: false` and dev's 27 physical table names along with it: a stage
+ * that reads like a new environment and behaves like a second front door to the
+ * same database.
+ *
+ * The product settings — mail, the Google client, the callback URLs, the key
+ * parameter names — *are* carried over, because a stage that invented its own
+ * would be a stage whose Google sign-in does not work.
+ */
+export function newStageConfig(
+  stage: string,
+  seed: StageConfig | null,
+  input: NewStageInput = {},
+): StageConfig {
+  const auth = input.auth ?? seed?.auth;
+  const mail = input.mail ?? seed?.mail;
+  return {
+    stage,
+    account: input.account ?? seed?.account ?? "",
+    region: input.region ?? seed?.region ?? "us-east-1",
+    ownership: { tables: true, media: true, auth: true },
+    ...(mail ? { mail } : {}),
+    ...(auth ? { auth } : {}),
+    // **Not the seed's.** Those are the *seed's* key parameters — for `dev`, the
+    // shared pair its imported distribution was created against — and a new
+    // environment signs with its own.
+    cloudFrontPrivateKeyParam: defaultCloudFrontPrivateKeyParam(stage),
+    cloudFrontPublicKeyParam: defaultCloudFrontPublicKeyParam(stage),
+  };
 }
 
 /**

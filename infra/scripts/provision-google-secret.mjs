@@ -43,8 +43,8 @@
  *   --plan               Report what would change, write nothing
  *   --help               This text
  *
- * This is the command-line equivalent of the console's Settings view, which is
- * the way to do it by hand: **Settings → the environment → Google client
+ * This is the command-line equivalent of the console's Checklist tab, which is
+ * the way to do it by hand: **Backends → the environment → Checklist → Google client
  * secret**. It exists for the case where the secret is already in SSM — seeding
  * a new environment from the one `dev` uses — so nobody has to copy a credential
  * through a clipboard.

@@ -96,17 +96,28 @@ function listOf(parts: string[]): string {
  * The three views of one environment
  * ------------------------------------------------------------------ */
 
-export type BackendTab = "env" | "deployments" | "logs";
+export type BackendTab = "checklist" | "env" | "deployments" | "logs";
 
 /**
- * The three questions anybody has about a deployed backend: what went into it
- * and what came out, what has been deployed to it, and what it is saying.
+ * Four questions, in the order they are asked: is this environment ready, what
+ * is in it and what came out, what has been deployed to it, and what is it
+ * saying.
+ *
+ * **Checklist is first because it is the front door for a new environment** —
+ * the things a person has to supply before there is anything to deploy, and the
+ * row that says which of them is missing. Env variables is the read-only half of
+ * the same picture: the outputs a deploy published and the inputs it read.
  */
 export const BACKEND_TABS = [
   {
+    id: "checklist",
+    label: "Checklist",
+    hint: "What this environment needs from a person — its config file, the Google credentials nothing can discover, and the signing key the console generates. A tick is a requirement that is met.",
+  },
+  {
     id: "env",
     label: "Env variables",
-    hint: "The inputs a person supplies, and the outputs a deploy publishes — the same values the frontends read.",
+    hint: "The outputs a deploy publishes — the same values the frontends are handed — and the inputs as the deploy reads them. Editable on the Checklist tab.",
   },
   {
     id: "deployments",
@@ -124,11 +135,12 @@ export const BACKEND_TABS = [
  * Which tab a URL asked for.
  *
  * The tab is in the query string because "go straight to the checklist" is a
- * thing worth linking to — it is where a new environment starts — and anything
- * unrecognised is the first tab rather than an error.
+ * thing worth linking to — a new environment starts there, and the button that
+ * names one links to it — and anything unrecognised is the first tab rather than
+ * an error.
  */
 export function backendTab(value: string | string[] | undefined): BackendTab {
   const wanted = Array.isArray(value) ? value[0] : value;
   const match = BACKEND_TABS.find((tab) => tab.id === wanted);
-  return match ? match.id : "env";
+  return match ? match.id : "checklist";
 }

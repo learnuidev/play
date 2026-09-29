@@ -388,8 +388,8 @@ async function execute(run: InternalRun, plan: PlanStep[]): Promise<void> {
         const outcome = await guarded(run, planStep, () => planStep.apply(context));
         // A step that did work is passed; one whose tool reported there was
         // nothing to do is skipped, with the reason in its note. That is what
-        // makes a second run of an up-to-date environment read as thirteen
-        // satisfied steps rather than thirteen ticks for work that never happened.
+        // makes a second run of an up-to-date environment read as fourteen
+        // satisfied steps rather than fourteen ticks for work that never happened.
         step.status = run.cancelled ? "halted" : (outcome.status ?? "passed");
         if (outcome.note) step.note = outcome.note;
       }

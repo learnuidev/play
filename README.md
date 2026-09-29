@@ -855,9 +855,10 @@ there is no stack that owns it to change it.
 | Authorized JavaScript origins | `https://<cognito-domain>`                    |
 | Authorized redirect URIs      | `https://<cognito-domain>/oauth2/idpresponse` |
 
-For a pool this repository creates, the console's Settings view prints both of
-these with the right `<cognito-domain>` filled in — it is the
-`play-<stage>-<account>.auth.<region>.amazoncognito.com` the deploy just made.
+For a pool this repository creates, the console's Checklist tab prints both of
+these with the right `<cognito-domain>` filled in — derived as
+`play-<stage>-<account>.auth.<region>.amazoncognito.com` while the environment is
+still nothing but a name, and read off the deployed pool once there is one.
 
 Parameters written (secret stored as `SecureString`):
 

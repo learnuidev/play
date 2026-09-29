@@ -12,15 +12,18 @@ import {
 import {
   configFile,
   configProblems,
-  listStages,
+  newStageConfig,
   ownershipOf,
   ownsEverything,
+  pickSeedStage,
   readConfig,
   stageOutputs,
+  writeConfig,
   type StageConfig,
 } from "./environments";
 import { cdkBin, repoPath } from "./repo";
 import { googleClientSecretName, googleSecretStatus } from "./settings";
+import { ensureSigningKey, signingKeyState } from "./signing-key";
 import { display, lastMeaningfulLines, run, type PipedChild } from "./exec";
 
 /**
@@ -504,29 +507,62 @@ export function buildPlan(stage: string): PlanStep[] {
         `It imports nothing, so it cannot read or write another environment's data. The product settings — mail, the Google client id, the callback URLs and the CloudFront signing key — are copied from play-${seedStage}.json, because they are the same product in every environment.`,
       );
 
-      const seeded: StageConfig = {
-        stage: ctx.stage,
-        account: identity?.account ?? seed.account,
-        region: ctx.region ?? seed.region,
-        // The whole of the difference. Three `true`s is what makes the stacks
-        // build the stateful resources instead of importing them, and there is
-        // deliberately no `existing` block: there is nothing to name.
-        ownership: { tables: true, media: true, auth: true },
-        ...(seed.mail ? { mail: seed.mail } : {}),
-        ...(seed.auth ? { auth: seed.auth } : {}),
-        ...(seed.cloudFrontPrivateKeyParam
-          ? { cloudFrontPrivateKeyParam: seed.cloudFrontPrivateKeyParam }
-          : {}),
-        ...(seed.cloudFrontPublicKeyParam
-          ? { cloudFrontPublicKeyParam: seed.cloudFrontPublicKeyParam }
-          : {}),
-      };
-      fs.mkdirSync(path.dirname(configFile(ctx.stage)), { recursive: true });
-      fs.writeFileSync(configFile(ctx.stage), `${JSON.stringify(seeded, null, 2)}\n`);
+      // One function writes a new environment's file, wherever it is written
+      // from: here, or the console's Checklist tab, where a person has already
+      // supplied the credentials and the seed is only standing in for the ones
+      // they did not.
+      writeConfig(
+        newStageConfig(ctx.stage, seed, {
+          account: identity?.account ?? seed.account,
+          region: ctx.region ?? seed.region,
+        }),
+      );
 
       return {
         note: `new environment written · it creates its own tables, media and user pool`,
       };
+    },
+  };
+
+  /**
+   * The key pair signed video URLs are built on.
+   *
+   * Next to the config file because it is the same kind of thing: what this
+   * environment stands on, named but not created by a deploy. The media stack
+   * creates a CloudFront public key *from* the parameter's value, so a stage
+   * that creates its own distribution cannot deploy until the pair is there —
+   * and the failure without it is a distribution whose key group holds a
+   * parameter name rather than a key, which is a 403 on every video.
+   *
+   * It is a step rather than a note in the README because it is the one piece of
+   * a deployment that is neither discovered nor typed: it is generated, it is
+   * generated once, and afterwards the check is a check mark. The generation
+   * itself is `infra/scripts/ensure-cloudfront-key.mjs`, which never rotates a
+   * key that exists — a new pair would invalidate every URL already handed out,
+   * which makes rotation a deploy of a new public key rather than a repair.
+   */
+  const signingKey: PlanStep = {
+    id: "signing-key",
+    title: "The CloudFront signing key is in SSM",
+    detail: `Signed URLs need a key pair, and neither half is in this repository: the **private** half is read by the handlers at request time, by parameter *name*, and the **public** half is what \`PlayMediaStack\` creates the distribution's public key from. The names come from the environment's config, and on every stage here they are the same two shared parameters — the pair is product configuration, not per-environment state. \`infra/scripts/ensure-cloudfront-key.mjs\` writes whichever half is missing and **never replaces one that is there**.`,
+    satisfiedLabel: "In SSM",
+    timeoutMs: 2 * 60_000,
+    check: async (ctx) => {
+      const key = await signingKeyState(ctx.stage, { profile: ctx.profile, region: ctx.region });
+      if (key.ready) {
+        return { satisfied: true, note: `${key.privateParam} · ${key.publicParam}` };
+      }
+      const missing = !key.privateExists
+        ? key.publicExists
+          ? `no private half at ${key.privateParam}`
+          : `neither half is in SSM`
+        : `no public half at ${key.publicParam}`;
+      return { satisfied: false, note: `${missing} — a key that exists is never rotated` };
+    },
+    apply: async (ctx) => {
+      const ensured = await ensureSigningKey(ctx.stage, { profile: ctx.profile, region: ctx.region });
+      for (const line of ensured.lines) ctx.log("out", line);
+      return { note: ensured.note, status: "passed" };
     },
   };
 
@@ -768,7 +804,7 @@ export function buildPlan(stage: string): PlanStep[] {
     id: "secret",
     title: "This environment's Google credentials are set",
     detail:
-      "A pool this stage **creates** is built with a Google identity provider, and CloudFormation refuses an SSM Secure reference in it (`ProviderDetails.client_secret`), so the client secret has to be in **Secrets Manager** before the auth stack deploys. The console's **Settings** view writes it — along with the client id and the callback URLs. An imported pool already has its provider attached, and a stage with no client id is created without one.",
+      "A pool this stage **creates** is built with a Google identity provider, and CloudFormation refuses an SSM Secure reference in it (`ProviderDetails.client_secret`), so the client secret has to be in **Secrets Manager** before the auth stack deploys. The console's **Checklist** tab writes it — along with the client id and the callback URLs — and the same tab is what says whether this environment has one. An imported pool already has its provider attached, and a stage with no client id is created without one.",
     satisfiedLabel: "Credentials set",
     timeoutMs: 60_000,
     check: async (ctx) => {
@@ -795,7 +831,7 @@ export function buildPlan(stage: string): PlanStep[] {
         ? { satisfied: true, note: `${name} holds this environment's client secret` }
         : {
             satisfied: false,
-            note: `no secret at ${name} — set the Google client id and secret in Settings`,
+            note: `no secret at ${name} — set the Google client id and secret in the Checklist tab`,
           };
     },
     apply: async (ctx) => {
@@ -806,10 +842,11 @@ export function buildPlan(stage: string): PlanStep[] {
       // secret.
       throw new Error(
         `There is no Google client secret for '${ctx.stage}' at ${googleClientSecretName(ctx.stage)}.\n\n` +
-          `Open Settings, pick '${ctx.stage}', and save the Google client id and secret. The auth ` +
-          "stack cannot create the identity provider without them.\n\n" +
-          "To remove Google sign-in from this environment instead, clear the client id in Settings " +
-          "and the pool will be created without a provider.",
+          `Open the Checklist tab of ${ctx.stage} — Backends → ${ctx.stage} — and save the Google ` +
+          "client id and secret there. The auth stack cannot create the identity provider " +
+          "without them.\n\n" +
+          "To remove Google sign-in from this environment instead, clear the client id there and " +
+          "the pool will be created without a provider.",
       );
     },
   };
@@ -1168,6 +1205,7 @@ export function buildPlan(stage: string): PlanStep[] {
     toolchain,
     credentials,
     config,
+    signingKey,
     bootstrap,
     bundle,
     synth,
@@ -1184,24 +1222,6 @@ export function buildPlan(stage: string): PlanStep[] {
 /* ------------------------------------------------------------------ *
  * Small helpers the steps lean on
  * ------------------------------------------------------------------ */
-
-/**
- * Which stage's config a brand-new stage borrows.
- *
- * `dev` first — it is the stage that exists in every checkout — then any other
- * stage whose file is complete. A stage in a different account is refused
- * rather than noticed later, because the account is what the borrowed ARNs are
- * built from.
- */
-function pickSeedStage(stage: string): string | null {
-  const candidates = listStages().filter((candidate) => candidate !== stage);
-  const ordered = candidates.sort((a, b) => (a === "dev" ? -1 : b === "dev" ? 1 : 0));
-  for (const candidate of ordered) {
-    const loaded = readConfig(candidate);
-    if (loaded && configProblems(loaded).length === 0) return candidate;
-  }
-  return null;
-}
 
 async function outputsFor(
   ctx: StepContext,

@@ -35,10 +35,11 @@ import type { EnvironmentView } from "@/lib/types";
  * ## Why the button does not deploy
  *
  * "Deploy to a new backend env" asks for a name and then *opens* that
- * environment's page on its checklist, because that is what a new environment
- * needs first: the plan's third step writes the config file, and what the plan
- * will do is worth reading before it is run. Nothing in this app deploys without
- * a press on that page.
+ * environment's page on its **Checklist** tab, because that is what a new
+ * environment needs first: a config file, a Google client id and secret for the
+ * pool it creates, and a signing key. The first of those is written and the
+ * other two are supplied or generated there — and nothing in this app deploys
+ * without a press on the Deployments tab.
  */
 export function BackendsView() {
   const { stages, state, loading } = useShell();
@@ -54,6 +55,23 @@ export function BackendsView() {
     for (const environment of state?.environments ?? []) found.set(environment.stage, environment);
     return found;
   }, [state]);
+
+  // Each option carries the same verdict its row does, so the dropdown can say
+  // which environments have an API without the row having to be read.
+  const options = useMemo(
+    () => [
+      { value: "", label: "Open an environment…" },
+      ...rows.map((stage) => {
+        const environment = environmentOf.get(stage) ?? null;
+        return {
+          value: stage,
+          label: stage,
+          hint: loading ? "reading…" : backendState(environment, account).label,
+        };
+      }),
+    ],
+    [rows, environmentOf, account, loading],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -79,14 +97,7 @@ export function BackendsView() {
           setChoice(next);
           if (next) router.push(backendPath(next));
         }}
-        options={[
-          { value: "", label: "Open an environment…" },
-          ...rows.map((stage) => ({
-            value: stage,
-            label: stage,
-            hint: loading ? "reading…" : backendState(environmentOf.get(stage) ?? null, account).label,
-          })),
-        ]}
+        options={options}
         className="sm:max-w-sm"
       />
 
@@ -234,9 +245,9 @@ function NewBackend() {
         // The environment in the URL is the one the rest of the console then
         // reads, so the page it opens adopts the name itself.
         nameStage(stage);
-        router.push(`${backendPath(stage)}?tab=deployments`);
+        router.push(`${backendPath(stage)}?tab=checklist`);
       }}
-      className="flex w-full flex-col gap-2 sm:w-auto"
+      className="flex w-full flex-col gap-2 sm:max-w-md"
     >
       <div className="flex items-center gap-2">
         <input
@@ -265,12 +276,13 @@ function NewBackend() {
 
       <p className="text-muted-foreground text-xs leading-relaxed">
         Nothing runs yet. This opens{" "}
-        <span className="font-mono text-foreground/80">{stage || "the new environment"}</span>&rsquo;s
-        checklist, where the third step writes{" "}
+        <span className="font-mono text-foreground/80">{stage || "the new environment"}</span>
+        &rsquo;s checklist, which asks for the Google credentials the pool it creates is built
+        with, and writes{" "}
         <span className="font-mono text-foreground/80">
           infra/config/play-{stage || "<stage>"}.json
-        </span>{" "}
-        — a new environment, creating its own tables, bucket and user pool.
+        </span>
+        .
       </p>
     </form>
   );

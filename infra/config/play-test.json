@@ -1,0 +1,36 @@
+{
+  "stage": "test",
+  "account": "765302404291",
+  "region": "us-east-1",
+  "ownership": {
+    "tables": true,
+    "media": true,
+    "auth": true
+  },
+  "mail": {
+    "fromAddress": "learnuidev@gmail.com",
+    "appBaseUrl": "http://localhost:3000",
+    "marketplaceBaseUrl": "http://localhost:3001"
+  },
+  "auth": {
+    "googleClientId": "198779702019-jtov15ja8kjnhcm4vgnqg7b0mpu5tflg.apps.googleusercontent.com",
+    "callbackUrls": [
+      "http://localhost:3000",
+      "http://localhost:3000/auth/callback",
+      "http://localhost:3001",
+      "http://localhost:3001/auth/callback",
+      "https://lets-play.xyz",
+      "https://lets-play.xyz/auth/callback",
+      "https://studio.lets-play.xyz",
+      "https://studio.lets-play.xyz/auth/callback"
+    ],
+    "logoutUrls": [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://lets-play.xyz",
+      "https://studio.lets-play.xyz"
+    ]
+  },
+  "cloudFrontPrivateKeyParam": "/play/cloudfront/private-key",
+  "cloudFrontPublicKeyParam": "/play/cloudfront/public-key"
+}

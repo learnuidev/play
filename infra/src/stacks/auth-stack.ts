@@ -260,7 +260,7 @@ export class PlayAuthStack extends Stack {
       //
       // — and refuses it in `AWS::SecretsManager::Secret`'s `SecretString` as
       // well, so the value cannot be moved across declaratively either. The
-      // console's Settings view writes the secret; the plan's step 8 checks it is
+      // console's Checklist tab writes the secret; the plan's step 9 checks it is
       // there before this stack deploys.
       googleProvider = new cognito.UserPoolIdentityProviderGoogle(this, 'GoogleIdentityProvider', {
         userPool,
