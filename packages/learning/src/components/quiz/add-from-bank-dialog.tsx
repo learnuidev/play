@@ -53,7 +53,7 @@ export function AddFromBankDialog({
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<string[]>([]);
 
-  const { data, isLoading } = useBankQuestions(bankId);
+  const { data, isLoading, isError, error } = useBankQuestions(bankId);
   const add = useAddQuizQuestions(contentId);
 
   useEffect(() => {
@@ -138,6 +138,13 @@ export function AddFromBankDialog({
               <div className="grid gap-2">
                 <Skeleton className="h-20 rounded-2xl" />
                 <Skeleton className="h-20 rounded-2xl" />
+              </div>
+            ) : isError ? (
+              <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+                <p className="font-medium">The bank could not be read</p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {error instanceof Error ? error.message : 'Something went wrong reading it.'}
+                </p>
               </div>
             ) : askable.length === 0 ? (
               <div className="grid justify-items-center gap-2 rounded-2xl border border-border/60 bg-muted/20 px-4 py-10 text-center">

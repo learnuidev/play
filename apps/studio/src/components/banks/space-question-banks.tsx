@@ -43,7 +43,7 @@ export function SpaceQuestionBanks({
   spaceId: string;
   canEdit: boolean;
 }) {
-  const { data, isLoading } = useSpaceQuestions(spaceId);
+  const { data, isLoading, isError, error } = useSpaceQuestions(spaceId);
   const { data: outline } = useSections(spaceId);
   const verify = useVerifySpaceQuestion(spaceId);
 
@@ -84,6 +84,17 @@ export function SpaceQuestionBanks({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not change the verification');
     }
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+        <p className="font-medium">This course&rsquo;s questions could not be read</p>
+        <p className="mt-0.5 text-muted-foreground">
+          {error instanceof Error ? error.message : 'Something went wrong reading them.'}
+        </p>
+      </div>
+    );
   }
 
   if (isLoading) {

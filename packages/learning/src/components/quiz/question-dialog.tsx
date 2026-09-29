@@ -17,7 +17,11 @@ import {
 import { Input } from '@ui/components/ui/input';
 import { Label } from '@ui/components/ui/label';
 import { Textarea } from '@ui/components/ui/textarea';
-import { useCreateQuestion, useUpdateQuestion } from '@api/modules/question/question.queries';
+import {
+  useAddQuizQuestions,
+  useCreateQuestion,
+  useUpdateQuestion,
+} from '@api/modules/question/question.queries';
 import { BankPicker } from './bank-picker';
 import { LessonPicker } from './lesson-picker';
 import {
@@ -74,6 +78,7 @@ export function QuestionDialog({
   spaceId,
   lessonContentId,
   question,
+  addToContentId,
   open,
   onOpenChange,
 }: {
@@ -87,6 +92,15 @@ export function QuestionDialog({
   lessonContentId?: string;
   /** Omit to write a new one. */
   question?: QuizQuestion;
+  /**
+   * A quiz to add a newly written question to.
+   *
+   * Writing one *from a quiz* has to leave the quiz asking it: a question that
+   * landed in a bank and nowhere else would look like nothing had happened, and
+   * the author would go looking for it in a picker to add back what they had
+   * just written.
+   */
+  addToContentId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -101,7 +115,10 @@ export function QuestionDialog({
 
   const create = useCreateQuestion(bankId ?? pickedBankId);
   const update = useUpdateQuestion(question?.bankId);
-  const pending = create.isPending || update.isPending;
+  // Bound to the quiz only when there is one: a dialog opened from a bank has no
+  // quiz to add to, and the hook is never asked to do anything in that case.
+  const addToQuiz = useAddQuizQuestions(addToContentId ?? '');
+  const pending = create.isPending || update.isPending || addToQuiz.isPending;
 
   const destinationBankId = bankId ?? pickedBankId;
 
@@ -193,8 +210,15 @@ export function QuestionDialog({
           description: 'It is the same question everywhere it is asked.',
         });
       } else {
-        await create.mutateAsync({ ...answers, lessonContentId: lesson });
-        toast.success('Question added');
+        const { question: created } = await create.mutateAsync({ ...answers, lessonContentId: lesson });
+
+        // Written from a quiz, so it is asked by that quiz from the moment it
+        // exists. The question itself lives in the bank, as every question does.
+        if (addToContentId) {
+          await addToQuiz.mutateAsync([created.questionId]);
+        }
+
+        toast.success(addToContentId ? 'Question added to the quiz' : 'Question added');
       }
       onOpenChange(false);
     } catch (err) {

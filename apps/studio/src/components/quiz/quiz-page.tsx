@@ -58,7 +58,16 @@ export function QuizPage() {
         </Link>
       </div>
 
-      <QuizPanel contentId={contentId} spaceId={spaceId} canEdit={canEdit} title={content.title} />
+      {/* `orgId` is not decoration: it is what the pickers inside the panel read
+          the organization's banks and courses through, and without it the panel
+          has no authoring dialogs to open. */}
+      <QuizPanel
+        contentId={contentId}
+        spaceId={spaceId}
+        orgId={orgId}
+        canEdit={canEdit}
+        title={content.title}
+      />
     </div>
   );
 }

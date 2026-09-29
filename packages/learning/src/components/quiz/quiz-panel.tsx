@@ -533,25 +533,37 @@ export function QuizPanel({
             </DropdownMenu>
           )}
 
-          <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setPicking(true)}>
-            <PlusIcon />
-            Add from a bank
-          </Button>
-          <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setGenerating(true)}>
-            <SparklesIcon />
-            Generate
-          </Button>
-          <Button
-            size="sm"
-            className="rounded-full"
-            onClick={() => {
-              setEditing(undefined);
-              setEditingOpen(true);
-            }}
-          >
-            <PlusIcon />
-            Write one
-          </Button>
+          {/* Authoring needs the organization: the bank picker reads its banks,
+              the lesson picker its courses. A page that renders this for an
+              editor without one gets buttons that cannot work — so they are not
+              drawn, and the panel says why. */}
+          {orgId ? (
+            <>
+              <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setPicking(true)}>
+                <PlusIcon />
+                Add from a bank
+              </Button>
+              <Button variant="ghost" size="sm" className="rounded-full" onClick={() => setGenerating(true)}>
+                <SparklesIcon />
+                Generate
+              </Button>
+              <Button
+                size="sm"
+                className="rounded-full"
+                onClick={() => {
+                  setEditing(undefined);
+                  setEditingOpen(true);
+                }}
+              >
+                <PlusIcon />
+                Write one
+              </Button>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Open this quiz from its course to write questions into it.
+            </p>
+          )}
         </div>
       </div>
 
@@ -574,27 +586,29 @@ export function QuizPanel({
             Pick questions out of a bank, write one, or have a model write a first set from a lesson.
             Nothing counts as verified until somebody reads it.
           </p>
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-            <Button size="sm" className="rounded-full" onClick={() => setPicking(true)}>
-              <PlusIcon />
-              Add from a bank
-            </Button>
-            <Button size="sm" variant="outline" className="rounded-full" onClick={() => setGenerating(true)}>
-              <SparklesIcon />
-              Generate from a lesson
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="rounded-full"
-              onClick={() => {
-                setEditing(undefined);
-                setEditingOpen(true);
-              }}
-            >
-              Write one
-            </Button>
-          </div>
+          {orgId && (
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+              <Button size="sm" className="rounded-full" onClick={() => setPicking(true)}>
+                <PlusIcon />
+                Add from a bank
+              </Button>
+              <Button size="sm" variant="outline" className="rounded-full" onClick={() => setGenerating(true)}>
+                <SparklesIcon />
+                Generate from a lesson
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="rounded-full"
+                onClick={() => {
+                  setEditing(undefined);
+                  setEditingOpen(true);
+                }}
+              >
+                Write one
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <DndContext
@@ -651,6 +665,7 @@ export function QuizPanel({
             spaceId={spaceId}
             lessonContentId={editing?.lessonContentId}
             question={editing}
+            addToContentId={contentId}
             open={editingOpen}
             onOpenChange={setEditingOpen}
           />

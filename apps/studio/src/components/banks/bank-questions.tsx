@@ -44,7 +44,7 @@ export function BankQuestions({
   canEdit: boolean;
   onEdit: (question: QuizQuestion) => void;
 }) {
-  const { data, isLoading } = useBankQuestions(bankId);
+  const { data, isLoading, isError, error } = useBankQuestions(bankId);
   const verify = useVerifyQuestion(bankId);
   const remove = useDeleteQuestion(bankId);
 
@@ -128,6 +128,17 @@ export function BankQuestions({
       <div className="grid gap-3">
         <div className="h-20 animate-pulse rounded-2xl bg-muted/50" />
         <div className="h-20 animate-pulse rounded-2xl bg-muted/50" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+        <p className="font-medium">This bank could not be read</p>
+        <p className="mt-0.5 text-muted-foreground">
+          {error instanceof Error ? error.message : 'Something went wrong reading it.'}
+        </p>
       </div>
     );
   }
