@@ -365,7 +365,7 @@ the marketplace are the same account. `@play/auth` is where that lives:
   repository draws. `packages/auth/src/sign-in.css` re-points Amplify's design
   tokens at the app's, so the same screen is the studio's in the studio and the
   marketplace's in the marketplace. It has one contract with the app it renders
-  in: the screen is a windowful and the form centers in it, so an app that keeps a
+  in: the screen is a windowful and the card centers in it, so an app that keeps a
   bar of its own takes that bar *out of the flow* on the routes that are a screen
   and pins it over the top instead of letting it take a slice of the window —
   which is what both apps' sign-in pages do, and what the marketplace does for

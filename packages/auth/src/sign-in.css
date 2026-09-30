@@ -10,22 +10,19 @@
  * beats the one at `:root` whatever order the two stylesheets load in — which is
  * what makes this file safe to ship from a package.
  *
- * **The exceptions.** Where a shape is not expressible as a token — the two
- * footers' place in the form, the provider button's alignment, the fields that
- * sit on the page — the rule is written against Amplify's own class names
- * instead. Those selectors are all prefixed with `.play-auth`, which is one class
- * more specific than the rule they are overriding, and that extra class is the
- * whole reason they win.
+ * **The exceptions.** Where a shape is not expressible as a token — the pill
+ * tabs, the glass card, the fields that sit on it — the rule is written against
+ * Amplify's own class names instead. Those selectors are all prefixed with
+ * `.play-auth`, which is one class more specific than the rule they are
+ * overriding, and that extra class is the whole reason they win.
  *
- * What it adds up to: the app's own vocabulary — one surface, hairline edges,
- * the type scale, one accent — drawn on a piece of software that knows nothing
- * about this repository. The canvas is deliberately plain: no card, no shadow,
- * no colour behind it, because this screen is a door rather than a panel, and
- * the only thing on it worth looking at is the form.
+ * What it adds up to: the app's own vocabulary — hairline edges, large radii,
+ * one accent, motion that only ever says "here is the next thing" — drawn on a
+ * piece of software that knows nothing about this repository.
  */
 
 .play-auth[data-amplify-authenticator] {
-  /* The window, with the form in the middle of it: a screenful, always, whatever
+  /* The window, with the card in the middle of it: a screenful, always, whatever
      the app has put around this element. `svh` rather than `vh` because on a phone
      the two differ by the browser's own bars, and the small one is the height the
      page actually has.
@@ -33,28 +30,37 @@
      this screen leaves it a shorter box, and a canvas that took that box is a
      panel under the bar rather than the screen — so this element claims the window
      and the app's sticky bar is drawn over the top of it, which is what the
-     padding below is for. */
+     padding below is for. `height` is left alone: `100%` of a box the app sized to
+     its content is a height nobody can predict, and nothing needs it — this
+     element is grown by what it holds and floored by the screen. */
   min-height: 100svh;
   display: flex;
   align-items: center;
   justify-content: center;
 
-  /* The canvas reaches the edges of the room, not the edges of the form.
+  /* The canvas reaches the edges of the room, not the edges of the card.
      An app that keeps its own bar around this screen hands it what is left of
      the window from a flex box, and a flex item is as wide as its own content
-     until something says otherwise — which draws the form in a column the width
-     of its own fields. Claiming the whole box in both directions is what makes it
-     a page rather than a panel.
+     until something says otherwise — which drew the washes behind a column no
+     wider than the form. Claiming the whole box in both directions is what makes
+     it a page rather than a panel.
      Where the parent is *not* a flex container — the gate, drawn over a whole
      app — none of these has anything to stretch, which is the rest of the job the
      `min-height` above does. */
   flex: 1 1 auto;
   align-self: stretch;
   width: 100%;
-  /* Equal top and bottom, so the form lands on the middle of the window rather
-     than near it. The room at the top is what keeps it clear of an app's own bar,
-     which is pinned over this element on the routes that have one. */
+  /* Equal top and bottom, so the card lands on the middle of the window rather
+     than near it — which is the whole reason an app's bar is pinned *over* this
+     element instead of sitting above it in the flow. The room at the top is what
+     keeps the card clear of that bar on a short window. */
   padding: 3.5rem 1.25rem;
+  /* Clipped, so the washes end at this element's edges and nothing they spill
+     sideways reaches the page. A window too short for the card scrolls the page
+     instead, which is what an element that grows past the window does anyway. */
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
   background-color: var(--background, #09090b);
   color: var(--foreground, #fafafa);
 
@@ -71,7 +77,7 @@
   --amplify-colors-font-focus: var(--foreground, #fafafa);
   --amplify-colors-font-inverse: var(--primary-foreground, #09090b);
   --amplify-colors-font-error: var(--destructive, #f87171);
-  --amplify-colors-background-primary: var(--background, #09090b);
+  --amplify-colors-background-primary: var(--card, #18181b);
   --amplify-colors-background-secondary: var(--muted, #27272a);
   --amplify-colors-background-tertiary: var(--muted, #27272a);
   --amplify-colors-border-primary: var(--border, rgb(255 255 255 / 0.12));
@@ -79,153 +85,248 @@
   --amplify-colors-border-focus: var(--ring, #71717a);
   --amplify-colors-overlay-50: rgb(0 0 0 / 0.6);
 
-  /* The app's own radii: `rounded-md` on a field, a pill on a button. */
-  --amplify-radii-xs: 0.375rem;
-  --amplify-radii-small: 0.5rem;
-  --amplify-radii-medium: 0.5rem;
-  --amplify-radii-large: 0.75rem;
-  --amplify-radii-xl: 1rem;
-  --amplify-radii-xxl: 1.25rem;
-  --amplify-radii-xxxl: 1.5rem;
+  --amplify-radii-xs: 0.5rem;
+  --amplify-radii-small: 0.75rem;
+  --amplify-radii-medium: 0.875rem;
+  --amplify-radii-large: 1rem;
+  --amplify-radii-xl: 1.25rem;
+  --amplify-radii-xxl: 1.5rem;
+  --amplify-radii-xxxl: 2rem;
 
   /* 16px, which is also the size below which iOS Safari zooms a focused field. */
   --amplify-components-fieldcontrol-font-size: 1rem;
-  --amplify-components-button-font-size: 0.875rem;
-
-  /* The field, as the app's own `Input` draws it: a hairline box 36px tall with
-     12px of room either side, in the app's border and ring colours. Said in
-     tokens rather than in a rule of its own, because Amplify derives other
-     things from them — the padding a password field leaves for its reveal
-     button is three times the inline end padding, so a rule that overwrote
-     `padding` outright would put the text under that button. */
-  --amplify-components-fieldcontrol-border-width: 1px;
-  --amplify-components-fieldcontrol-border-color: var(--input, rgb(255 255 255 / 0.15));
-  --amplify-components-fieldcontrol-padding-inline-start: 0.75rem;
-  --amplify-components-fieldcontrol-padding-inline-end: 0.75rem;
-  --amplify-components-fieldcontrol-padding-block-start: 0;
-  --amplify-components-fieldcontrol-padding-block-end: 0;
-  --amplify-components-fieldcontrol-focus-border-color: var(--ring, #71717a);
-  --amplify-components-fieldcontrol-focus-box-shadow: 0 0 0 1px var(--ring, #71717a);
-  --amplify-components-fieldcontrol-error-border-color: var(--destructive, #f87171);
-  --amplify-components-fieldcontrol-error-focus-border-color: var(--destructive, #f87171);
-  --amplify-components-fieldcontrol-error-focus-box-shadow: 0 0 0 1px var(--destructive, #f87171);
-
-  /* The form's measure, which is the product's own: where there is room for it,
-     420px, and the page's own width where there is not. Amplify applies this
-     fixed width once its 30rem breakpoint is passed, so `min()` is what keeps a
-     phone in the same stylesheet instead of overflowing. */
+  --amplify-components-button-font-size: 1rem;
+  --amplify-components-tabs-item-font-size: 0.875rem;
+  /* 420px where there is room for it, and the page's own width where there is
+     not: Amplify applies this fixed width once its 30rem breakpoint is passed, so
+     `min()` is what keeps a phone in the same stylesheet instead of overflowing. */
   --amplify-components-authenticator-container-width-max: min(26.25rem, 100%);
   --amplify-components-tabs-panel-padding-inline: 0;
-  --amplify-components-tabs-panel-padding-block: 0;
+  --amplify-components-tabs-panel-padding-block: 1.25rem 0;
+  --amplify-components-tabs-item-border-width: 0;
+  --amplify-components-divider-label-background-color: transparent;
+  --amplify-components-divider-label-color: var(--muted-foreground, #a1a1aa);
+  --amplify-components-divider-label-font-size: 0.75rem;
 }
 
-/* ---- The column ---- */
+/* ---- The canvas behind the card ---- */
 
 /**
- * The form is the page, so the box around it draws nothing.
+ * Two slow washes of colour, blurred past the point of being decoration.
  *
- * The measure comes from the token above; all that is left to say is that the
- * router is as wide as the column it is in rather than as wide as its form.
+ * The palette is Apple's rather than this app's: the app is monochrome, and a
+ * sign-in screen with nothing but grey in it reads as a form to fill in. The
+ * blue and the violet are the one place Play is allowed a colour of its own, and
+ * at this opacity they are closer to light than to colour. They drift, slowly
+ * and out of step with each other, so the page is not a static image behind a
+ * form — and they stop for anyone who has asked for less motion.
+ *
+ * Each wash is the canvas's own height and a fixed width, and its colour falls
+ * away in an ellipse sized to that box rather than to a number of rems: how far a
+ * corner bleeds is a question about the page, and a fixed reach left the bottom
+ * of a tall canvas grey. The canvas clips what spills out of it, and the blur is
+ * what leaves the gradient no edge on it anywhere.
  */
-.play-auth [data-amplify-router] {
-  width: 100%;
+.play-auth[data-amplify-authenticator]::before,
+.play-auth[data-amplify-authenticator]::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 34rem;
+  height: 100%;
+  border-radius: 999px;
+  filter: blur(90px);
+  opacity: var(--play-auth-aurora, 0.55);
+  pointer-events: none;
+}
+
+/* One at each end of a long side. The light sits at the corner the wash belongs
+   to and fades towards the other, which is why these are ellipses anchored to an
+   edge: in a box that is no longer square, one centred on itself would be a dot
+   in the middle of a band. */
+.play-auth[data-amplify-authenticator]::before {
+  top: 0;
+  left: -10rem;
+  background-image: radial-gradient(
+    ellipse at 50% 0%,
+    color-mix(in oklab, #3b82f6 45%, transparent),
+    transparent
+  );
+  animation: play-auth-drift-a 26s ease-in-out infinite alternate;
+}
+
+.play-auth[data-amplify-authenticator]::after {
+  right: -12rem;
+  bottom: 0;
+  background-image: radial-gradient(
+    ellipse at 50% 100%,
+    color-mix(in oklab, #8b5cf6 38%, transparent),
+    transparent
+  );
+  animation: play-auth-drift-b 32s ease-in-out infinite alternate;
+}
+
+/* On a light canvas the same two washes are twice as loud; tone them down. */
+html:not(.dark) .play-auth {
+  --play-auth-aurora: 0.34;
+}
+
+@keyframes play-auth-drift-a {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(4rem, 3rem, 0) scale(1.12);
+  }
+}
+
+@keyframes play-auth-drift-b {
+  from {
+    transform: translate3d(0, 0, 0) scale(1.08);
+  }
+  to {
+    transform: translate3d(-3rem, -2rem, 0) scale(1);
+  }
+}
+
+/* ---- The card ---- */
+
+/**
+ * Frosted glass, not a panel: the card has to sit on the washes above rather
+ * than in front of them. A hairline edge and a highlight along the top rather
+ * than a border, which is the difference between glass and a box.
+ */
+.play-auth[data-amplify-authenticator] [data-amplify-router] {
+  padding: 1.5rem;
+  border-width: 1px;
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--border, rgb(255 255 255 / 0.12)) 90%, transparent);
+  border-radius: 1.75rem;
+  background-color: color-mix(in oklab, var(--card, #18181b) 72%, transparent);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in oklab, #fff 8%, transparent),
+    0 24px 60px -24px rgb(0 0 0 / 0.55);
+  overflow: hidden;
+  /* It arrives rather than appears — a few pixels, once. */
+  animation: play-auth-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes play-auth-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* ---- The tabs, as a segmented control ---- */
+
+/**
+ * Amplify draws "Sign in / Create Account" as underlined tabs. Play draws that
+ * decision as a segmented control everywhere else — a pill track with the
+ * active item lifted out of it — so the sign-in screen draws it that way too.
+ */
+.play-auth .amplify-tabs__list {
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-width: 0;
+  border-radius: 999px;
+  background-color: color-mix(in oklab, var(--muted, #27272a) 75%, transparent);
+  box-shadow: none;
+}
+
+.play-auth .amplify-tabs__item {
+  flex: 1;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-width: 0;
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--muted-foreground, #a1a1aa);
+  font-weight: 500;
+  transition:
+    color 200ms ease,
+    background-color 200ms ease;
+}
+
+.play-auth .amplify-tabs__item:hover {
+  color: var(--foreground, #fafafa);
+  background-color: transparent;
+}
+
+.play-auth .amplify-tabs__item--active,
+.play-auth .amplify-tabs__item--active:hover {
+  color: var(--foreground, #fafafa);
+  background-color: var(--background, #09090b);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+}
+
+.play-auth .amplify-tabs__item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #71717a) 45%, transparent);
 }
 
 /**
- * One height for both halves of the screen, which is the difference between a
- * control and a jump.
+ * One height for both tabs, which is the difference between a control and a jump.
  *
- * Signing in and making an account are not the same form — one asks for two
- * fields, the other for three and a visit to the inbox — and this screen centres
- * the column, so the taller form takes the mark and the headline *up* the window
- * with it. Moving between them moved the headline 70-odd pixels, which reads as
- * the page flinching rather than as the two halves being different pages.
+ * The two panels are not the same form — making an account asks for an address, a
+ * confirmation code and a visit to the inbox where signing in asks for two fields
+ * — and this screen centers the card, so a panel that grows takes the title above
+ * it *up* the window with it. Toggling between the tabs moved the headline 16px,
+ * which reads as the page flinching rather than as the tab changing.
  *
  * So the panel is as tall as the taller of the two however short its own form is.
  * A reserved height rather than a measured one, because this has to hold before
- * the form that needs it has been rendered at all; the inactive route is not
- * rendered (`isLazy`), so the room is reserved without anything being drawn in
- * it. What fills the room on the shorter form is the provider button, which is
- * pushed to the foot of the panel by the `margin-top: auto` below — the gap the
- * reference design has between the footer link and Google.
- *
- * `--active` rather than the panel's own class, which matters more than it looks:
- * the base class is `display: none` and the modifier is what turns the panel on,
- * so a rule on the base class alone would draw the panel for the route nobody is
- * on the moment `isLazy` stops being set.
+ * the form that needs it has been rendered at all; the inactive tab is still
+ * `display: none`, so the room is reserved without anything being drawn in it.
  */
-.play-auth .amplify-tabs__panel--active {
-  display: flex;
-  flex-direction: column;
-  min-height: 22rem;
-}
-
-/**
- * The extra wrapper between the panel and the form, stretched.
- *
- * Amplify nests the route's component inside the panel, so making the panel a
- * flex column is not enough on its own to let the form grow into it — this is
- * the element in between, and it has no class name of its own to reach it by.
- */
-.play-auth .amplify-tabs__panel--active > div {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-}
-
-/* ---- The tabs are not a control on this screen ---- */
-
-/**
- * Hidden, not removed, and the footers in `sign-in.tsx` are why.
- *
- * Amplify draws "Sign In / Create Account" as a segmented control above the
- * form. That is the right control for two views of one thing; these are two
- * pages, each with its own headline and its own form, and a tab strip above a
- * headline says the headline is a panel rather than a page. `hideSignUp` would
- * take the tabs away but it takes the whole sign-up route with them, so the
- * list is hidden here and both routes offer the other in text at the foot of the
- * form instead — which is where somebody looks for it.
- */
-.play-auth .amplify-tabs__list {
-  display: none;
+.play-auth .amplify-tabs__panel {
+  min-height: 30.125rem;
 }
 
 /* ---- The fields ---- */
 
 /**
- * The app's own field: a hairline box on the page, not a tint on a card.
- *
- * The colours, the border, the radius and the room inside are the tokens above,
- * which is most of the shape. What is left here is the one thing Amplify has no
- * token for — the height — and the two states that are not a colour change: the
- * hover, which lifts the edge to the ring colour, and the autofill paint, which
- * would otherwise draw a pale blue box in the middle of the column.
+ * A soft fill rather than a box: the input is a tint on the card with a ring
+ * that appears when you are in it, which is what makes a form feel like one
+ * surface instead of a stack of rectangles.
  */
 .play-auth .amplify-input,
 .play-auth .amplify-select {
-  height: 2.25rem;
-  background-color: transparent;
+  padding: 0.625rem 0.875rem;
+  border-width: 1px;
+  border-color: transparent;
+  border-radius: 0.875rem;
+  background-color: color-mix(in oklab, var(--muted, #27272a) 60%, transparent);
   color: var(--foreground, #fafafa);
   transition:
-    border-color 200ms ease,
+    background-color 200ms ease,
     box-shadow 200ms ease;
 }
 
 .play-auth .amplify-input:hover,
 .play-auth .amplify-select:hover {
-  border-color: var(--ring, #71717a);
+  background-color: color-mix(in oklab, var(--muted, #27272a) 80%, transparent);
 }
 
 .play-auth .amplify-input:focus,
 .play-auth .amplify-select:focus {
   outline: none;
+  border-color: transparent;
+  background-color: color-mix(in oklab, var(--muted, #27272a) 85%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #71717a) 40%, transparent);
 }
 
 /* The browser's own autofill paint would sit on top of all of that. */
 .play-auth .amplify-input:-webkit-autofill {
   -webkit-text-fill-color: var(--foreground, #fafafa);
   caret-color: var(--foreground, #fafafa);
-  box-shadow: 0 0 0 100px var(--background, #09090b) inset;
+  box-shadow: 0 0 0 100px var(--card, #18181b) inset;
 }
 
 /* The button inside a password field that reveals it: part of the field. */
@@ -241,20 +342,19 @@
 }
 
 .play-auth .amplify-label {
-  color: var(--foreground, #fafafa);
+  color: var(--muted-foreground, #a1a1aa);
   font-size: 0.875rem;
   font-weight: 500;
 }
 
-.play-auth .amplify-text--error,
-.play-auth .amplify-field__error-message {
+.play-auth .amplify-text--error {
   color: var(--destructive, #f87171);
   font-size: 0.875rem;
 }
 
 .play-auth .amplify-alert {
   border-width: 0;
-  border-radius: 0.5rem;
+  border-radius: 0.875rem;
   font-size: 0.875rem;
   background-color: color-mix(in oklab, var(--destructive, #f87171) 14%, transparent);
   color: var(--destructive, #f87171);
@@ -268,23 +368,21 @@
   transition:
     background-color 200ms ease,
     color 200ms ease,
-    border-color 200ms ease,
     opacity 200ms ease,
     transform 160ms ease;
 }
 
-/* The one decision on the form, and the width of the field above it. */
+/* The one decision on the screen, in the size it deserves. */
 .play-auth .amplify-button--primary {
-  width: 100%;
-  min-height: 2.25rem;
-  padding: 0 1rem;
+  min-height: 2.75rem;
+  padding: 0.75rem 1.25rem;
   border-width: 0;
   background-color: var(--primary, #fafafa);
   color: var(--primary-foreground, #09090b);
 }
 
 .play-auth .amplify-button--primary:hover {
-  background-color: color-mix(in oklab, var(--primary, #fafafa) 90%, transparent);
+  background-color: color-mix(in oklab, var(--primary, #fafafa) 88%, transparent);
   color: var(--primary-foreground, #09090b);
 }
 
@@ -304,14 +402,7 @@
   transform: none;
 }
 
-/**
- * The other two buttons on the screen — "Forgot your password?" and the way
- * between the two halves — are text, and are drawn as text.
- *
- * Amplify's link variation carries a padding and an underline of its own, which
- * in a column of small print reads as a row of buttons rather than as a
- * sentence with a link in it.
- */
+/* "Forgot your password?" — a link, in the quietest ink on the screen. */
 .play-auth .amplify-button--link {
   padding: 0;
   border-width: 0;
@@ -332,60 +423,36 @@
   text-underline-offset: 4px;
 }
 
-/* ---- "Sign up with Google" ---- */
+/* ---- "or continue with Google" ---- */
 
 /**
- * The second way in, under the first, at the foot of the form.
- *
- * `FederatedSignIn` renders *above* the fields, because Amplify treats a
- * provider as another tab rather than as another route; the reference design
- * puts it last, and this is that. `order` moves it in the form's own flex
- * column, `margin-top: auto` puts it at the foot of the panel's reserved height,
- * and the row gap on the form is what keeps it off the footer link when the
- * panel has no room to spare. The divider Amplify draws under it goes away: with
- * one provider the word "or" above a single button is a word with nothing to
- * divide.
+ * The federated button is the second way in, so it is drawn as one: the same
+ * shape and height as the primary button and none of its weight — a hairline
+ * outline on a tint, which is the shape Google's own button is borrowed from.
+ * The divider above it keeps its "or" and loses its line: a rule drawn across a
+ * translucent card cannot be masked by the label sitting on it, and two ways in
+ * under one word do not need a rule between them.
  */
-.play-auth form[data-amplify-form] {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  /* Between the form and the provider button under it, and between nothing
-     else: the two are the form's only children. */
-  gap: 1.5rem;
-}
-
 .play-auth .federated-sign-in-container {
-  order: 2;
-  margin-top: auto;
+  gap: 0.75rem;
 }
 
-.play-auth .federated-sign-in-container .amplify-divider {
-  display: none;
-}
-
-/**
- * The button itself: the same height as the primary one and none of its weight.
- *
- * Left-aligned rather than centred, which is where the reference design puts the
- * icon and its label — a column of provider buttons reads as a list when the
- * icons line up and as a pile when they do not.
- */
 .play-auth .federated-sign-in-button {
   width: 100%;
-  min-height: 2.25rem;
-  justify-content: flex-start;
-  padding: 0 1rem;
+  min-height: 2.75rem;
+  padding: 0.625rem 1.25rem;
+  gap: 0.625rem;
   border-width: 1px;
   border-style: solid;
-  border-color: var(--border, rgb(255 255 255 / 0.12));
+  border-color: color-mix(in oklab, var(--border, rgb(255 255 255 / 0.12)) 90%, transparent);
   border-radius: 999px;
-  background-color: transparent;
+  background-color: color-mix(in oklab, var(--foreground, #fafafa) 6%, transparent);
   color: var(--foreground, #fafafa);
 }
 
 .play-auth .federated-sign-in-button:hover {
-  background-color: var(--muted, #27272a);
+  background-color: color-mix(in oklab, var(--foreground, #fafafa) 12%, transparent);
+  border-color: color-mix(in oklab, var(--border, rgb(255 255 255 / 0.12)) 100%, transparent);
 }
 
 .play-auth .federated-sign-in-button:focus-visible {
@@ -393,10 +460,9 @@
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring, #71717a) 45%, transparent);
 }
 
-/* The app's own icon size, which is what a button's icon is everywhere else. */
 .play-auth .federated-sign-in-icon {
-  width: 1rem;
-  height: 1rem;
+  width: 1.125rem;
+  height: 1.125rem;
 }
 
 /**
@@ -414,9 +480,28 @@
   color: var(--foreground, #fafafa);
 }
 
+.play-auth .amplify-divider {
+  border-color: transparent;
+  padding-block: 0.25rem;
+}
+
+.play-auth .amplify-divider::after {
+  padding-inline: 0;
+  background-color: transparent;
+}
+
 /* ---- Less motion, no motion ---- */
 
 @media (prefers-reduced-motion: reduce) {
+  .play-auth[data-amplify-authenticator]::before,
+  .play-auth[data-amplify-authenticator]::after {
+    animation: none;
+  }
+
+  .play-auth[data-amplify-authenticator] [data-amplify-router] {
+    animation: none;
+  }
+
   .play-auth .amplify-button:active {
     transform: none;
   }
