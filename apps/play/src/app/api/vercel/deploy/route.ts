@@ -89,11 +89,22 @@ function normaliseDomain(value: string): string | null {
 export async function GET(request: Request) {
   const url = new URL(request.url);
 
-  // No query is a page that has just loaded: the run first, so a build that is
-  // going is drawn rather than replaced by an empty checklist.
+  // Which question this is depends on how much of the target is named. The app
+  // alone asks about **the run** — what this project is doing, or last did — so a
+  // page reloaded mid-build draws it; a stage and a target together are a
+  // complete deploy, and answer with its checklist.
   const app = url.searchParams.get("app");
-  if (!app) {
-    return NextResponse.json({ run: currentRun(KIND), running: isRunning(KIND) });
+  if (!app || !url.searchParams.get("stage")) {
+    if (!app || !APPS.some((candidate) => candidate.key === app)) {
+      return NextResponse.json(
+        {
+          error:
+            "Expected ?app=<studio|marketplace> — a frontend run belongs to one app. Add stage and target for the deploy's checklist.",
+        },
+        { status: 400 },
+      );
+    }
+    return NextResponse.json({ run: currentRun(KIND, app), running: isRunning(KIND, app) });
   }
 
   const target = parseTarget({
@@ -138,11 +149,19 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE() {
-  const run = currentRun(KIND);
-  if (!run || !isRunning(KIND)) {
-    return NextResponse.json({ error: "Nothing is running." }, { status: 409 });
+export async function DELETE(request: Request) {
+  const app = new URL(request.url).searchParams.get("app")?.trim() ?? "";
+  if (!app) {
+    return NextResponse.json(
+      { error: "Expected ?app=<studio|marketplace> — a frontend run belongs to one app." },
+      { status: 400 },
+    );
   }
-  cancelRun(KIND, run.id);
+
+  const run = currentRun(KIND, app);
+  if (!run || !isRunning(KIND, app)) {
+    return NextResponse.json({ error: `Nothing is running for '${app}'.` }, { status: 409 });
+  }
+  cancelRun(KIND, app, run.id);
   return NextResponse.json({ ok: true });
 }

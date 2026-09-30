@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { DeployEvent, LogLine, RunView, StepView } from "@/lib/types";
+import type { DeployEvent, LogLine, RunView } from "@/lib/types";
 
 /**
  * The deploy, as the page sees it.
@@ -23,6 +23,14 @@ import type { DeployEvent, LogLine, RunView, StepView } from "@/lib/types";
  * be a second place where the line buffering, the step selection and the
  * reconnect-when-a-run-starts are subtlely different.
  *
+ * ## Why it is scoped
+ *
+ * `scope` says which run this page is about — the stage of a backend run, the app
+ * of a frontend one — and every one of the three routes is read with it. More
+ * than one environment can be deploying at once, so "the run" is not a thing a
+ * page can ask for: without a scope it would draw whichever deploy the server
+ * happened to hold, under this page's name.
+ *
  * ## Why the lines are batched
  *
  * `cdk deploy` emits a few hundred lines in a burst and a Next build emits more.
@@ -35,6 +43,9 @@ import type { DeployEvent, LogLine, RunView, StepView } from "@/lib/types";
 export interface DeployLine extends LogLine {
   stepId: string;
 }
+
+/** What the page is asking about: `{ stage }`, or `{ app }`. */
+export type RunScope = Record<string, string>;
 
 export interface DeployState {
   run: RunView | null;
@@ -58,7 +69,17 @@ const EMPTY = new Map<string, DeployLine[]>();
 export const BACKEND_RUN = "/api/deploy";
 export const FRONTEND_RUN = "/api/vercel/deploy";
 
-export function useDeploy(base: string = BACKEND_RUN): DeployState {
+/** `?stage=…`, and nothing at all when the page has not said what it is about. */
+function query(scope: RunScope): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(scope)) {
+    if (value) search.set(key, value);
+  }
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}
+
+export function useDeploy(base: string = BACKEND_RUN, scope: RunScope = {}): DeployState {
   const [run, setRun] = useState<RunView | null>(null);
   const [lines, setLines] = useState<Map<string, DeployLine[]>>(EMPTY);
   const [starting, setStarting] = useState(false);
@@ -72,6 +93,11 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
   const source = useRef<EventSource | null>(null);
   /** Which run the client has already asked for a transcript of. */
   const fetched = useRef<Set<string>>(new Set());
+
+  // The scope is an object literal at every call site, so it is a new value on
+  // every render; the query string it amounts to is not. Everything below keys
+  // off the string, or every effect would re-run on every render.
+  const search = query(scope);
 
   const flush = useCallback(() => {
     frame.current = null;
@@ -112,7 +138,7 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
    */
   const open = useCallback(() => {
     source.current?.close();
-    const events = new EventSource(`${base}/events`);
+    const events = new EventSource(`${base}/events${search}`);
 
     events.onmessage = (message) => {
       let event: DeployEvent | { type: "idle" };
@@ -157,14 +183,14 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
     };
 
     source.current = events;
-  }, [base, push]);
+  }, [base, search, push]);
 
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
       try {
-        const response = await fetch(base, { cache: "no-store" });
+        const response = await fetch(`${base}${search}`, { cache: "no-store" });
         if (!response.ok) return;
         const { run: current } = (await response.json()) as { run: RunView | null };
         if (!cancelled && current) setRun(current);
@@ -180,7 +206,7 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
       source.current?.close();
       source.current = null;
     };
-  }, [open]);
+  }, [base, search, open]);
 
   /* ---------------------------------------------------------------- *
    * Selecting a step, and loading its transcript
@@ -214,7 +240,7 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
     void (async () => {
       try {
         const response = await fetch(
-          `${base}/transcript?run=${encodeURIComponent(runId)}&step=${encodeURIComponent(selected)}`,
+          `${base}/transcript${search}${search ? "&" : "?"}run=${encodeURIComponent(runId)}&step=${encodeURIComponent(selected)}`,
           { cache: "no-store" },
         );
         if (!response.ok) return;
@@ -224,7 +250,7 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
         // A transcript that will not load is a collapsed row, not a failure.
       }
     })();
-  }, [base, runId, selected, running, lines, push]);
+  }, [base, search, runId, selected, running, lines, push]);
 
   /* ---------------------------------------------------------------- *
    * Starting and stopping
@@ -235,7 +261,7 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
       setStarting(true);
       setError(null);
       try {
-        const response = await fetch(base, {
+        const response = await fetch(`${base}${search}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
@@ -266,16 +292,16 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
         setStarting(false);
       }
     },
-    [base, open],
+    [base, search, open],
   );
 
   const stop = useCallback(async () => {
     try {
-      await fetch(base, { method: "DELETE" });
+      await fetch(`${base}${search}`, { method: "DELETE" });
     } catch {
       setError("The run could not be stopped. It may still be going.");
     }
-  }, [base]);
+  }, [base, search]);
 
   const select = useCallback((stepId: string | null) => {
     setSelected(stepId);
@@ -294,14 +320,4 @@ export function useDeploy(base: string = BACKEND_RUN): DeployState {
     error,
     dismissError: () => setError(null),
   };
-}
-
-/** The steps to draw: the run's, or the preview's, or the run's for another stage. */
-export function stepsFor(
-  run: RunView | null,
-  preview: StepView[] | null,
-  stage: string,
-): StepView[] {
-  if (run && run.stage === stage) return run.steps;
-  return preview ?? [];
 }

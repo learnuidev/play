@@ -1,7 +1,7 @@
 import { transcriptResponse } from "@/server/run-api";
 
 /**
- * One step's lines, after the fact — `/api/deploy/transcript`.
+ * One step's lines, after the fact — `/api/deploy/transcript?stage=…`.
  *
  * A page opened after a deploy finished has the steps and their notes, which is
  * what a collapsed row needs; the lines are fetched only for the step somebody
@@ -12,5 +12,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  return transcriptResponse("backend", request);
+  const stage = new URL(request.url).searchParams.get("stage")?.trim() ?? "";
+  return transcriptResponse("backend", stage, request);
 }

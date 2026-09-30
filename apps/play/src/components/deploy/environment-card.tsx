@@ -4,7 +4,7 @@ import { RocketIcon, ShieldAlertIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Chip, Dot, type Tone } from "@/components/ui/chip";
+import { Chip, Dot, Spinner, type Tone } from "@/components/ui/chip";
 import { backendState } from "@/lib/backends";
 import { cn } from "@/lib/cn";
 import { apiHost, stackInitials, stackWord } from "@/lib/format";
@@ -20,6 +20,10 @@ import type { ConsoleState, EnvironmentView, StackSummary } from "@/lib/types";
  * environment shares the data with every existing one, and a console that hid
  * that behind a tooltip would be hiding the single fact an operator most needs
  * before pressing a button that creates a second API over production tables.
+ *
+ * `deploying` is this *environment's* run, not the console's: another stage
+ * deploying elsewhere leaves this button alone, because that is the whole point
+ * of one run per environment.
  */
 
 export function EnvironmentCard({
@@ -29,6 +33,7 @@ export function EnvironmentCard({
   onDeploy,
   deployable,
   busy,
+  deploying,
 }: {
   stage: string;
   environment: EnvironmentView | null;
@@ -36,11 +41,13 @@ export function EnvironmentCard({
   onDeploy: () => void;
   deployable: boolean;
   busy: boolean;
+  /** A run against this stage is going — possibly started in another tab. */
+  deploying: boolean;
 }) {
   const healthy = environment?.stacks.filter((stack) => stack.healthy).length ?? 0;
   // The same verdict the environment's row carries in the list: one function, so
   // a row that says "deployed" cannot sit above a card that says otherwise.
-  const status = backendState(environment, state?.identity?.account ?? null);
+  const status = backendState(environment, state?.identity?.account ?? null, deploying);
   // Before the first read, `environment` is null for *every* stage — so nothing
   // here may treat that as "there is no config file". The two are the same shape
   // and opposite meanings, and the wrong one is the alarming one.
@@ -54,7 +61,7 @@ export function EnvironmentCard({
             <h2 className="truncate font-mono text-2xl font-semibold tracking-tight">{stage}</h2>
             {reading ? null : (
               <Chip tone={status.tone}>
-                <Dot tone={status.tone} />
+                {status.running ? <Spinner tone={status.tone} /> : <Dot tone={status.tone} />}
                 {status.label}
               </Chip>
             )}

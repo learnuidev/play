@@ -85,6 +85,17 @@ place to select the same thing, which is a second answer to one question — and
 naming a new one lives on the list where the environments are, rather than in the
 chrome, so the rail is left with the three parts of the problem instead of a menu.
 
+**A row that is deploying says so.** Its chip reads *deploying*, with a spinner
+rather than a dot, and the line underneath is the step the run is on rather than
+the stack count — because a deploy in flight leaves exactly the half-built set of
+stacks that *partly deployed* describes, so the row that would otherwise shout
+loudest is the one that is working correctly. That verdict comes from
+`/api/deploy/runs`, which is this process's own memory and free to read, and not
+from `/api/state`, which is cached and costs two `aws` processes — a deploy's
+progress is stale within seconds, a stack's status is not. The same function
+draws the chip on the environment's own page and on the deploy card, so a row
+cannot say "deploying" above a page that says "partly deployed".
+
 ### Checklist — what a person has to supply
 
 The tab a new environment starts on, and the only one that is a *question* rather
@@ -141,6 +152,43 @@ shell caught up would be a page about two environments at once.
 
 For a frontend it is where the app is running: locally from here, and on Vercel
 if that project is connected.
+
+### Two environments at once
+
+There is **one run per environment**, not one run per console. `staging` and
+`dev` deploy side by side, each with its own checklist, transcript, result and
+Stop button, and the page you are reading is scoped to the environment in its
+URL — `/backends/staging` polls *staging's* run and streams *staging's*
+transcript, and never the other one's. Two requests for the *same* stage are
+still refused by name, because two `cdk deploy --all` runs against one set of
+stacks do not compose.
+
+Three things make that safe rather than merely allowed:
+
+- **Each stage synthesizes into its own directory** — `cdk.out/<stage>`. That
+  directory is the whole of what a deploy reads, templates and staged assets
+  together, so two runs sharing the default `cdk.out` would each read the other's
+  templates and report a diff for stacks nobody asked about.
+- **The steps that touch something shared hold a named lock.** `plan.ts` marks
+  them, and `server/run.ts` queues them: `infra/dist` (one bundle for every
+  stage) and `apps/<app>/.env.local` (one file per app) are `checkout`, and
+  `CDKToolkit` (one stack per account and region) and the shared videos bucket's
+  notification configuration (one document, read and put back) are `account`.
+  They are two names rather than one lock so that a staging bootstrap does not
+  hold up a dev bundle. A step that has to wait says so in its transcript, with
+  the reason, because a run parked for four minutes with no output reads like a
+  hang.
+- **What cannot be made private is left as it is, and said out loud.** A stage
+  that *imports* its media shares one bucket with every other stage that imports
+  it, and that bucket notifies one function: deploying two such stages at once
+  ends with whichever deploy landed last owning video processing, exactly as
+  deploying them one after the other would. `.env.local` is the same shape of
+  fact — the apps point at one environment at a time — so a parallel deploy of
+  `staging` leaves them pointed at `staging` and away from `dev`. An environment
+  that creates everything (the normal case for a new stage) shares neither.
+
+The deploy page says when another environment is deploying, so the button never
+looks contended: what it tells you is that the run next to it is somebody else's.
 
 ### Logs
 
@@ -587,9 +635,14 @@ src/server/
 src/app/api/
   state            who we are, and what exists            (GET, cached 5s)
   plan             the checklist before it has run        (GET)
-  deploy           start, read or cancel the run          (POST / GET / DELETE)
-  deploy/events    its transcript, as it happens          (SSE)
-  deploy/transcript  one step's lines, after the fact     (GET)
+  deploy           start, read or cancel one environment's  (POST / GET / DELETE)
+                   run — `?stage=` names it, because more
+                   than one can be going
+  deploy/runs      every backend deploy going right now     (GET)
+                   — what the list of environments draws
+                   its "deploying" from
+  deploy/events    its transcript, as it happens            (SSE)
+  deploy/transcript  one step's lines, after the fact       (GET)
   services         the three frontends                    (GET)
   services/[app]   start or stop one                      (POST / DELETE)
   services/events  all three on one stream                (SSE)
@@ -638,9 +691,12 @@ src/components/
 - **Deploy anything by itself.** There is no timer, no watcher and no
   post-install hook. The plan runs when the button is pressed, and never
   otherwise. It also never runs `cdk destroy`.
-- **Deploy two things at once.** One run at a time, and a second request is
-  refused by name. Two `cdk deploy --all` runs against one account contend for
-  the same stacks, and the loser reports the other's state as a rollback.
+- **Deploy one environment twice at once.** A second request for a stage that is
+  already deploying is refused by name: two `cdk deploy --all` runs against one
+  set of stacks contend for the same resources, CloudFormation serialises them
+  anyway, and the loser reports the other's half-finished state as a rollback.
+  A *different* environment is a different set of stacks and deploys alongside it
+  — see *Two environments at once* above for what that leaves shared.
 - **Write to AWS outside the plan.** Every read on the state endpoint is a
   `describe`, a `list` or a `get-parameters`. The writes are three, all behind a
   button and none of them a deploy: the credential save (the config file, and the

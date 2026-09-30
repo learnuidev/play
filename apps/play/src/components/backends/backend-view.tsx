@@ -9,7 +9,7 @@ import { useNameStage, useShell } from "@/components/console/state";
 import { DeployView } from "@/components/deploy/deploy-view";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
-import { Chip, Dot } from "@/components/ui/chip";
+import { Chip, Dot, Spinner } from "@/components/ui/chip";
 import { EnvTable } from "@/components/ui/env-table";
 import { Picker } from "@/components/ui/picker";
 import { Tabs } from "@/components/ui/tabs";
@@ -17,6 +17,7 @@ import {
   BACKEND_TABS,
   backendBlurb,
   backendState,
+  deployingRun,
   type BackendTab,
 } from "@/lib/backends";
 import { apiHost, relative } from "@/lib/format";
@@ -48,12 +49,16 @@ import type {
  */
 
 export function BackendView({ stage, tab: initialTab }: { stage: string; tab: BackendTab }) {
-  const { state } = useShell();
+  const { state, runs } = useShell();
   const nameStage = useNameStage();
   const [tab, setTab] = useState<BackendTab>(initialTab);
 
   const environment = state?.environments.find((item) => item.stage === stage) ?? null;
-  const status = backendState(environment, state?.identity?.account ?? null);
+  const status = backendState(
+    environment,
+    state?.identity?.account ?? null,
+    deployingRun(runs, stage) !== null,
+  );
   /** Before the first read, nothing about this environment is known — not even whether it exists. */
   const reading = state === null;
 
@@ -87,7 +92,7 @@ export function BackendView({ stage, tab: initialTab }: { stage: string; tab: Ba
               would say it about every environment. */}
           {reading ? null : (
             <Chip tone={status.tone}>
-              <Dot tone={status.tone} />
+              {status.running ? <Spinner tone={status.tone} /> : <Dot tone={status.tone} />}
               {status.label}
             </Chip>
           )}

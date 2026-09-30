@@ -12,11 +12,11 @@ import {
   type ReactNode,
 } from "react";
 
-import type { ConsoleState, EnvironmentView } from "@/lib/types";
+import type { ConsoleState, EnvironmentView, RunView } from "@/lib/types";
 
 /**
- * What the whole console knows: who we are, what environments exist, and which
- * one is selected.
+ * What the whole console knows: who we are, what environments exist, which one
+ * is selected, and what is deploying.
  *
  * One fetch, one place to refresh from, and one selection shared by both pages
  * — because the environment a frontend is started against is the environment
@@ -27,11 +27,25 @@ import type { ConsoleState, EnvironmentView } from "@/lib/types";
  * That is not live-ness for its own sake: a deploy changes stack statuses, and
  * a rail that still says "not deployed" after a deploy finishes is worse than
  * one that says nothing.
+ *
+ * ## Why the runs are a second read, on their own clock
+ *
+ * A deploy's progress is the opposite kind of fact from a stack's status: it is
+ * free to read (it is this process's own memory), and it is stale within seconds.
+ * So it comes from `/api/deploy/runs` rather than from the state above, which is
+ * cached and costs two `aws` processes. It lives here because three pages need
+ * the same answer — the list of environments, one environment's page, and the
+ * deploy page's own card — and a row that said "deploying" above a header that
+ * said "partly deployed" would be two answers to one question.
  */
 
 const STAGE_KEY = "play-console:stage";
 
 const REFRESH_MS = 30_000;
+
+/** How often the list of running deploys is re-read, going and idle. */
+const RUNNING_MS = 3_000;
+const IDLE_MS = 15_000;
 
 interface ShellValue {
   state: ConsoleState | null;
@@ -46,6 +60,8 @@ interface ShellValue {
   environment: EnvironmentView | null;
   /** A stage nobody has a config for yet — what the deploy page creates. */
   unknown: boolean;
+  /** Every backend deploy going right now, whatever environment it is about. */
+  runs: RunView[];
 }
 
 const ShellContext = createContext<ShellValue | null>(null);
@@ -66,6 +82,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const [refreshing, setRefreshing] = useState(false);
   const [named, setNamed] = useState<string[]>([]);
   const [stage, setStageState] = useState("dev");
+  const [runs, setRuns] = useState<RunView[]>([]);
   const inFlight = useRef(false);
 
   const load = useCallback(async (mode: "initial" | "refresh") => {
@@ -104,6 +121,43 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       clearInterval(timer);
     };
   }, [load]);
+
+  /**
+   * The deploys going right now.
+   *
+   * A self-scheduling read rather than an interval, because the delay depends on
+   * the answer: three seconds while something is deploying, fifteen when nothing
+   * is — which is still often enough to notice a run started from another tab or
+   * another page, and cheap enough to leave open. Nothing here is cached, so
+   * there is no `?fresh` and no reason to read it on focus.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const read = async () => {
+      let next: RunView[] = [];
+      try {
+        const response = await fetch("/api/deploy/runs", { cache: "no-store" });
+        if (response.ok) {
+          next = ((await response.json()) as { runs: RunView[] }).runs;
+        }
+      } catch {
+        // A list that could not be read is a list that says nothing is
+        // deploying, which is where it started. The deploy page has its own
+        // stream and is unaffected.
+      }
+      if (cancelled) return;
+      setRuns(next);
+      timer = setTimeout(read, next.length > 0 ? RUNNING_MS : IDLE_MS);
+    };
+
+    void read();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   // The selection survives a reload, because a console that forgets which
   // environment you were looking at is a console you re-navigate every time.
@@ -149,8 +203,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       setStage,
       environment,
       unknown: environment === null,
+      runs,
     }),
-    [state, error, loading, refreshing, load, stages, stage, setStage, environment],
+    [state, error, loading, refreshing, load, stages, stage, setStage, environment, runs],
   );
 
   // A stage named here is added to the picker immediately, so the deploy page

@@ -12,5 +12,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  return eventsResponse("frontend", request);
+  const app = new URL(request.url).searchParams.get("app")?.trim() ?? "";
+  return eventsResponse("frontend", app, request);
 }

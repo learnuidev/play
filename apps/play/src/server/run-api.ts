@@ -13,6 +13,14 @@ import { backlog, currentRun, runTranscript, subscribe } from "./run";
  * line as it happens, are the whole contract between a run and a browser. Two
  * implementations of that contract would be two chances for a stream to lose a
  * line in one place and not the other.
+ *
+ * ## Why the subject is a parameter
+ *
+ * A run belongs to one subject — a stage, or an app — and there can be several
+ * going at once. So both routes take it as a query parameter (`?stage=`, `?app=`)
+ * and answer about *that* run: the alternative is a stream that attached to
+ * whichever deploy happened to start last, which is a page showing one
+ * environment's transcript under another environment's name.
  */
 
 /** Keeps a proxy from closing an idle stream during a long CloudFormation wait. */
@@ -26,12 +34,16 @@ const HEARTBEAT_MS = 15_000;
  * which is what a collapsed row needs — and fetches the lines only for the step
  * somebody actually opens.
  */
-export function transcriptResponse(kind: RunKind, request: Request): NextResponse {
+export function transcriptResponse(
+  kind: RunKind,
+  key: string,
+  request: Request,
+): NextResponse {
   const url = new URL(request.url);
   const stepId = url.searchParams.get("step");
   const runId = url.searchParams.get("run");
 
-  const run = currentRun(kind);
+  const run = currentRun(kind, key);
   if (!run) {
     return NextResponse.json({ error: "No run to read." }, { status: 404 });
   }
@@ -51,7 +63,7 @@ export function transcriptResponse(kind: RunKind, request: Request): NextRespons
   return NextResponse.json({
     run: run.id,
     step: stepId,
-    lines: runTranscript(kind, run.id, stepId),
+    lines: runTranscript(kind, key, run.id, stepId),
   });
 }
 
@@ -73,8 +85,8 @@ export function transcriptResponse(kind: RunKind, request: Request): NextRespons
  * the transcript route, because replaying fourteen steps of `cdk deploy` output
  * on every page load is a megabyte spent to draw a collapsed row.
  */
-export function eventsResponse(kind: RunKind, request: Request): Response {
-  const run = currentRun(kind);
+export function eventsResponse(kind: RunKind, key: string, request: Request): Response {
+  const run = currentRun(kind, key);
 
   const encoder = new TextEncoder();
   let unsubscribe = () => {};
@@ -100,14 +112,14 @@ export function eventsResponse(kind: RunKind, request: Request): Response {
         send({ type: "idle" });
         write(": no run\n\n");
       } else {
-        const events = backlog(kind, run.id);
+        const events = backlog(kind, key, run.id);
         for (const event of events) {
           // Lines only for a going concern; the rest is a fetch away.
           if (event.type === "log" && run.status !== "running") continue;
           send(event);
         }
         if (run.status === "running") {
-          unsubscribe = subscribe(kind, run.id, send);
+          unsubscribe = subscribe(kind, key, run.id, send);
         }
       }
 

@@ -8,11 +8,17 @@ import { ChevronRightIcon, ExternalLinkIcon, PlusIcon, XIcon } from "lucide-reac
 import { useNameStage, useShell } from "@/components/console/state";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Chip, Dot } from "@/components/ui/chip";
+import { Chip, Dot, Spinner } from "@/components/ui/chip";
 import { Picker } from "@/components/ui/picker";
-import { backendBlurb, backendPath, backendState } from "@/lib/backends";
+import {
+  backendBlurb,
+  backendPath,
+  backendState,
+  deployingRun,
+  deployProgress,
+} from "@/lib/backends";
 import { apiHost } from "@/lib/format";
-import type { EnvironmentView } from "@/lib/types";
+import type { EnvironmentView, RunView } from "@/lib/types";
 
 /**
  * The backends: a row per environment, and the one button that starts a new one.
@@ -42,7 +48,7 @@ import type { EnvironmentView } from "@/lib/types";
  * without a press on the Deployments tab.
  */
 export function BackendsView() {
-  const { stages, state, loading } = useShell();
+  const { stages, state, loading, runs } = useShell();
   const router = useRouter();
   const [choice, setChoice] = useState("");
 
@@ -56,21 +62,30 @@ export function BackendsView() {
     return found;
   }, [state]);
 
+  // A stage named here that has never been deployed has no environment yet, and
+  // a deploy of it is the one thing this list can say about it — so a stage
+  // that is deploying is a row whether or not the state has heard of it.
+  const allRows = useMemo(() => {
+    const extra = runs.map((run) => run.stage).filter((stage) => !rows.includes(stage));
+    return [...rows, ...new Set(extra)];
+  }, [rows, runs]);
+
   // Each option carries the same verdict its row does, so the dropdown can say
   // which environments have an API without the row having to be read.
   const options = useMemo(
     () => [
       { value: "", label: "Open an environment…" },
-      ...rows.map((stage) => {
+      ...allRows.map((stage) => {
         const environment = environmentOf.get(stage) ?? null;
+        const deploying = deployingRun(runs, stage) !== null;
         return {
           value: stage,
           label: stage,
-          hint: loading ? "reading…" : backendState(environment, account).label,
+          hint: loading ? "reading…" : backendState(environment, account, deploying).label,
         };
       }),
     ],
-    [rows, environmentOf, account, loading],
+    [allRows, environmentOf, account, loading, runs],
   );
 
   return (
@@ -102,13 +117,14 @@ export function BackendsView() {
       />
 
       <div className="flex flex-col gap-4">
-        {rows.map((stage) => (
+        {allRows.map((stage) => (
           <BackendRow
             key={stage}
             stage={stage}
             environment={environmentOf.get(stage) ?? null}
             account={account}
             loading={loading}
+            deploying={deployingRun(runs, stage)}
           />
         ))}
       </div>
@@ -125,6 +141,7 @@ function BackendRow({
   environment,
   account,
   loading,
+  deploying,
 }: {
   stage: string;
   environment: EnvironmentView | null;
@@ -135,8 +152,10 @@ function BackendRow({
    * one — and so is every other verdict this row could carry, so it carries none.
    */
   loading: boolean;
+  /** The deploy running against this stage, when there is one. */
+  deploying: RunView | null;
 }) {
-  const status = backendState(environment, account);
+  const status = backendState(environment, account, deploying !== null);
   const stacks = environment?.stacks ?? [];
   const complete = stacks.filter((stack) => stack.healthy).length;
 
@@ -156,7 +175,7 @@ function BackendRow({
             </h2>
             {loading ? null : (
               <Chip tone={status.tone}>
-                <Dot tone={status.tone} />
+                {status.running ? <Spinner tone={status.tone} /> : <Dot tone={status.tone} />}
                 {status.label}
               </Chip>
             )}
@@ -181,13 +200,29 @@ function BackendRow({
       </div>
 
       <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-        <span>
-          {loading
-            ? "Reading the stacks…"
-            : stacks.length === 0
-              ? "No stacks yet."
-              : `${complete} of ${stacks.length} stacks complete.`}
-        </span>
+        {/* A deploy in flight is the one thing this line should say: the stack
+            count below it is the half-built set the run is in the middle of
+            producing, which reads as a warning about work that is going fine. */}
+        {deploying ? (
+          <>
+            <span className="text-foreground/80">{deployProgress(deploying)}</span>
+            <Link
+              href={`${backendPath(stage)}?tab=deployments`}
+              className="text-foreground/80 hover:text-foreground inline-flex items-center gap-1 font-medium underline underline-offset-4"
+            >
+              Watch it
+              <ChevronRightIcon className="size-3" />
+            </Link>
+          </>
+        ) : (
+          <span>
+            {loading
+              ? "Reading the stacks…"
+              : stacks.length === 0
+                ? "No stacks yet."
+                : `${complete} of ${stacks.length} stacks complete.`}
+          </span>
+        )}
         {environment?.account ? (
           <span className="ml-auto font-mono">
             {environment.account} · {environment.region}

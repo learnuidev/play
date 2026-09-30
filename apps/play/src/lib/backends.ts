@@ -1,5 +1,5 @@
 import type { Tone } from "@/components/ui/chip";
-import type { EnvironmentView } from "@/lib/types";
+import type { EnvironmentView, RunView } from "@/lib/types";
 
 /**
  * A backend, named once — and the words the console uses about one.
@@ -28,6 +28,8 @@ export function backendPath(stage: string): string {
 export interface BackendState {
   tone: Tone;
   label: string;
+  /** The console is running a deploy against this environment right now. */
+  running: boolean;
 }
 
 /**
@@ -38,6 +40,13 @@ export interface BackendState {
  * "deployed" above a page that said "partly deployed" would be two answers to
  * one question.
  *
+ * **A deploy in flight is the first thing it says**, and it has to be. The stacks
+ * of an environment being deployed are exactly the half-built set a "partly
+ * deployed" chip describes, so without this the row that says the most alarming
+ * possible thing is the one that is working correctly — and it says it about a
+ * deploy that has been running for forty seconds. The stack statuses catch up a
+ * few seconds after the run ends, which is when this stops applying.
+ *
  * `new` is the only state that is about an environment the repository has never
  * heard of, and it is not a verdict: a stage with no config file is the normal
  * state of a stage somebody is about to create.
@@ -45,15 +54,45 @@ export interface BackendState {
 export function backendState(
   environment: EnvironmentView | null,
   account: string | null,
+  deploying = false,
 ): BackendState {
-  if (!environment) return { tone: "muted", label: "new" };
-  if (environment.deployed) return { tone: "ok", label: "deployed" };
-  if (environment.partial) return { tone: "warn", label: "partly deployed" };
-  if (!environment.hasConfig) return { tone: "muted", label: "needs a config file" };
-  if (environment.account && account && environment.account !== account) {
-    return { tone: "bad", label: "different account" };
+  if (deploying) return { tone: "run", label: "deploying", running: true };
+  if (!environment) return { tone: "muted", label: "new", running: false };
+  if (environment.deployed) return { tone: "ok", label: "deployed", running: false };
+  if (environment.partial) return { tone: "warn", label: "partly deployed", running: false };
+  if (!environment.hasConfig) {
+    return { tone: "muted", label: "needs a config file", running: false };
   }
-  return { tone: "muted", label: "not deployed" };
+  if (environment.account && account && environment.account !== account) {
+    return { tone: "bad", label: "different account", running: false };
+  }
+  return { tone: "muted", label: "not deployed", running: false };
+}
+
+/**
+ * The deploy going for one stage, out of everything the console knows is running.
+ *
+ * Null for a stage nobody is deploying, which is nearly always. A stage can only
+ * have one run at a time — `server/run.ts` refuses the second — so the first
+ * match is the only match.
+ */
+export function deployingRun(runs: RunView[], stage: string): RunView | null {
+  return runs.find((run) => run.stage === stage && run.status === "running") ?? null;
+}
+
+/**
+ * What a deploy is doing, in one line, for a row that is not the deploy page.
+ *
+ * The step it is on and how far it has got, which is the whole of what somebody
+ * glancing at the list wants: *which* step is the difference between "it is
+ * going" and "it has been stuck on the same thing for ten minutes".
+ */
+export function deployProgress(run: RunView): string {
+  const running = run.steps.findIndex((step) => step.status === "running");
+  const pending = run.steps.findIndex((step) => step.status === "pending");
+  const at = running >= 0 ? running : pending >= 0 ? pending : run.steps.length - 1;
+  const step = run.steps[at];
+  return `Deploying — step ${at + 1} of ${run.steps.length}${step ? ` · ${step.title}` : ""}`;
 }
 
 /**

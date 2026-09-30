@@ -11,7 +11,7 @@ import type {
   VercelDeployResult,
   VercelDeployTarget,
 } from "@/lib/types";
-import { buildPlan, type PlanStep, type StepContext } from "./plan";
+import { buildPlan, type PlanStep, type StepContext, type LockName } from "./plan";
 import type { PipedChild } from "./exec";
 import { repoRoot } from "./repo";
 
@@ -29,19 +29,25 @@ import { repoRoot } from "./repo";
  * second copy of this store for Vercel would be a second place where a reload
  * loses a running deploy.
  *
- * ## Why this is a singleton, per kind
+ * ## Why the lock is per subject, and not per kind
  *
- * There is one of each at a time, and that is a decision rather than a
- * limitation. Two `cdk deploy --all` runs against one account do not compose:
- * they contend for the same stacks, CloudFormation serialises them anyway, and
- * whichever loses reports the other's half-finished state as a rollback. A
- * console that let you start the second one would be offering a way to make a
- * mess; one that refuses, and names the run already going, is the honest shape.
+ * Two `cdk deploy --all` runs against **one environment** do not compose: they
+ * contend for the same stacks, CloudFormation serialises them anyway, and
+ * whichever loses reports the other's half-finished state as a rollback. So a
+ * second run for a stage that is already deploying is refused, by name.
  *
- * The two kinds are separate locks because they cannot collide: a backend run
- * writes to AWS and a frontend run writes to Vercel, and a staging backend
- * deploy is exactly the thing somebody wants to watch while a frontend build
- * against `dev` finishes.
+ * That argument is about one *environment*, not about the console. Two runs
+ * against **different** environments deploy different stacks, and each stage
+ * writes its own cloud assembly (`cdk.out/<stage>`) so they cannot read each
+ * other's. So the lock is the subject — the stage of a backend run, the app of a
+ * frontend one — and `staging` and `dev` deploy side by side.
+ *
+ * What that leaves is the handful of things two environments genuinely share.
+ * Those are named locks rather than a global one, because a staging bootstrap
+ * should not hold up a dev bundle: `plan.ts` marks the steps that touch the
+ * checkout (`infra/dist`, the three apps' `.env.local`) or the AWS account (the
+ * toolkit stack, the shared videos bucket's notification) and this file is what
+ * makes them wait for each other.
  *
  * ## Why it lives on `globalThis`
  *
@@ -70,18 +76,35 @@ interface InternalRun {
 }
 
 interface Store {
-  runs: Record<RunKind, { active: InternalRun | null; latest: InternalRun | null }>;
+  /**
+   * Runs by subject: a backend run by its stage, a frontend one by its app.
+   *
+   * An entry is the run going for that subject, or the last one that went —
+   * which is what a page opened after a deploy needs, and why there is no
+   * separate "latest" beside it.
+   */
+  runs: Record<RunKind, Map<string, InternalRun>>;
+  /** The steps holding a shared resource right now, so a waiter can say so. */
+  held: Set<LockName>;
+  /** The tail of each lock's queue: what the next waiter joins. */
+  locks: Map<LockName, Promise<void>>;
   /** On the store rather than in a module, so a hot reload cannot double up. */
   cleanupInstalled: boolean;
 }
 
 declare global {
   // eslint-disable-next-line no-var
-  var __playConsoleStore: Store | undefined;
+  var __playConsoleRuns: Store | undefined;
 }
 
-const store: Store = (globalThis.__playConsoleStore ??= {
-  runs: { backend: { active: null, latest: null }, frontend: { active: null, latest: null } },
+// A new name rather than the old one: `globalThis` outlives a hot reload, so a
+// store that changed shape would be found here in its previous shape and read as
+// a map with no `get`. A fresh key is a fresh store, and the run that was going
+// under the old one is a run from the code before this edit.
+const store: Store = (globalThis.__playConsoleRuns ??= {
+  runs: { backend: new Map(), frontend: new Map() },
+  held: new Set(),
+  locks: new Map(),
   cleanupInstalled: false,
 });
 
@@ -104,12 +127,14 @@ function installRunCleanup(): void {
 
   const kill = () => {
     for (const kind of ["backend", "frontend"] as const) {
-      const child = store.runs[kind].active?.child;
-      if (!child?.pid) continue;
-      try {
-        process.kill(-child.pid, "SIGKILL");
-      } catch {
-        // Already gone, or never got a group of its own.
+      for (const run of store.runs[kind].values()) {
+        const child = run.child;
+        if (!child?.pid) continue;
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          // Already gone, or never got a group of its own.
+        }
       }
     }
   };
@@ -127,25 +152,49 @@ function installRunCleanup(): void {
  * Reading
  * ------------------------------------------------------------------ */
 
-export function currentRun(kind: RunKind = "backend"): RunView | null {
-  const runs = store.runs[kind];
-  return (runs.active ?? runs.latest)?.view ?? null;
+/**
+ * The run for one subject: the one going, or the last one that went.
+ *
+ * `key` is the stage of a backend run and the app of a frontend one, which is
+ * the same thing `RunSpec.key` is. There is deliberately no lookup without one:
+ * "the run" stopped meaning anything the moment two of them could be going, and
+ * a route that answered with an arbitrary one of them would be a page drawing
+ * another environment's steps.
+ */
+export function currentRun(kind: RunKind, key: string): RunView | null {
+  return store.runs[kind].get(key)?.view ?? null;
 }
 
-export function isRunning(kind: RunKind = "backend"): boolean {
-  return store.runs[kind].active !== null;
+export function isRunning(kind: RunKind, key: string): boolean {
+  return store.runs[kind].get(key)?.view.status === "running";
 }
 
-export function runTranscript(kind: RunKind, runId: string, stepId: string): LogLine[] {
-  const run = findRun(kind, runId);
+/**
+ * Everything deploying right now, whatever it is about.
+ *
+ * What the list of environments draws its "deploying" from: a row is a stage the
+ * console is not looking at, so its own run has to come from somewhere other
+ * than that page's state.
+ */
+export function activeRuns(kind: RunKind = "backend"): RunView[] {
+  return [...store.runs[kind].values()]
+    .filter((run) => run.view.status === "running")
+    .map((run) => run.view);
+}
+
+export function runTranscript(
+  kind: RunKind,
+  key: string,
+  runId: string,
+  stepId: string,
+): LogLine[] {
+  const run = findRun(kind, key, runId);
   return run ? [...(run.transcripts.get(stepId) ?? [])] : [];
 }
 
-function findRun(kind: RunKind, runId: string): InternalRun | null {
-  const runs = store.runs[kind];
-  if (runs.active?.view.id === runId) return runs.active;
-  if (runs.latest?.view.id === runId) return runs.latest;
-  return null;
+function findRun(kind: RunKind, key: string, runId: string): InternalRun | null {
+  const run = store.runs[kind].get(key);
+  return run?.view.id === runId ? run : null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -160,8 +209,8 @@ function findRun(kind: RunKind, runId: string): InternalRun | null {
  * next line onwards. This is the run, its steps, and every buffered line, which
  * is exactly what a live listener would have received.
  */
-export function backlog(kind: RunKind, runId: string): DeployEvent[] {
-  const run = findRun(kind, runId);
+export function backlog(kind: RunKind, key: string, runId: string): DeployEvent[] {
+  const run = findRun(kind, key, runId);
   if (!run) return [];
   const events: DeployEvent[] = [{ type: "run", run: run.view, at: Date.now() }];
   for (const step of run.view.steps) {
@@ -174,10 +223,11 @@ export function backlog(kind: RunKind, runId: string): DeployEvent[] {
 
 export function subscribe(
   kind: RunKind,
+  key: string,
   runId: string,
   listener: (event: DeployEvent) => void,
 ): () => void {
-  const run = findRun(kind, runId);
+  const run = findRun(kind, key, runId);
   if (!run) return () => {};
   run.listeners.add(listener);
   return () => {
@@ -197,6 +247,57 @@ function emit(run: InternalRun, event: DeployEvent): void {
 }
 
 /* ------------------------------------------------------------------ *
+ * The locks two runs share
+ * ------------------------------------------------------------------ */
+
+/**
+ * The named locks, and the one sentence each is worth.
+ *
+ * A step that declares a lock holds it from its check to the end of its work,
+ * and a step that wants a lock another run is holding waits — with a line in its
+ * transcript saying so, because a run that stalls with no output for four
+ * minutes reads like a hang.
+ */
+const LOCKED_BY: Record<LockName, string> = {
+  checkout: "this checkout's shared pieces — `infra/dist`, and the apps' `.env.local` files",
+  account: "the AWS account's shared pieces — the CDK toolkit stack, and the videos bucket's notification",
+};
+
+async function withLock<T>(name: LockName | undefined, work: () => Promise<T>): Promise<T> {
+  if (!name) return work();
+
+  // Queue on the lock's tail rather than on the holder: two waiters arriving
+  // together must not both wake when the first releases.
+  const previous = store.locks.get(name) ?? Promise.resolve();
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  store.locks.set(
+    name,
+    previous.then(() => held),
+  );
+
+  await previous;
+  store.held.add(name);
+  try {
+    return await work();
+  } finally {
+    store.held.delete(name);
+    release();
+  }
+}
+
+/** Whether a waiter would have to wait — for the note it prints while it does. */
+export function lockHeld(name: LockName): boolean {
+  return store.held.has(name);
+}
+
+export function lockReason(name: LockName): string {
+  return LOCKED_BY[name];
+}
+
+/* ------------------------------------------------------------------ *
  * Starting and stopping
  * ------------------------------------------------------------------ */
 
@@ -209,6 +310,12 @@ function emit(run: InternalRun, event: DeployEvent): void {
  */
 export interface RunSpec {
   kind: RunKind;
+  /**
+   * What this run is about, as an identity rather than a sentence: the stage of
+   * a backend run, the app of a frontend one. Two runs with the same key are the
+   * same subject and cannot overlap; two with different keys can, and do.
+   */
+  key: string;
   /** What the run is about, for the refusal a second start gets. */
   subject: string;
   stage: string;
@@ -240,6 +347,7 @@ export interface StartOptions {
 export function startDeploy(options: StartOptions): RunView {
   return startRun({
     kind: "backend",
+    key: options.stage,
     subject: `'${options.stage}'`,
     stage: options.stage,
     profile: options.profile,
@@ -264,11 +372,14 @@ export function startDeploy(options: StartOptions): RunView {
 
 export function startRun(spec: RunSpec): RunView {
   const runs = store.runs[spec.kind];
+  const going = runs.get(spec.key);
 
-  if (runs.active) {
+  if (going?.view.status === "running") {
+    // Refused by subject, not by kind: another *environment* deploying is not a
+    // reason to refuse this one.
     const error = new Error(
       `A ${spec.kind === "backend" ? "deploy" : "frontend deploy"} is already running against ` +
-        `${runs.active.view.vercel ? `'${runs.active.view.vercel.app} → ${runs.active.view.stage}'` : runs.active.view.stage}. ` +
+        `${going.view.vercel ? `'${going.view.vercel.app} → ${going.view.vercel.target}'` : going.view.stage}. ` +
         "Wait for it, or stop it.",
     );
     Object.assign(error, { status: 409 });
@@ -302,17 +413,16 @@ export function startRun(spec: RunSpec): RunView {
   };
 
   installRunCleanup();
-  runs.active = run;
-  runs.latest = run;
+  runs.set(spec.key, run);
 
   void execute(run, spec.steps);
 
   return run.view;
 }
 
-export function cancelRun(kind: RunKind, runId: string): boolean {
-  const run = store.runs[kind].active;
-  if (!run || run.view.id !== runId) return false;
+export function cancelRun(kind: RunKind, key: string, runId: string): boolean {
+  const run = store.runs[kind].get(key);
+  if (!run || run.view.status !== "running" || run.view.id !== runId) return false;
   run.cancelled = true;
 
   const child = run.child;
@@ -457,39 +567,60 @@ async function execute(run: InternalRun, plan: PlanStep[]): Promise<void> {
       stopped: () => run.cancelled,
     };
 
-    try {
-      // The check first, and it is not a formality: it is what turns half of
-      // these steps into a check mark with a reason beside it, instead of a
-      // second run of something that was already done.
-      const checked = planStep.check
-        ? await guarded(run, planStep, () => planStep.check!(context))
-        : null;
+    if (planStep.lock && lockHeld(planStep.lock)) {
+      // A step that has to wait says so, once, before it waits. Silently, a run
+      // held behind another one for the length of a bundle is a run that looks
+      // hung — and the reason it is waiting is not guessable from the step's own
+      // title.
+      const reason = lockReason(planStep.lock);
+      step.note = `waiting — another run is using ${reason}`;
+      emitStep(run, step);
+      appendLine(run, step, "note", `waiting — another run is using ${reason}`);
+    }
 
-      if (checked?.satisfied) {
-        step.status = "skipped";
-        step.note = checked.note;
-      } else if (checked && planStep.manual) {
-        // Reported, not applied. A step that is somebody's decision stops here
-        // with what the check found and the command that would change it in the
-        // transcript — which is the difference between a console that informs
-        // and one that moves a shared resource behind the operator's back.
-        step.status = "manual";
-        step.note = checked.note;
-        appendLine(run, step, "note", `not ours to decide — ${checked.note}`);
-        if (planStep.manualHint) appendLine(run, step, "note", planStep.manualHint(context));
-      } else {
-        if (checked && !checked.satisfied) {
-          step.note = checked.note;
-          appendLine(run, step, "note", `not yet — ${checked.note}`);
+    try {
+      await withLock(planStep.lock, async () => {
+        // Stop is not a variable a lock can be killed through: a run waiting for
+        // another one's bundle has no process to signal, so the wait ends here
+        // rather than being followed by work nobody asked for any more.
+        if (run.cancelled) {
+          step.status = "halted";
+          return;
         }
-        const outcome = await guarded(run, planStep, () => planStep.apply(context));
-        // A step that did work is passed; one whose tool reported there was
-        // nothing to do is skipped, with the reason in its note. That is what
-        // makes a second run of an up-to-date environment read as fourteen
-        // satisfied steps rather than fourteen ticks for work that never happened.
-        step.status = run.cancelled ? "halted" : (outcome.status ?? "passed");
-        if (outcome.note) step.note = outcome.note;
-      }
+
+        // The check first, and it is not a formality: it is what turns half of
+        // these steps into a check mark with a reason beside it, instead of a
+        // second run of something that was already done.
+        const checked = planStep.check
+          ? await guarded(run, planStep, () => planStep.check!(context))
+          : null;
+
+        if (checked?.satisfied) {
+          step.status = "skipped";
+          step.note = checked.note;
+        } else if (checked && planStep.manual) {
+          // Reported, not applied. A step that is somebody's decision stops here
+          // with what the check found and the command that would change it in the
+          // transcript — which is the difference between a console that informs
+          // and one that moves a shared resource behind the operator's back.
+          step.status = "manual";
+          step.note = checked.note;
+          appendLine(run, step, "note", `not ours to decide — ${checked.note}`);
+          if (planStep.manualHint) appendLine(run, step, "note", planStep.manualHint(context));
+        } else {
+          if (checked && !checked.satisfied) {
+            step.note = checked.note;
+            appendLine(run, step, "note", `not yet — ${checked.note}`);
+          }
+          const outcome = await guarded(run, planStep, () => planStep.apply(context));
+          // A step that did work is passed; one whose tool reported there was
+          // nothing to do is skipped, with the reason in its note. That is what
+          // makes a second run of an up-to-date environment read as fourteen
+          // satisfied steps rather than fourteen ticks for work that never happened.
+          step.status = run.cancelled ? "halted" : (outcome.status ?? "passed");
+          if (outcome.note) step.note = outcome.note;
+        }
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       step.note = message;
@@ -572,8 +703,8 @@ function finish(run: InternalRun, failure: string | null): void {
   view.result = run.spec.result?.(run.data) ?? null;
   view.deployment = run.spec.deployment?.(run.data) ?? null;
 
-  const runs = store.runs[run.view.kind];
-  runs.active = null;
-  runs.latest = run;
+  // The subject keeps its entry: it *is* the last run for this stage, which is
+  // what the page draws when somebody comes back to it afterwards.
+  store.runs[run.view.kind].set(run.spec.key, run);
   emit(run, { type: "end", run: view, at: Date.now() });
 }

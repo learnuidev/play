@@ -557,6 +557,10 @@ export function vercelRunSpec(input: VercelDeployTarget): RunSpec {
 
   return {
     kind: "frontend",
+    // One deploy per Vercel *project*, so the app is the subject: two builds
+    // racing on one project would publish over each other, while studio and
+    // marketplace are two projects and may build at once.
+    key: input.app,
     subject: `${input.app} → ${input.target}`,
     stage: input.stage,
     profile,

@@ -102,6 +102,27 @@ export interface CheckOutcome {
   note: string;
 }
 
+/**
+ * The things two environments share, and the reason a step can be asked to wait.
+ *
+ * Two stages deploy side by side — they are different stacks, and each writes its
+ * own cloud assembly — but a handful of steps are not about one stage at all:
+ *
+ * - **`checkout`** is this working tree. `infra/dist` is one bundle for every
+ *   stage, and `apps/<app>/.env.local` is one file per app that can only name one
+ *   environment at a time. Steps under this lock run one at a time, so a bundle
+ *   is never written while another run's is being read, and a file is never
+ *   half-written.
+ * - **`account`** is the AWS account's own singletons: `CDKToolkit`, which is one
+ *   stack per account and region however many environments there are, and the
+ *   shared videos bucket's notification configuration, which is one document
+ *   read, edited and put back.
+ *
+ * They are two names rather than one lock because they are two different
+ * resources: a staging bootstrap should not hold up a dev bundle.
+ */
+export type LockName = "checkout" | "account";
+
 export interface PlanStep {
   id: string;
   title: string;
@@ -123,6 +144,15 @@ export interface PlanStep {
   satisfiedLabel?: string;
   /** Milliseconds before `apply` is killed. */
   timeoutMs?: number;
+  /**
+   * The shared resource this step is about, so two runs never touch it at once.
+   *
+   * The lock is held across the step's check *and* its work: the two are one
+   * judgement about one resource, and a check that read a bucket while another
+   * run was rewriting its notification configuration would be reading a
+   * different question than the one it answered.
+   */
+  lock?: LockName;
   check?: (ctx: StepContext) => Promise<CheckOutcome>;
   apply: (ctx: StepContext) => Promise<StepOutcome>;
 }
@@ -183,6 +213,16 @@ async function exec(
  * which names neither the directory it looked in nor the file it wanted. Every
  * `cdk` invocation goes through here so that the directory is one decision made
  * once rather than three that have to agree.
+ *
+ * ## Why every invocation names its own assembly directory
+ *
+ * `cdk` synthesizes into `cdk.out` by default, and that directory is the whole of
+ * what `deploy` reads: the templates, and the staged assets beside them. Two runs
+ * sharing it would overwrite each other's templates, and the deploy that read the
+ * other stage's assembly would report a diff for stacks it was not asked about —
+ * a failure that names nothing and is not about anything being wrong. Since two
+ * environments can now be deployed at once, each writes `cdk.out/<stage>`, which
+ * `infra/.gitignore` already covers with the parent.
  */
 async function cdk(
   ctx: StepContext,
@@ -193,7 +233,8 @@ async function cdk(
   if (!fs.existsSync(path.join(infra, "cdk.json"))) {
     throw new Error(`No cdk.json in ${infra} — that is the file that names the CDK app.`);
   }
-  return exec(ctx, cdkBin(), args, { ...options, cwd: infra });
+  const output = path.join("cdk.out", ctx.stage);
+  return exec(ctx, cdkBin(), [...args, "--output", output], { ...options, cwd: infra });
 }
 
 /** The last few lines of a failure, for a note that names what went wrong. */
@@ -628,6 +669,10 @@ export function buildPlan(stage: string): PlanStep[] {
       "`cdk deploy` uploads each function's bundle and each template to a bucket that the toolkit stack owns — `CDKToolkit`, one per account and region. It is a one-time install, and it is idempotent: bootstrapping again only updates it.",
     satisfiedLabel: "Bootstrapped",
     timeoutMs: 5 * 60_000,
+    // One toolkit stack per account and region, however many environments there
+    // are: two `cdk bootstrap` runs at once are two updates to one stack, and the
+    // second is refused as already in progress.
+    lock: "account",
     check: async (ctx) => {
       const toolkit = await describeStack("CDKToolkit", {
         profile: ctx.profile,
@@ -691,6 +736,9 @@ export function buildPlan(stage: string): PlanStep[] {
       "esbuild, once, into `infra/dist` — one directory per handler, rebuilt only when something in its metafile changed. Not `NodejsFunction`, which would run esbuild 134 times at synth and put every handler's sourcemap in one zip, over Lambda's 250 MB unzipped limit.",
     satisfiedLabel: "Up to date",
     timeoutMs: 15 * 60_000,
+    // `infra/dist` is one bundle for every stage, and esbuild writing it while a
+    // second bundler is deciding what is stale is two answers to one question.
+    lock: "checkout",
     apply: async (ctx) => {
       const result = await exec(ctx, "node", ["infra/scripts/bundle.mjs"], {
         timeoutMs: 15 * 60_000,
@@ -771,6 +819,10 @@ export function buildPlan(stage: string): PlanStep[] {
       "Only matters when the bucket is **imported**: one bucket can notify one function for `uploads/`, so two stages cannot both process uploads, and handing it over **takes video processing away from whichever stage held it**. An environment that creates its own bucket has no one to hand anything to — this step is a check mark and nothing happens.",
     satisfiedLabel: "One owner",
     timeoutMs: 5 * 60_000,
+    // The script reads the bucket's whole notification configuration, decides
+    // which rules collide, and puts it back. Two of those interleaved would each
+    // decide against a document the other had already replaced.
+    lock: "account",
     check: async (ctx) => {
       if (ownershipOf(readConfig(ctx.stage)).media) {
         return ownedBucketCheck(ctx);
@@ -1139,9 +1191,13 @@ export function buildPlan(stage: string): PlanStep[] {
     id: "point",
     title: "The three apps point at it",
     detail:
-      "`scripts/get-env.mjs` reads the API and auth stack outputs into each app's `.env.local`, and preserves every key it does not manage — the demo's OAuth client id is minted in the studio and exists nowhere else.",
+      "`scripts/get-env.mjs` reads the API and auth stack outputs into each app's `.env.local`, and preserves every key it does not manage — the demo's OAuth client id is minted in the studio and exists nowhere else. **A file names one environment**, so a deploy here points the apps at *this* stage and away from whichever stage they read before — and if two environments are deployed at once, at whichever of them reached this step last.",
     satisfiedLabel: "Pointed at it",
     timeoutMs: 5 * 60_000,
+    // One file per app, and it names one environment: two runs writing them at
+    // once would interleave a key from each. Whoever runs last is what the apps
+    // read afterwards, which is the same answer two sequential deploys give.
+    lock: "checkout",
     check: async (ctx) => {
       const outputs = (await stageOutputs(ctx.stage, {
         profile: ctx.profile,

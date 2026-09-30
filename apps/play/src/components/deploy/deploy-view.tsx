@@ -13,15 +13,16 @@ import {
 
 import { Button, IconButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Chip } from "@/components/ui/chip";
+import { Chip, Spinner } from "@/components/ui/chip";
 import { CopyRow } from "@/components/ui/copy-row";
 import { Prose } from "@/components/ui/prose";
 import { EnvironmentCard } from "@/components/deploy/environment-card";
 import { StepList } from "@/components/deploy/step-list";
 import { Transcript } from "@/components/deploy/transcript";
-import { useDeploy } from "@/components/deploy/use-deploy";
+import { BACKEND_RUN, useDeploy } from "@/components/deploy/use-deploy";
 import { useSettings } from "@/components/settings/use-settings";
 import { useShell } from "@/components/console/state";
+import { backendPath } from "@/lib/backends";
 import { cn } from "@/lib/cn";
 import { duration, relative } from "@/lib/format";
 import type { RunStatus, StepView } from "@/lib/types";
@@ -49,8 +50,10 @@ import type { RunStatus, StepView } from "@/lib/types";
  */
 
 export function DeployView({ stage, embedded = false }: { stage: string; embedded?: boolean }) {
-  const { state } = useShell();
-  const deploy = useDeploy();
+  const { state, runs } = useShell();
+  // Scoped to this environment: with two stages deploying at once, "the run" is
+  // not a thing this page can ask for.
+  const deploy = useDeploy(BACKEND_RUN, { stage });
 
   const environment = state?.environments.find((item) => item.stage === stage) ?? null;
   // Whether there is a config file is a fact about the repository, so it is only
@@ -60,7 +63,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
   const [preview, setPreview] = useState<StepView[] | null>(null);
 
   const run = deploy.run;
-  const isThisStage = run?.stage === stage;
+  const elsewhere = runs.filter((candidate) => candidate.stage !== stage);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,10 +85,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
     };
   }, [stage]);
 
-  const steps = useMemo<StepView[]>(() => {
-    if (isThisStage && run) return run.steps;
-    return preview ?? [];
-  }, [isThisStage, run, preview]);
+  const steps = useMemo<StepView[]>(() => run?.steps ?? preview ?? [], [run, preview]);
 
   const selected = steps.find((step) => step.id === deploy.selected) ?? null;
   const lines = deploy.selected ? (deploy.lines.get(deploy.selected) ?? []) : [];
@@ -125,6 +125,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
         state={state}
         deployable={!running}
         busy={deploy.starting}
+        deploying={running}
         onDeploy={() => void deploy.start({ stage })}
       />
 
@@ -231,14 +232,29 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
           )}
         </div>
 
-        {run && !isThisStage ? (
-          <p className="text-muted-foreground mt-3 border-t border-border/40 pt-3 text-xs">
-            These are the steps for <span className="font-mono">{stage}</span>. The last run was
-            against <span className="font-mono">{run.stage}</span>, so its results are not shown
-            here.
-          </p>
-        ) : null}
       </Card>
+
+      {/* The other half of "one run per environment": another stage can be
+          deploying while you read this, and a page that said nothing about it
+          would leave somebody guessing whether the button is contended. */}
+      {elsewhere.length > 0 ? (
+        <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs">
+          <Spinner tone="run" />
+          <span>
+            <span className="text-foreground/80 font-mono">
+              {elsewhere.map((run) => run.stage).join(", ")}
+            </span>{" "}
+            {elsewhere.length === 1 ? "is" : "are"} deploying in the background — one run per
+            environment, so this page is not affected.
+          </span>
+          <Link
+            href={`${backendPath(elsewhere[0].stage)}?tab=deployments`}
+            className="text-foreground/80 hover:text-foreground font-medium underline underline-offset-4"
+          >
+            Watch {elsewhere[0].stage}
+          </Link>
+        </p>
+      ) : null}
 
       {selected ? (
         <div className="flex flex-col gap-3">

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Loader2Icon } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 
@@ -76,4 +77,27 @@ export function Dot({
       <span className={cn("relative inline-flex size-1.5 rounded-full", FILL[tone])} />
     </span>
   );
+}
+
+/**
+ * The dot's other half: something that is *moving*, rather than a state.
+ *
+ * A `run` tone says a thing is happening, and a still dot says it about a deploy
+ * that has been on the same step for ten minutes just as calmly as about one that
+ * started a second ago. Where the difference matters — the list of environments,
+ * where a row is a glance rather than a page — the chip carries this instead, and
+ * "it is working" and "it is stuck" stop looking identical.
+ */
+export function Spinner({ tone = "run", className }: { tone?: Tone; className?: string }) {
+  // Spelled out rather than interpolated: Tailwind reads the source for class
+  // names, so `text-${tone}` would be a spinner that is never styled at all.
+  const INK: Record<Tone, string> = {
+    muted: "text-muted-foreground",
+    ok: "text-ok",
+    run: "text-run",
+    warn: "text-warn",
+    bad: "text-destructive",
+    accent: "text-foreground",
+  };
+  return <Loader2Icon aria-hidden className={cn("size-3 shrink-0 animate-spin", INK[tone], className)} />;
 }

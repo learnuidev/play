@@ -75,7 +75,9 @@ export function VercelDeployCard({
   onFinished?: () => void;
 }) {
   const deployed = vercelAppOf(app);
-  const deploy = useDeploy(FRONTEND_RUN);
+  // Scoped to this app: a frontend run belongs to one Vercel project, so studio
+  // and marketplace can be building at the same time.
+  const deploy = useDeploy(FRONTEND_RUN, { app });
 
   const [target, setTarget] = useState<VercelTarget>(defaultTarget(stage));
   const [domain, setDomain] = useState(() => suggestDomain(app, stage));
