@@ -12,19 +12,22 @@ import type { EnvironmentView } from "@/lib/types";
  * Deleting an environment, and why it is the one control that asks for typing.
  *
  * Everything else in this console is reversible by pressing another button. This
- * is not: it destroys the four CloudFormation stacks and removes
- * `infra/config/play-<stage>.json`, and what it can undo is nothing. So it is
- * built the way `infra/scripts/teardown-legacy-stack.sh` is built — the
+ * is not: it destroys the four CloudFormation stacks, deletes everything they
+ * stood on — the tables, both buckets and the video in them, the distribution,
+ * the user pool with every account in it, every log group and this stage's
+ * signing key — and removes `infra/config/play-<stage>.json`, which is what takes
+ * the environment out of this console. What it can undo is nothing. So it is
+ * built the way `infra/scripts/teardown-legacy-stack.sh` is built: the
  * consequences are stated *before* the control, and the control asks for the
  * stage's name rather than a click. A button one slip away from the Deploy button
  * above it would be a bad trade for the two seconds typing costs.
  *
- * The card is deliberately not a warning banner. What it says first is what
- * **stays**: a destroy here deletes no data, because every stateful resource in
- * this app is `RemovalPolicy.RETAIN`. That fact is the difference between a
- * delete somebody can use to clean up after an experiment and one nobody dares
- * press — and the run's own last step reads back what was actually left, which is
- * the version worth trusting.
+ * Two things make a delete this broad safe to have on a page at all, and both are
+ * said here because they are what somebody deciding whether to press it needs to
+ * know: the run **refuses to start** if another stage's config names any of these
+ * resources, and its own last step reads back whatever it could not take with it
+ * and whatever is still pointed at where the environment was. The card describes
+ * neither outcome in advance — the run does, from what is actually there.
  */
 export function DestroyCard({
   stage,
@@ -78,7 +81,7 @@ export function DestroyCard({
     <Card className="border-destructive/25">
       <CardHeading
         title="Delete this environment"
-        hint={`Destroys the four CloudFormation stacks — PlayDataStack-${stage}, PlayMediaStack-${stage}, PlayAuthStack-${stage} and PlayApiStack-${stage} — and removes infra/config/play-${stage}.json, which is what takes ${stage} out of this console.`}
+        hint={`Destroys the four CloudFormation stacks — PlayDataStack-${stage}, PlayMediaStack-${stage}, PlayAuthStack-${stage} and PlayApiStack-${stage} — deletes the tables, both buckets, the CloudFront distribution, the user pool, the log groups and this stage's secrets, and removes infra/config/play-${stage}.json, which is what takes ${stage} out of this console.`}
         action={
           open ? (
             <IconButton onClick={close} title="Cancel" aria-label="Cancel">
@@ -92,25 +95,27 @@ export function DestroyCard({
         <Prose
           className="text-muted-foreground max-w-3xl text-xs"
           text={
-            `**No data is deleted.** Every table, both buckets, the CloudFront distribution, the user pool ` +
-            `and every log group are \`RemovalPolicy.RETAIN\`: the destroy leaves them in AWS and ` +
-            `CloudFormation stops managing them. ` +
+            `**All of it goes, and none of it comes back.** Every stateful resource here is ` +
+            `\`RemovalPolicy.RETAIN\`, so the destroy is only half of the work: the tables, both ` +
+            `buckets and the video in them, the CloudFront distribution, the user pool with every ` +
+            `account in it, every log group and this stage's signing key are deleted by the run's own ` +
+            `steps, one by one. A redeploy of \`${stage}\` afterwards starts empty — the courses are ` +
+            `gone, and everybody who had an account here makes another one. ` +
             (reading
-              ? `How much that is depends on whether this environment creates or imports what it stands ` +
-                `on — either way, the run's last step reads back what is actually there, and what a ` +
-                `redeploy of \`${stage}\` will hit because of it.`
+              ? `Which of those exist is read as the run goes: the steps that find nothing are check ` +
+                `marks, and the last one reports anything they could not take with them.`
               : environment === null
-                ? `There is no config file for this environment, so there is nothing here to destroy — ` +
+                ? `There is no config file for this environment, so there is nothing here to delete — ` +
                   `but a redeploy of \`${stage}\` would run against whatever AWS still holds under that name.`
                 : environment.ownsEverything
-                  ? `This environment **creates** everything it stands on, so what it leaves behind is its ` +
-                    `own: 27 tables named \`play-${stage}-*\`, its buckets, its distribution and its pool. ` +
-                    `The run's last step reads back what is actually there, and what a redeploy of ` +
-                    `\`${stage}\` will hit because of it.`
-                  : `This environment **imports** the tables, media and pool it stands on, so they were ` +
-                    `never its to delete: nothing shared with another stage is touched, and neither is ` +
-                    `anything the environment that owns them is doing. The run's last step reads back what ` +
-                    `is actually there.`)
+                  ? `This environment **creates** everything it stands on — 27 tables named ` +
+                    `\`play-${stage}-*\`, its buckets, its distribution and its pool — so all of that is ` +
+                    `its own to delete, and the run's last step reports anything left over.`
+                  : `This environment **imports** the tables, media and pool it stands on: the legacy ` +
+                    `stack made them and this config is the only thing that names them. A delete takes ` +
+                    `them too, because they are this environment's data however they were created — ` +
+                    `unless a **second** stage's config names one of them, in which case the run refuses ` +
+                    `before anything is destroyed.`)
           }
         />
 
@@ -154,7 +159,7 @@ export function DestroyCard({
                 onClick={() => void destroy()}
                 icon={<Trash2Icon className="size-3.5" />}
               >
-                Destroy the stacks and remove the config
+                Destroy the stacks and delete the data
               </Button>
               <Button variant="ghost" size="sm" onClick={close}>
                 Cancel
@@ -179,7 +184,7 @@ export function DestroyCard({
                 ? "Reading the environment…"
                 : environment === null
                   ? "There is no config file for this environment, so there is nothing here to delete."
-                  : "The stacks go. The data stays."}
+                  : "The stacks go, and the data with them."}
             </span>
           </div>
         )}

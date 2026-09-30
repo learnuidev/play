@@ -334,7 +334,7 @@ export interface RunSpec {
   vercel?: VercelDeployTarget | null;
   /** A backend run's four stacks and the outputs an app needs. */
   result?: (data: Record<string, unknown>) => RunResult | null;
-  /** A destroy run's account of what it left behind. */
+  /** A destroy run's account of what it could not remove, and what is still pointed here. */
   report?: (data: Record<string, unknown>) => string[] | null;
   /** A frontend run's own deployment. */
   deployment?: (data: Record<string, unknown>) => VercelDeployResult | null;
@@ -401,9 +401,10 @@ export function startDestroy(options: StartOptions): RunView {
     profile: options.profile,
     region: options.region,
     steps: buildDestroyPlan(options.stage),
-    // What a delete produces is not a URL but an account of what it left in AWS,
-    // which the page draws where a deploy draws its outputs.
-    report: (data) => ((data.retained as string[] | undefined) ?? []).slice() || null,
+    // What a delete produces is not a URL but an account of what it could not
+    // take with it and what is still pointed at where the environment was, which
+    // the page draws where a deploy draws its outputs.
+    report: (data) => ((data.left as string[] | undefined) ?? []).slice() || null,
     account: (data) => (data.identity as { account?: string } | undefined)?.account ?? null,
   });
 }

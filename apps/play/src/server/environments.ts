@@ -76,16 +76,34 @@ export interface StageConfig {
   existing?: {
     tables?: Record<string, string>;
     videosBucket?: string;
+    /**
+     * The other half of this environment's media, and only ever named by a
+     * config that imports it: a stage that created its own got a generated name
+     * instead, which no file holds — `PlayMediaStack-<stage>`'s
+     * `VideosBucketName` output is where that one is read from, and the bucket
+     * prefix is what makes it readable once the stack is gone.
+     */
+    cloudFrontLogsBucket?: string;
     userPoolId?: string;
     userPoolClientId?: string;
     userPoolDomain?: string;
+    /**
+     * The distribution, in the two pieces the console needs to delete one: the
+     * id CloudFront calls it by, and the domain it answers on. Both are mirrors
+     * of `infra/src/config.ts`'s `ExistingResources`, which is where the
+     * imported mode reads them.
+     */
+    cloudFrontDistributionId?: string;
     cloudFrontDomain?: string;
+    cloudFrontPublicKeyId?: string;
     googleSignInEnabled?: boolean;
   };
   mail?: { fromAddress?: string; appBaseUrl?: string; marketplaceBaseUrl?: string };
   auth?: { googleClientId?: string; callbackUrls?: string[]; logoutUrls?: string[] };
   cloudFrontPrivateKeyParam?: string;
   cloudFrontPublicKeyParam?: string;
+  /** Where the media stack publishes the id of the key above. Mirrors `infra/src/config.ts`. */
+  cloudFrontPublicKeyIdParam?: string;
   /**
    * What to call the two buckets a stage that **creates** its media gets.
    *
@@ -128,6 +146,17 @@ export function defaultCloudFrontPrivateKeyParam(stage: string): string {
 
 export function defaultCloudFrontPublicKeyParam(stage: string): string {
   return `/play/${stage}/cloudfront/public-key`;
+}
+
+/**
+ * Where the id of the key that public half belongs to is published.
+ *
+ * Mirrors `infra/src/config.ts`'s third default, and the console needs it for
+ * one reason: a delete has to take the parameter with it, and a name nobody
+ * wrote down is a name nobody can delete.
+ */
+export function defaultCloudFrontPublicKeyIdParam(stage: string): string {
+  return `/play/${stage}/cloudfront/public-key-id`;
 }
 
 export function readConfig(stage: string): StageConfig | null {

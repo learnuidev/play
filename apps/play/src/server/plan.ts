@@ -14,6 +14,8 @@ import {
 import {
   configFile,
   configProblems,
+  defaultCloudFrontPublicKeyIdParam,
+  listStages,
   newStageConfig,
   ownershipOf,
   ownsEverything,
@@ -25,7 +27,7 @@ import {
 } from "./environments";
 import { cdkBin, repoPath } from "./repo";
 import { googleClientSecretName, googleSecretStatus } from "./settings";
-import { ensureSigningKey, signingKeyState } from "./signing-key";
+import { ensureSigningKey, signingKeyParams, signingKeyState } from "./signing-key";
 import { display, lastMeaningfulLines, run, type PipedChild } from "./exec";
 
 /**
@@ -1422,104 +1424,114 @@ export function buildPlan(stage: string): PlanStep[] {
  * ------------------------------------------------------------------ */
 
 /**
- * Deleting an environment: what goes, what stays, and what the staying costs.
+ * Deleting an environment: the stacks, then everything they stood on.
  *
  * The unit is the same one deployment uses — a stage — and what this removes is
- * the four CloudFormation stacks **and** `infra/config/play-<stage>.json`, which
- * is the file that makes the environment exist in this repository at all. What it
- * does **not** remove is any of the data. Every stateful resource in this app is
- * `RemovalPolicy.RETAIN` — the 27 tables, both buckets, the CloudFront
- * distribution, the user pool and every log group — so a destroy takes the API
- * away and leaves the rest in AWS, unmanaged, which is the state
- * `infra/README.md` describes under *Destroying a stage*.
+ * the four CloudFormation stacks **and the data behind them**: the tables, both
+ * buckets and the video in them, the CloudFront distribution and the key that
+ * signs for it, the user pool with every account in it, every log group, and this
+ * stage's secrets. `infra/config/play-<stage>.json` goes last, because it is the
+ * only written record of what the environment stood on until the moment it does
+ * not.
  *
- * That is why one `cdk destroy` is written down as six steps. The command is the
- * easy part; the rest is the three ways this can hurt somebody who is not looking:
+ * ## Why the data goes with the stacks
  *
- * - **A shared user pool's pre sign-up trigger.** A stage that imports its pool
- *   is one of several pointing their own `link-federated-user` at one pool, and
- *   the pool can call exactly one of them. If it calls *this* stage's function,
- *   destroying the stacks deletes a function Cognito is still invoking, and the
- *   symptom is not an error in a log — it is people unable to sign up. That step
- *   refuses, exactly as `teardown-legacy-stack.sh` refuses for the same reason.
- * - **What the next deploy of the same name will hit.** A retained table, a
- *   retained bucket a config *names*, and a retained log group are all things
- *   CloudFormation refuses to create again, and each fails as "already exists" —
- *   a sentence that names the resource and nothing anybody can act on. The step
- *   after the destroy names them instead.
- * - **What is still pointed here.** The apps' `.env.local` files, which the
- *   deploy plan's twelfth step writes; a frontend reading a deleted API URL is a
- *   product that does not work, and nothing in AWS says so.
+ * Every stateful resource in this app is `RemovalPolicy.RETAIN`, so `cdk destroy`
+ * alone stops at the stacks: the tables, both buckets, the distribution, the pool
+ * and every log group stay in AWS with nobody managing them. That default is
+ * right for a *deploy* — a table replaced by CloudFormation is an empty table,
+ * and `docs/migration.md` phase E is that argument — but it made "delete this
+ * environment" an operation nobody could finish:
  *
- * Two of those are reported rather than fixed, and that is the same distinction
- * the deploy plan makes for the pre sign-up trigger: which environment the apps
- * point at, and whether a retained table should be deleted, are decisions rather
- * than steps. The console says what is true and leaves the decision where it
- * belongs.
+ * - **A redeploy of the same name stops at early validation.** CloudFormation
+ *   will not create a `play-<stage>-*` table, a named bucket or a log group that
+ *   already exists, and it fails with a sentence that names the resource and
+ *   nothing anybody can act on. The ways out were to deploy under a second name
+ *   or to delete twenty-eight tables by hand in the console, one at a time.
+ * - **They cost money for nothing.** A user pool, a distribution and a bucket
+ *   full of video are most of what an environment costs, and an environment
+ *   nobody can deploy to again is an environment that is paying for itself.
+ *
+ * So a delete here is a delete. What is removed is what the environment's config
+ * names, what CloudFormation named after it (`play-<stage>-*`,
+ * `playmediastack-<stage>-*`), and what only the stacks knew how to name — a
+ * generated bucket, an imported distribution's id — which is why the destroy step
+ * reads those out of the stack outputs *before* the stacks go.
+ *
+ * ## The two things standing in front of it
+ *
+ * - **A second stage's config.** A table, a bucket, a distribution or a pool that
+ *   another stage's config also names belongs to both of them, and this delete
+ *   would take it away from the one still using it. For a pool that is sign-up
+ *   silently stopping for that stage — the failure the old trigger check existed
+ *   to prevent, which is now the same question as every other shared resource and
+ *   is answered once, up front, by `shared`. It refuses rather than reporting,
+ *   because the delete cannot be *completed* while it is true.
+ * - **The typed stage name**, which is asked for on the page before this run
+ *   exists at all. Nothing in this plan asks again.
+ *
+ * ## The order
+ *
+ * The stacks first, and only then the data. Two reasons, and the second is the
+ * one that decides it: a table deleted under a live Lambda is a hundred failed
+ * requests in a log nobody will read, and — more to the point — the last thing a
+ * delete should do is take the API away and leave an environment that half works.
+ * After the stacks are gone the resources are unreachable by everything except
+ * this console, which is exactly when removing them is safe.
+ *
+ * Within the data: the distribution before the buckets it writes its access logs
+ * into and reads its video from, the tables and the media before the pool, and
+ * the log groups after everything — they are the only record of what the
+ * environment did, and losing them should be the last thing that happens rather
+ * than the first.
  */
 export function buildDestroyPlan(stage: string): PlanStep[] {
   const stageConfigPath = path.relative(repoPath(), configFile(stage));
 
   /**
-   * The one thing a destroy can break that is not this environment.
+   * The one thing a delete can break that is not this environment.
    *
-   * An imported pool is shared — one pool, one pre sign-up trigger, every stage
-   * deploying its own function — and this is the check `teardown-legacy-stack.sh`
-   * makes before it deletes a Serverless stack for the same reason. The step
-   * cannot fix it: repointing the trigger takes federated sign-up away from
-   * whoever holds it, which is a decision about which environment owns sign-up,
-   * exactly as it is on the way in.
+   * Two stages sharing a resource is not hypothetical in this repository: it is
+   * what an *imported* pool is, and `teardown-legacy-stack.sh` refuses to delete
+   * a Serverless stack for the same reason — the pool can call exactly one
+   * stage's `link-federated-user` function, and deleting the environment that
+   * owns it takes sign-up away from the pool everybody else signs in through.
+   * The old check watched only that trigger, because the pool outlived the
+   * stacks and a delete could not touch it. Now that a delete takes the pool with
+   * it, the question is the one it always was underneath: **is another stage's
+   * config still naming this?**
+   *
+   * Read from the configs rather than from AWS, and deliberately: what makes a
+   * resource shared is that two stages point at it, and `infra/config/*.json` is
+   * where pointing lives. A resource this stage's config names and no other's
+   * does is this stage's to delete, whichever way it was created.
    */
-  const trigger: PlanStep = {
-    id: "trigger",
-    title: "No shared pool is calling into this environment",
+  const shared: PlanStep = {
+    id: "shared",
+    title: "Nothing else stands on what this environment stands on",
     detail:
-      "A stage that **imports** its user pool is one of several pointing their own `link-federated-user` function at one pool, and the pool can call one of them. If it calls this stage's, deleting the stacks deletes a function Cognito is still invoking: sign-up stops working, and nothing in the transcript of the destroy says so. An environment that **creates** its own pool has no such problem — its pool is its own, and it is retained. This step is not optional, and that is the point of it: a failure here *stops* the delete.",
-    satisfiedLabel: "Nothing is calling here",
-    timeoutMs: 3 * 60_000,
+      "A table, a bucket, a distribution or a user pool that another stage's config also names belongs to both of them, and a delete here would take it away from the one still using it — for a pool that is sign-up quietly stopping for that stage, for a table it is another environment's product data. This step reads every other `infra/config/play-*.json` and refuses rather than reporting, because the delete cannot be completed correctly while it is true. It runs before anything has been destroyed, so a refusal costs nothing but the reading.",
+    satisfiedLabel: "Nothing shared",
+    timeoutMs: 60_000,
     check: async (ctx) => {
-      const loaded = readConfig(ctx.stage);
-      if (ownershipOf(loaded).auth) {
+      const conflicts = sharingConflicts(ctx.stage);
+      if (conflicts.length === 0) {
         return {
           satisfied: true,
-          note: `this environment's own pool — nothing else calls play-${ctx.stage}-link-federated-user`,
+          note: `no other stage's config names a table, bucket, pool or distribution of '${ctx.stage}'`,
         };
       }
-
-      const poolId = loaded?.existing?.userPoolId;
-      if (!poolId) return { satisfied: true, note: "the config names no user pool" };
-
-      const expected = `arn:aws:lambda:${ctx.region}:${
-        (ctx.data.identity as { account?: string } | undefined)?.account ?? loaded?.account
-      }:function:play-${ctx.stage}-link-federated-user`;
-
-      const pool = await describeUserPool(poolId, ctx);
-      if (!pool) {
-        return { satisfied: false, note: `pool ${poolId} could not be read, so its trigger is unknown` };
-      }
-
-      const current = pool.LambdaConfig?.PreSignUp;
-      if (current === expected) {
-        return {
-          satisfied: false,
-          note: `the shared pool ${poolId} calls play-${ctx.stage}-link-federated-user, which this destroy deletes`,
-        };
-      }
-      return {
-        satisfied: true,
-        note: `the shared pool calls ${current ? (current.split(":function:")[1] ?? current) : "nothing"} — not this environment's function`,
-      };
+      return { satisfied: false, note: describeConflicts(conflicts) };
     },
     apply: async (ctx) => {
+      const conflicts = sharingConflicts(ctx.stage);
+      if (conflicts.length === 0) return { note: "nothing shared" };
       throw new Error(
-        `The user pool ${readConfig(ctx.stage)?.existing?.userPoolId} is shared, and its pre sign-up ` +
-          `trigger calls play-${ctx.stage}-link-federated-user — the function this destroy deletes. ` +
-          "Cognito would go on invoking a function that no longer exists, and people would be unable " +
-          "to sign up.\n\n" +
-          "Deploy the environment that should own sign-up for this pool, then move the trigger to it:\n\n" +
-          "  node infra/scripts/adopt-cognito.mjs --stage=<that-stage> " +
-          `--profile=${ctx.profile} --region=${ctx.region}\n\n` +
-          "Then delete this environment again.",
+        `Refusing to delete '${ctx.stage}': ${describeConflicts(conflicts)}. ` +
+          "Deleting this environment would delete those, and the stage that still uses them would stop " +
+          "working with nothing in its own console to say why.\n\n" +
+          "Point that stage at resources of its own first — its config is infra/config/play-<stage>.json — " +
+          "or delete it first and this one afterwards.",
       );
     },
   };
@@ -1536,15 +1548,17 @@ export function buildDestroyPlan(stage: string): PlanStep[] {
    * There is **no check that makes this unnecessary**, and the check that is here
    * is the opposite of one: it asks whether any stack exists, so that deleting an
    * environment somebody has already emptied is a check mark rather than a CDK
-   * run against nothing. What it also does is the one read this plan cannot do
-   * afterwards — `ApiUrl`, before the stack that publishes it goes — because the
-   * report at the end is about what is still pointed at this environment.
+   * run against nothing. It is also where the reads this plan cannot make
+   * afterwards happen — `ApiUrl`, and the `VideosBucketName`, `CloudFrontDomain`
+   * and pool id that only the stacks know — because the steps after it delete
+   * what those name and the last one reports what is still pointed at this
+   * environment.
    */
   const destroy: PlanStep = {
     id: "destroy",
     title: "The four stacks are destroyed",
     detail:
-      "`cdk destroy --all --context stage=<stage>`: the API, its 158 functions, the gateway, the roles and the nested stacks that hold the routes. **The data is not part of this** — every stateful resource here is `RemovalPolicy.RETAIN`, so the tables, the buckets, the distribution and the pool are left in AWS and CloudFormation stops managing them. What stops working is everything that talks to this environment's API, and the next step says what that is.",
+      "`cdk destroy --all --context stage=<stage>`: the API, its 158 functions, the gateway, the roles and the nested stacks that hold the routes. **The data is not part of this**: the 27 tables, both buckets, the user pool and every log group are `RemovalPolicy.RETAIN`, so CloudFormation stops managing them and leaves them where they are — the five steps after this one are what delete them. The distribution is the one resource that splits: a stage that **created** its own has it in this stack, so it goes here (CloudFormation disables it and waits, which is most of this step's time), and a stage that **imported** one has no stack that owns it, so `media` is what deletes that one. What stops working, either way, is everything that talks to this environment's API, and the last step says what that is.",
     satisfiedLabel: "Nothing to destroy",
     timeoutMs: 60 * 60_000,
     check: async (ctx) => {
@@ -1567,6 +1581,18 @@ export function buildDestroyPlan(stage: string): PlanStep[] {
       );
       ctx.data.apiUrlBefore = merged.ApiUrl ?? null;
       ctx.data.stacksBefore = details.map((detail) => detail.name);
+
+      // The three names only the stacks know. A bucket CloudFormation named has
+      // a random suffix no file holds, the distribution's *domain* is how its id
+      // is found once the stack that published it is gone, and a stage that
+      // creates its own pool names it nowhere else. Everything the steps after
+      // this one delete is discovered from here plus the config, which is why
+      // this is read in the check — the last moment before the stacks go.
+      ctx.data.resourcesBefore = {
+        videosBucket: merged.VideosBucketName ?? null,
+        cloudFrontDomain: merged.CloudFrontDomain ?? null,
+        userPoolId: merged.CognitoUserPoolId ?? null,
+      };
 
       return {
         satisfied: false,
@@ -1651,94 +1677,329 @@ export function buildDestroyPlan(stage: string): PlanStep[] {
   };
 
   /**
-   * What is left, and what it costs — the step this console is here for.
+   * The tables: the product's own data, and the first thing a delete removes.
    *
-   * Every line is read rather than assumed: the log groups by prefix, the tables
-   * by name prefix, the buckets and the pool out of the config that names them,
-   * and the apps' own `.env.local` files compared against the `ApiUrl` the
-   * destroy step captured before the stack publishing it went away.
-   *
-   * It **reports instead of applying**, in the idiom of the deploy plan's
-   * pre-sign-up step: deleting a retained table full of courses, or pointing the
-   * apps somewhere else, is a decision about this product rather than a step
-   * toward deleting this environment. The check is satisfied — this step is a
-   * reading, and a reading that found what it expected is a check mark labelled
-   * *Reported* — and its transcript is the full account.
+   * The names come from two places, because a stage acquires tables two ways: a
+   * config that **imports** them names every one (`existing.tables`, keyed by the
+   * logical id the handlers know by), and one that **created** them has
+   * twenty-seven tables CloudFormation named `play-<stage>-*`. Both are read here
+   * and matched against what the account actually holds, so a config naming a
+   * table somebody deleted by hand is a name this step does not try to delete.
    */
-  const retained: PlanStep = {
-    id: "retained",
-    title: "What is left behind, and what a redeploy of this name will hit",
+  const data: PlanStep = {
+    id: "data",
+    title: "The tables are gone",
     detail:
-      "A destroy does not delete data: the tables, the buckets, the distribution and the pool are `RemovalPolicy.RETAIN`, so they stay in AWS with nobody managing them, and a **redeploy of the same stage name** stops at early validation naming whatever it cannot create — a `play-<stage>-*` table, a bucket this config names, a log group. This step names the ones that exist and says what each costs; it deletes nothing, because which of them should go is a decision about this product rather than a step in deleting an environment.",
+      "Every DynamoDB table this environment stands on is deleted: the ones its config names because it imported them, and the ones CloudFormation named `play-<stage>-*` because it created them. **This is the product's data** — courses, lessons, progress, members, invitations, API keys — and there is no copy of it anywhere else. Point-in-time recovery is what stands between an accident and this step while a table exists, and deleting the table deletes that window with it: this is the step in this plan that cannot be undone by deploying again.",
+    satisfiedLabel: "No tables",
+    timeoutMs: 30 * 60_000,
+    check: async (ctx) => {
+      const { tables } = await resourcesOf(ctx);
+      if (tables.length === 0) {
+        return { satisfied: true, note: `no table of '${ctx.stage}' exists in ${ctx.region}` };
+      }
+      return {
+        satisfied: false,
+        note: `${tables.length} table${tables.length === 1 ? "" : "s"} — ${listNames(tables)}`,
+      };
+    },
+    apply: async (ctx) => {
+      const { tables } = await resourcesOf(ctx);
+      for (const table of tables) {
+        ctx.progress(`deleting ${table}`);
+        await awsRun(
+          ctx,
+          ["dynamodb", "delete-table", "--table-name", table],
+          `aws dynamodb delete-table ${table}`,
+          5 * 60_000,
+        );
+        // The CLI's own waiter rather than a sleep: DynamoDB deletes a table
+        // asynchronously, and the *next* run of this plan is what reads the
+        // answer — out of `list-tables`, in this step's own check. A step that
+        // ended when the request was accepted would leave that second run
+        // reporting tables that are already on their way out.
+        await awsRun(
+          ctx,
+          ["dynamodb", "wait", "table-not-exists", "--table-name", table],
+          `waiting for ${table} to be deleted`,
+          20 * 60_000,
+        );
+      }
+      return { note: `${tables.length} table${tables.length === 1 ? "" : "s"} deleted` };
+    },
+  };
+
+  /**
+   * The media: the distribution, the key that signs for it, and both buckets.
+   *
+   * The order is the whole step. A distribution that is still there keeps writing
+   * access logs into the logs bucket, keeps serving the video, and — the part
+   * that fails rather than merely wastes — keeps the public key it trusts
+   * undeletable: CloudFront refuses to delete a key a key group still lists, and
+   * refuses to delete a key group a distribution still trusts. So the
+   * distribution goes first, then the key group and the key, then the buckets it
+   * was pointed at.
+   *
+   * The distribution is also the one resource that means different things in the
+   * two modes, which is why this step reads rather than assumes. A stage that
+   * **created** its media has its distribution in `PlayMediaStack-<stage>`, and
+   * `cdk destroy` has already deleted it — this step then finds nothing, which is
+   * the check mark it should be. A stage that **imports** its media has no stack
+   * that owns it: the legacy distribution belongs to nobody, no deploy can
+   * replace it and no destroy can remove it, and that is the case this step was
+   * written for.
+   */
+  const media: PlanStep = {
+    id: "media",
+    title: "The media is gone",
+    detail:
+      "The CloudFront distribution, the key group and public key behind it, and both S3 buckets with everything in them — uploaded video, transcoded ladders, thumbnails, subtitles, and the distribution's own access logs. A bucket is emptied before it is deleted, because S3 refuses to delete one that holds anything, and a distribution is disabled and waited for before it is deleted, because CloudFront refuses to delete one that is still enabled. That wait is minutes of propagating a change to every edge location, and it is the longest thing this plan does.",
+    satisfiedLabel: "No media",
+    timeoutMs: 90 * 60_000,
+    check: async (ctx) => {
+      const parts: string[] = [];
+      const { buckets } = await resourcesOf(ctx);
+      const distribution = await distributionOf(ctx);
+      if (distribution) {
+        parts.push(`the distribution ${distribution.id}${distribution.enabled ? " (enabled)" : ""}`);
+      }
+      for (const bucket of buckets) parts.push(`the bucket ${bucket}`);
+      if (parts.length === 0) {
+        return { satisfied: true, note: `no bucket and no distribution of '${ctx.stage}' exists` };
+      }
+      return { satisfied: false, note: listNames(parts) };
+    },
+    apply: async (ctx) => {
+      // Read once, before anything goes: the distribution is where two of these
+      // bucket names come from — the video it reads and the logs it writes — so a
+      // second read after it has been deleted would find neither.
+      const { buckets } = await resourcesOf(ctx);
+      const notes: string[] = [];
+
+      const distribution = await distributionOf(ctx);
+      if (distribution) notes.push(await deleteDistribution(ctx, distribution));
+
+      for (const bucket of buckets) {
+        ctx.progress(`emptying ${bucket}`);
+        await awsRun(
+          ctx,
+          ["s3", "rm", `s3://${bucket}`, "--recursive", "--quiet"],
+          `aws s3 rm s3://${bucket} --recursive`,
+          60 * 60_000,
+        );
+        ctx.progress(`deleting ${bucket}`);
+        await awsRun(ctx, ["s3api", "delete-bucket", "--bucket", bucket], `aws s3api delete-bucket ${bucket}`);
+        notes.push(`${bucket} emptied and deleted`);
+      }
+
+      if (notes.length === 0) {
+        return { status: "skipped", note: "there was no bucket and no distribution left to delete" };
+      }
+      return { note: notes.join(" · ") };
+    },
+  };
+
+  /**
+   * The pool, and everyone who signed up through it.
+   *
+   * Its own step because it is the one deletion here that is about **people**
+   * rather than about storage. `docs/migration.md` says the pool is the last
+   * thing to move and the one to think hardest about, and this is why: the
+   * accounts are not rows this console can put back, a person who signed up here
+   * has to sign up again, and Google sign-in has nothing to link to until they
+   * do.
+   */
+  const auth: PlanStep = {
+    id: "auth",
+    title: "The user pool is gone, with every account in it",
+    detail:
+      "The Cognito user pool this environment signs people in through is deleted, and a pool takes its accounts, its groups, its clients and its Hosted UI domain with it. None of that comes back: a redeploy of the same name creates a **new** pool, empty, and everybody who had an account has to make another one — including through Google, since the address they use now has nothing to link to. An environment whose config **imports** an older pool is deleting that pool, not one of its own.",
+    satisfiedLabel: "No pool",
+    timeoutMs: 10 * 60_000,
+    check: async (ctx) => {
+      const poolId = await userPoolOf(ctx);
+      if (!poolId) return { satisfied: true, note: `no user pool of '${ctx.stage}' exists` };
+
+      const pool = await describeUserPool(poolId, ctx);
+      if (!pool) return { satisfied: true, note: `${poolId} is already gone` };
+
+      const accounts = pool.EstimatedNumberOfUsers ?? 0;
+      return {
+        satisfied: false,
+        note: `${poolId} — about ${accounts} account${accounts === 1 ? "" : "s"}, and every one of them goes`,
+      };
+    },
+    apply: async (ctx) => {
+      const poolId = await userPoolOf(ctx);
+      if (!poolId) return { status: "skipped", note: "there is no user pool to delete" };
+
+      await awsRun(
+        ctx,
+        ["cognito-idp", "delete-user-pool", "--user-pool-id", poolId],
+        `aws cognito-idp delete-user-pool ${poolId}`,
+        5 * 60_000,
+      );
+      // The pool's own domain goes with it, and that part is asynchronous: the
+      // delete returns while Cognito is still letting go of
+      // `<pool>.auth.<region>.amazoncognito.com`, which is long enough that a
+      // deploy of the same stage name can arrive before it does. Nothing here
+      // waits for it — a redeploy is minutes of work either way — and this step's
+      // own check is what would notice, on a second run, a pool that is still
+      // there.
+      return { note: `${poolId} deleted, with its domain and every account in it` };
+    },
+  };
+
+  /**
+   * The record of what the environment did.
+   *
+   * Log groups are `RemovalPolicy.RETAIN` for a reason that has nothing to do
+   * with a delete: they outlive a stack so that a destroyed environment is not a
+   * destroyed record of what went wrong in it. That is worth keeping right up
+   * until the moment the environment is being removed on purpose — and they are
+   * also the first thing that stops a redeploy of the same name, because
+   * CloudFormation will not create a log group that already exists and says so
+   * with a sentence that names the group and not the reason.
+   */
+  const traces: PlanStep = {
+    id: "traces",
+    title: "The log groups are gone",
+    detail:
+      "Every `/aws/lambda/play-<stage>-*` log group is deleted — one per function, a hundred and fifty-odd of them. They are the only record of what this environment did: which requests arrived, which failed, and every stack trace somebody would read to find out why. Deleting them is why a redeploy of the same name works, and they go **after** the data rather than before it, so that the evidence outlives the delete instead of the other way round.",
+    satisfiedLabel: "No log groups",
+    timeoutMs: 15 * 60_000,
+    check: async (ctx) => {
+      const groups = await logGroupsOf(ctx);
+      if (groups.length === 0) {
+        return { satisfied: true, note: `there are no log groups under /aws/lambda/play-${ctx.stage}*` };
+      }
+      return {
+        satisfied: false,
+        note: `${groups.length} log group${groups.length === 1 ? "" : "s"} — the record of what this environment did`,
+      };
+    },
+    apply: async (ctx) => {
+      const groups = await logGroupsOf(ctx);
+      let done = 0;
+      for (const group of groups) {
+        await awsRun(
+          ctx,
+          ["logs", "delete-log-group", "--log-group-name", group],
+          `aws logs delete-log-group ${group}`,
+        );
+        done += 1;
+        ctx.progress(`${done} of ${groups.length} log groups deleted`);
+      }
+      return {
+        status: groups.length === 0 ? "skipped" : "passed",
+        note: groups.length === 0 ? "there was nothing to delete" : `${groups.length} log groups deleted`,
+      };
+    },
+  };
+
+  /**
+   * The key pair, the key's id, and the Google client secret.
+   *
+   * These are the leftovers the Checklist would otherwise have to create again
+   * before a redeploy of the same name could work, and two of the three are
+   * *secrets* rather than data — which is why they go last, after everything that
+   * holds actual content, and why the whole step is small enough to read.
+   */
+  const secrets: PlanStep = {
+    id: "secrets",
+    title: "This environment's signing key and secrets are gone",
+    detail:
+      "The CloudFront URL-signing key pair in SSM (`cloudFrontPrivateKeyParam` and `cloudFrontPublicKeyParam`, the private half a `SecureString`), the parameter the media stack publishes the key's id to, and the Google client secret in Secrets Manager. **A stage that imports its distribution is the exception**: its config names the *shared* `/play/cloudfront/*` pair — the one an older distribution was created against — and that pair is not this stage's to delete, so it is reported rather than removed. A new environment creates its own pair from the Checklist, which is what makes deleting these safe.",
+    satisfiedLabel: "Nothing left",
+    timeoutMs: 5 * 60_000,
+    check: async (ctx) => {
+      const { mine, shared } = secretParameters(ctx.stage);
+      // Recorded, not merely noted: these are the leftovers the run's report is
+      // for, and a step that is satisfied on a second run has to say the same
+      // thing the first one did.
+      for (const name of shared) noteLeft(ctx, sharedKeyLine(name));
+
+      const present = await parameterNames(ctx, mine);
+      const secret = await googleSecretExists(ctx);
+      const found = [...present, ...(secret ? [googleClientSecretName(ctx.stage)] : [])];
+
+      if (found.length === 0) {
+        return {
+          satisfied: true,
+          note: shared.length
+            ? `nothing of this environment's own — ${shared.join(" and ")} are shared and stay`
+            : "there is nothing of this environment's left in SSM or Secrets Manager",
+        };
+      }
+      return { satisfied: false, note: found.join(" · ") };
+    },
+    apply: async (ctx) => {
+      const { mine, shared } = secretParameters(ctx.stage);
+      const notes: string[] = [];
+      for (const name of shared) {
+        noteLeft(ctx, sharedKeyLine(name));
+        notes.push(`${name} is shared`);
+      }
+
+      const present = await parameterNames(ctx, mine);
+      if (present.length > 0) {
+        await awsRun(
+          ctx,
+          ["ssm", "delete-parameters", "--names", ...present],
+          `aws ssm delete-parameters ${present.join(" ")}`,
+        );
+        notes.unshift(`${present.length} SSM parameter${present.length === 1 ? "" : "s"} deleted`);
+      }
+
+      if (await googleSecretExists(ctx)) {
+        // Without recovery: the secret is configuration the Checklist writes
+        // again, and a delete that left it in a seven-day queue would be a name
+        // that exists and refuses to be created.
+        await awsRun(
+          ctx,
+          [
+            "secretsmanager",
+            "delete-secret",
+            "--secret-id",
+            googleClientSecretName(ctx.stage),
+            "--force-delete-without-recovery",
+          ],
+          "aws secretsmanager delete-secret",
+        );
+        notes.unshift("the Google client secret deleted");
+      }
+
+      if (notes.length === 0) return { status: "skipped", note: "there was nothing to delete" };
+      return { note: notes.join(" · ") };
+    },
+  };
+
+  /**
+   * What is still pointed here — the one thing a delete cannot undo for you.
+   *
+   * The apps' own `.env.local` files are written by the deploy plan's twelfth
+   * step and unwritten by nothing: a frontend reading a deleted API URL is a
+   * product that does not work, and the fix is somebody pointing it at another
+   * environment. That is a decision rather than a step, which is the same
+   * distinction the deploy plan's pre sign-up step makes — so this step
+   * **reports instead of applying**, and its transcript is the account of what
+   * the delete did and could not do. The check is satisfied by finding what it
+   * expected, and the run's own report is the lines below.
+   */
+  const left: PlanStep = {
+    id: "left",
+    title: "What is still pointed here",
+    detail:
+      "The delete removed the stacks and everything they stood on. What it cannot remove is a `.env.local` in this checkout naming the API URL it just deleted — the deploy plan's twelfth step writes those and nothing unwrites them, so the three apps would go on talking to an address that answers with a DNS failure until somebody points them somewhere else. That is a decision about which environment the apps are for, so this step reports it and stops.",
     satisfiedLabel: "Reported",
     timeoutMs: 3 * 60_000,
     check: async (ctx) => {
-      const loaded = readConfig(ctx.stage);
-      const ownership = ownershipOf(loaded);
-      const lines: string[] = [];
-
-      // Log groups: named after the functions, and retained so that a deleted
-      // environment is not a deleted record of what it did.
-      const groups = await awsJson<{ logGroups?: Array<{ logGroupName: string }> }>(
-        ["logs", "describe-log-groups", "--log-group-name-prefix", `/aws/lambda/play-${ctx.stage}`],
-        { profile: ctx.profile, region: ctx.region, optional: true },
-      ).catch(() => null);
-      const logGroups = groups?.logGroups?.length ?? 0;
-      if (logGroups > 0) {
-        lines.push(
-          `${logGroups} CloudWatch log groups under /aws/lambda/play-${ctx.stage}* — retained, and the ` +
-            "only record of what this environment did. They are also what a redeploy of this name stops " +
-            'on ("a log group with identifier … already exists").',
-        );
-      }
-
-      // Tables: named `play-<stage>-*` for an environment that creates them, and
-      // never touched for one that imports them.
-      const tables = await awsJson<{ TableNames?: string[] }>(["dynamodb", "list-tables"], {
-        profile: ctx.profile,
-        region: ctx.region,
-        optional: true,
-      }).catch(() => null);
-      const mine = (tables?.TableNames ?? []).filter((name) => name.startsWith(`play-${ctx.stage}-`));
-      if (ownership.tables && mine.length > 0) {
-        lines.push(
-          `${mine.length} DynamoDB tables named play-${ctx.stage}-* — retained, with point-in-time ` +
-            "recovery, and full of whatever was in them. A redeploy of this name cannot create them " +
-            "again, so the choice is to deploy under a different name or to delete them deliberately.",
-        );
-      } else if (!ownership.tables && loaded) {
-        const imported = Object.keys(loaded.existing?.tables ?? {}).length;
-        lines.push(
-          `The tables this environment imported${imported ? ` (${imported} of them)` : ""} were never ` +
-            "managed by it: a destroy here did not touch them, and neither did it touch the shared " +
-            "bucket or the user pool.",
-        );
-      }
-
-      // Buckets and the distribution, out of the config that names them.
-      const named = [
-        loaded?.videosBucketName ? `the videos bucket ${loaded.videosBucketName}` : null,
-        loaded?.cloudFrontLogsBucketName ? `the CloudFront logs bucket ${loaded.cloudFrontLogsBucketName}` : null,
-      ].filter((part): part is string => part !== null);
-      if (ownership.media && named.length > 0) {
-        lines.push(
-          `${named.join(" and ")} — retained, and **named by this config**, which is what a redeploy of ` +
-            "this name stops on: CloudFormation will not create a bucket that exists.",
-        );
-      } else if (ownership.media) {
-        lines.push(
-          "Its videos bucket and CloudFront logs bucket were named by CloudFormation and are retained — " +
-            "a redeploy of this name makes new ones and leaves these where they are.",
-        );
-      }
-
-      if (ownership.auth) {
-        lines.push(
-          "Its own Cognito user pool is retained, with the accounts that were in it. A redeploy of this " +
-            "name creates a *new* pool, so nobody who signed up here can sign in to that one — and the " +
-            "retained pool still carries a pre sign-up trigger pointing at a function that no longer exists.",
-        );
-      }
+      // What the delete could not take with it, collected by the steps above:
+      // today that is a signing key pair a migrating stage shares with an older
+      // distribution, and a public key a second key group still trusts. Written
+      // as the steps find them rather than predicted here, and empty on an
+      // environment that had neither.
+      const lines: string[] = [...(readLeft(ctx) ?? [])];
 
       // What is still pointed here: the three apps, which the deploy plan's
       // twelfth step writes and nothing unwrites.
@@ -1755,13 +2016,13 @@ export function buildDestroyPlan(stage: string): PlanStep[] {
       }
 
       for (const line of lines) ctx.log("out", line);
-      ctx.data.retained = lines;
+      ctx.data.left = lines;
 
       return {
         satisfied: true,
         note: lines.length
-          ? `${lines.length} thing${lines.length === 1 ? "" : "s"} left behind — open this step to read what they cost`
-          : "nothing was left behind",
+          ? `${lines.length} thing${lines.length === 1 ? "" : "s"} to read — open this step`
+          : "nothing is pointed at what was deleted",
       };
     },
     apply: async () => ({ note: "reported, not applied" }),
@@ -1770,16 +2031,16 @@ export function buildDestroyPlan(stage: string): PlanStep[] {
   /**
    * The environment itself: the file that makes this stage exist.
    *
-   * Last, and only once the stacks are gone. The config is a tracked file, so
-   * this is a change to commit rather than a fact in AWS — and for a stage that
-   * *imported* its resources it was also the only written record of which tables,
-   * which bucket and which pool that stage stood on, which is the cost of the
-   * console doing this rather than somebody deleting a file.
+   * Last, and only once the stacks and the data are gone. The config is a tracked
+   * file, so this is a change to commit rather than a fact in AWS — and for a
+   * stage that *imported* its resources it was also the only written record of
+   * which tables, which bucket and which pool that stage stood on, which is the
+   * cost of the console doing this rather than somebody deleting a file.
    */
   const config: PlanStep = {
     id: "config",
     title: "The environment's config file is removed",
-    detail: `\`${stageConfigPath}\` is what makes this stage an environment: the stacks read it for the account, the region, the ownership of the tables, the media and the pool, and for the product settings. Removing it is what takes the environment out of the console — and it is a **tracked file**, so it is a change to commit. Steps 3 and 4 in \`docs/migration.md\` are the way back for a stage that imported its resources; a stage that created its own is re-created from the Checklist once whatever it left behind has been dealt with.`,
+    detail: `\`${stageConfigPath}\` is what makes this stage an environment: the stacks read it for the account, the region, the ownership of the tables, the media and the pool, and for the product settings. Removing it is what takes the environment out of the console — and it is a **tracked file**, so it is a change to commit. Nothing is left in AWS under this name once it is gone, so a stage that **created** its own resources is re-created by deploying it again: the Checklist, then the deploy button. A stage that **imported** its resources is the other case, and the one worth reading before deleting it: the legacy stack that made those resources is long gone, so a redeploy of the same name finds nothing to import — the way back is the migration's own, \`docs/migration.md\` phase E, or a config in which \`ownership\` is \`true\` and this stack creates what it stands on.`,
     satisfiedLabel: "Already gone",
     check: async () => {
       return fs.existsSync(configFile(stage))
@@ -1794,12 +2055,560 @@ export function buildDestroyPlan(stage: string): PlanStep[] {
     },
   };
 
-  return [credentialsStep(stage, "destroy"), trigger, destroy, verify, retained, config];
+  return [
+    credentialsStep(stage, "destroy"),
+    shared,
+    destroy,
+    verify,
+    data,
+    media,
+    auth,
+    traces,
+    secrets,
+    left,
+    config,
+  ];
 }
 
 /* ------------------------------------------------------------------ *
  * Small helpers the steps lean on
  * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ *
+ * What a delete has to find before it can delete it
+ * ------------------------------------------------------------------ */
+
+/** One resource of one environment, and the name it answers to. */
+interface SharedUse {
+  what: string;
+  name: string;
+  stage: string;
+}
+
+/**
+ * Everything a stage's config names, by physical name.
+ *
+ * A map rather than a list because the sentence a refusal prints wants "the
+ * videos bucket" rather than the field it came from — a table is named by logical
+ * id (`VideosTable`) and a bucket by what it is for (`videosBucket`), and neither
+ * is what AWS calls them.
+ */
+function resourceNamesOf(config: StageConfig | null): Map<string, string> {
+  const named = new Map<string, string>();
+  const existing = config?.existing;
+
+  for (const [id, table] of Object.entries(existing?.tables ?? {})) {
+    named.set(table, `the ${id} table`);
+  }
+
+  const pairs: Array<[string | undefined, string]> = [
+    [existing?.videosBucket, "the videos bucket"],
+    [existing?.cloudFrontLogsBucket, "the CloudFront logs bucket"],
+    [config?.videosBucketName, "the videos bucket"],
+    [config?.cloudFrontLogsBucketName, "the CloudFront logs bucket"],
+    [existing?.userPoolId, "the user pool"],
+    [existing?.cloudFrontDistributionId, "the CloudFront distribution"],
+    [existing?.cloudFrontDomain, "the CloudFront distribution"],
+  ];
+  for (const [name, what] of pairs) {
+    if (name) named.set(name, what);
+  }
+
+  return named;
+}
+
+/**
+ * The resources of one stage that a second stage's config also names.
+ *
+ * One comparison in both directions: what *this* stage's config names, against
+ * every other config's names. A resource neither file names cannot be found this
+ * way — a bucket CloudFormation named, a pool nobody wrote down — and that is the
+ * right limit, because two stages can only share what both of them point at, and
+ * a config is where pointing lives.
+ */
+function sharingConflicts(stage: string): SharedUse[] {
+  const mine = resourceNamesOf(readConfig(stage));
+  const conflicts: SharedUse[] = [];
+
+  for (const other of listStages()) {
+    if (other === stage) continue;
+    const theirs = resourceNamesOf(readConfig(other));
+    for (const [name, what] of mine) {
+      if (theirs.has(name)) conflicts.push({ what, name, stage: other });
+    }
+  }
+
+  return conflicts;
+}
+
+function describeConflicts(conflicts: SharedUse[]): string {
+  return conflicts
+    .map((conflict) => `${conflict.what} '${conflict.name}' is also named by '${conflict.stage}'`)
+    .join("; ");
+}
+
+/** What of one environment is still in the account, by name. */
+interface StageResources {
+  tables: string[];
+  buckets: string[];
+  userPoolId: string | null;
+}
+
+/**
+ * What of this stage's is actually there — three sources, all of them reads.
+ *
+ * What the config names, what the destroy step read off the stacks before they
+ * went, and what the account holds under names CloudFormation built from the
+ * stage (`play-<stage>-*` for tables, `playmediastack-<stage>-*` for a bucket it
+ * named). The intersection matters more than the union: a config naming a table
+ * somebody deleted by hand is not a table this plan can delete, and a step whose
+ * check counted it would fail on its own apply.
+ *
+ * The distribution's own two buckets are in the list because they are the names
+ * an **importing** stage is not required to hold anywhere: the bucket it reads
+ * its video from and the one it writes its access logs into are written down in
+ * the distribution's configuration and nowhere else.
+ */
+async function resourcesOf(ctx: StepContext): Promise<StageResources> {
+  const config = readConfig(ctx.stage);
+  const before = ctx.data.resourcesBefore as { videosBucket?: string | null } | undefined;
+
+  const listedTables = await awsJson<{ TableNames?: string[] }>(["dynamodb", "list-tables"], {
+    profile: ctx.profile,
+    region: ctx.region,
+    optional: true,
+  }).catch(() => null);
+  const held = new Set(listedTables?.TableNames ?? []);
+
+  const tables = new Set<string>();
+  for (const name of Object.values(config?.existing?.tables ?? {})) {
+    if (held.has(name)) tables.add(name);
+  }
+  for (const name of held) {
+    if (name.startsWith(`play-${ctx.stage}-`)) tables.add(name);
+  }
+
+  const listedBuckets = await awsJson<{ Buckets?: Array<{ Name: string }> }>(["s3api", "list-buckets"], {
+    profile: ctx.profile,
+    region: ctx.region,
+    optional: true,
+  }).catch(() => null);
+  const present = new Set((listedBuckets?.Buckets ?? []).map((bucket) => bucket.Name));
+
+  const distribution = await distributionOf(ctx);
+  const named = [
+    config?.existing?.videosBucket,
+    config?.existing?.cloudFrontLogsBucket,
+    config?.videosBucketName,
+    config?.cloudFrontLogsBucketName,
+    before?.videosBucket,
+    ...(distribution?.buckets ?? []),
+  ];
+
+  const buckets = new Set<string>();
+  for (const candidate of named) {
+    if (candidate && present.has(candidate)) buckets.add(candidate);
+  }
+  // And the ones no file holds, which is the whole reason this reads the account
+  // rather than the config: CloudFormation names a bucket after the stack that
+  // made it, and a stack is named after its stage. `play-backend-<stage>-` is the
+  // same rule for buckets the legacy Serverless stack left behind, which nothing
+  // has named since the day that stack was deleted.
+  for (const name of present) {
+    if (name.startsWith(`playmediastack-${ctx.stage}-`) || name.startsWith(`play-backend-${ctx.stage}-`)) {
+      buckets.add(name);
+    }
+  }
+
+  return {
+    tables: [...tables].sort(),
+    buckets: [...buckets].sort(),
+    userPoolId: await userPoolOf(ctx),
+  };
+}
+
+/**
+ * The pool this environment signs people in through, as a name.
+ *
+ * Three answers, in the order the environment can know them: what the destroy
+ * step read out of the auth stack before it went, what the config names because
+ * this stage imported it, and — for a stage that created its own pool and whose
+ * stacks are already gone — the Hosted UI domain, which is derived from the stage
+ * and the account and is therefore the one name of a pool that outlives the stack
+ * that made it.
+ */
+async function userPoolOf(ctx: StepContext): Promise<string | null> {
+  const before = (ctx.data.resourcesBefore as { userPoolId?: string | null } | undefined)?.userPoolId;
+  if (before) return before;
+
+  const config = readConfig(ctx.stage);
+  if (config?.existing?.userPoolId) return config.existing.userPoolId;
+
+  const account = (ctx.data.identity as { account?: string } | undefined)?.account ?? config?.account;
+  if (!account) return null;
+
+  const answer = await awsJson<{ DomainDescription?: { UserPoolId?: string } }>(
+    ["cognito-idp", "describe-user-pool-domain", "--domain", `play-${ctx.stage}-${account}`],
+    { profile: ctx.profile, region: ctx.region, optional: true },
+  ).catch(() => null);
+
+  return answer?.DomainDescription?.UserPoolId ?? null;
+}
+
+/**
+ * The log groups of one stage, by the name rule rather than by the prefix.
+ *
+ * `--log-group-name-prefix /aws/lambda/play-dev` also matches
+ * `/aws/lambda/play-development-*`, so the prefix is a candidate list and the
+ * filter is what decides: a group of this environment is `play-<stage>` exactly,
+ * or `play-<stage>-` and then a function.
+ */
+async function logGroupsOf(ctx: StepContext): Promise<string[]> {
+  const answer = await awsJson<{ logGroups?: Array<{ logGroupName: string }> }>(
+    ["logs", "describe-log-groups", "--log-group-name-prefix", `/aws/lambda/play-${ctx.stage}`],
+    { profile: ctx.profile, region: ctx.region, optional: true },
+  ).catch(() => null);
+
+  const exact = `/aws/lambda/play-${ctx.stage}`;
+  return (answer?.logGroups ?? [])
+    .map((group) => group.logGroupName)
+    .filter((name) => name === exact || name.startsWith(`${exact}-`))
+    .sort();
+}
+
+/* ------------------------------------------------------------------ *
+ * CloudFront, which is the long half of a delete
+ * ------------------------------------------------------------------ */
+
+/** A distribution, as much of it as a delete needs. */
+interface CloudFrontDistribution {
+  id: string;
+  enabled: boolean;
+  /** The configuration as CloudFront returns it, for the round trip below. */
+  config: Record<string, unknown>;
+  /** The `ETag` of that configuration, which every write has to match. */
+  etag: string;
+  /** The buckets behind it: the origin it reads, and where its logs go. */
+  buckets: string[];
+  /** The key groups its behaviours trust, which is what holds the public key. */
+  keyGroups: string[];
+}
+
+/**
+ * The distribution this environment stands on, if it is still there.
+ *
+ * Two ways to find one, because the two modes write down different things. A
+ * config that **imports** its media names the distribution's id. A stage that
+ * creates its own never does — an id is CloudFront's to assign — so the second
+ * way is the *domain*, which the media stack publishes as `CloudFrontDomain` and
+ * the destroy step reads before the stack goes, matched against every
+ * distribution in the account.
+ */
+async function distributionOf(ctx: StepContext): Promise<CloudFrontDistribution | null> {
+  const config = readConfig(ctx.stage);
+  const before = ctx.data.resourcesBefore as { cloudFrontDomain?: string | null } | undefined;
+
+  const named = config?.existing?.cloudFrontDistributionId;
+  if (named) {
+    const found = await readDistribution(ctx, named);
+    if (found) return found;
+  }
+
+  const domain = config?.existing?.cloudFrontDomain ?? before?.cloudFrontDomain ?? null;
+  if (!domain) return null;
+
+  const list = await awsJson<{ DistributionList?: { Items?: Array<{ Id: string; DomainName: string }> } }>(
+    ["cloudfront", "list-distributions"],
+    { profile: ctx.profile, region: ctx.region, optional: true },
+  ).catch(() => null);
+  const match = (list?.DistributionList?.Items ?? []).find((one) => one.DomainName === domain);
+
+  return match ? readDistribution(ctx, match.Id) : null;
+}
+
+async function readDistribution(
+  ctx: StepContext,
+  id: string,
+): Promise<CloudFrontDistribution | null> {
+  const answer = await awsJson<{
+    ETag?: string;
+    Distribution?: {
+      Id?: string;
+      DistributionConfig?: {
+        Enabled?: boolean;
+        Origins?: { Items?: Array<{ DomainName?: string }> };
+        Logging?: { Bucket?: string };
+        DefaultCacheBehavior?: { TrustedKeyGroups?: { Items?: string[] } };
+      };
+    };
+  }>(["cloudfront", "get-distribution", "--id", id], {
+    profile: ctx.profile,
+    region: ctx.region,
+    optional: true,
+  }).catch(() => null);
+
+  const distribution = answer?.Distribution;
+  if (!distribution?.Id) return null;
+
+  const config = distribution.DistributionConfig ?? {};
+  const buckets = new Set<string>();
+  for (const origin of config.Origins?.Items ?? []) {
+    // `<bucket>.s3.us-east-1.amazonaws.com`, `<bucket>.s3.amazonaws.com`, or the
+    // dualstack spelling of either. The bucket is everything before the `.s3`.
+    const match = /^(.*)\.s3[.-]/.exec(origin.DomainName ?? "");
+    if (match) buckets.add(match[1]);
+  }
+  const logs = /^(.*)\.s3[.-]/.exec(config.Logging?.Bucket ?? "");
+  if (logs) buckets.add(logs[1]);
+
+  return {
+    id: distribution.Id,
+    enabled: config.Enabled ?? false,
+    config: config as Record<string, unknown>,
+    etag: answer?.ETag ?? "",
+    buckets: [...buckets],
+    keyGroups: config.DefaultCacheBehavior?.TrustedKeyGroups?.Items ?? [],
+  };
+}
+
+/**
+ * Takes a distribution off CloudFront, in the four calls it takes.
+ *
+ * Disable, wait, delete, and then the keys — and there is no shorter version.
+ * CloudFront will not delete an enabled distribution, an update of one is
+ * asynchronous, and the delete needs the `ETag` of the configuration as it stands
+ * *after* the disable, which is why the id is read a second time between the two
+ * writes. The wait is `aws cloudfront wait`, the CLI's own poller: a disable is
+ * not finished when the API returns, and the only signal that it is finished is
+ * the distribution reading `Deployed` again.
+ *
+ * The key group and the public key go last and in that order, for the reason the
+ * step's own note gives: each one holds the next undeletable while it exists, and
+ * a key that is still trusted cannot be removed.
+ */
+async function deleteDistribution(
+  ctx: StepContext,
+  distribution: CloudFrontDistribution,
+): Promise<string> {
+  if (distribution.enabled) {
+    ctx.progress(`disabling ${distribution.id}`);
+    await awsRun(
+      ctx,
+      [
+        "cloudfront",
+        "update-distribution",
+        "--id",
+        distribution.id,
+        "--if-match",
+        distribution.etag,
+        "--distribution-config",
+        // The configuration CloudFront handed over, with one field changed:
+        // `UpdateDistribution` replaces everything it is not given, so anything
+        // filtered out of this would be a setting silently reset on a
+        // distribution that is about to be deleted anyway.
+        JSON.stringify({ ...distribution.config, Enabled: false }),
+      ],
+      `aws cloudfront update-distribution ${distribution.id}`,
+      10 * 60_000,
+    );
+
+    ctx.progress(`waiting for ${distribution.id} to be disabled`);
+    await awsRun(
+      ctx,
+      ["cloudfront", "wait", "distribution-deployed", "--id", distribution.id],
+      `waiting for ${distribution.id} to be disabled`,
+      45 * 60_000,
+    );
+  }
+
+  const current = await readDistribution(ctx, distribution.id);
+  ctx.progress(`deleting ${distribution.id}`);
+  await awsRun(
+    ctx,
+    [
+      "cloudfront",
+      "delete-distribution",
+      "--id",
+      distribution.id,
+      "--if-match",
+      current?.etag ?? distribution.etag,
+    ],
+    `aws cloudfront delete-distribution ${distribution.id}`,
+    10 * 60_000,
+  );
+
+  const keys = await deleteKeyGroups(ctx, distribution.keyGroups);
+  return keys.length
+    ? `the distribution ${distribution.id} deleted, with its key group and key ${keys.join(", ")}`
+    : `the distribution ${distribution.id} deleted`;
+}
+
+/** The key groups a deleted distribution trusted, and the keys inside them. */
+async function deleteKeyGroups(ctx: StepContext, ids: string[]): Promise<string[]> {
+  const deleted: string[] = [];
+
+  for (const id of ids) {
+    const group = await awsJson<{
+      ETag?: string;
+      KeyGroup?: { KeyGroupConfig?: { Items?: string[] } };
+    }>(["cloudfront", "get-key-group", "--id", id], {
+      profile: ctx.profile,
+      region: ctx.region,
+      optional: true,
+    }).catch(() => null);
+    if (!group?.KeyGroup) continue;
+
+    await awsRun(
+      ctx,
+      ["cloudfront", "delete-key-group", "--id", id, "--if-match", group.ETag ?? ""],
+      `aws cloudfront delete-key-group ${id}`,
+    );
+
+    for (const keyId of group.KeyGroup.KeyGroupConfig?.Items ?? []) {
+      const key = await awsJson<{ ETag?: string }>(["cloudfront", "get-public-key", "--id", keyId], {
+        profile: ctx.profile,
+        region: ctx.region,
+        optional: true,
+      }).catch(() => null);
+      if (!key?.ETag) continue;
+
+      try {
+        await awsRun(
+          ctx,
+          ["cloudfront", "delete-public-key", "--id", keyId, "--if-match", key.ETag],
+          `aws cloudfront delete-public-key ${keyId}`,
+        );
+        deleted.push(keyId);
+      } catch (error) {
+        // A key a *second* key group also lists cannot be deleted, and that
+        // group is not this environment's. Reported rather than failed: every
+        // resource the environment owned is gone by the time this runs, and
+        // stopping the run here would leave the rest of the delete undone over
+        // something it never had.
+        noteLeft(
+          ctx,
+          `the CloudFront public key ${keyId} is still trusted by another key group — ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  return deleted;
+}
+
+/* ------------------------------------------------------------------ *
+ * Secrets, and the record a delete keeps of what it did not remove
+ * ------------------------------------------------------------------ */
+
+/**
+ * The parameter names this stage's delete removes, and the ones it only reports.
+ *
+ * Split rather than one list because they are two different things. A pair whose
+ * names this stage's config *derives* is this stage's: it was created for this
+ * environment and the Checklist creates it again. The shared `/play/cloudfront/*`
+ * pair is what a stage that **imported** its distribution points at — it is the
+ * pair that distribution was created against, older than this repository, and
+ * deleting it would take URL signing away from whatever else reads it, which
+ * nothing in this repository can enumerate. So it is reported and left alone,
+ * which is the same answer `signingKeyState` gives about it everywhere else.
+ */
+function secretParameters(stage: string): { mine: string[]; shared: string[] } {
+  const key = signingKeyParams(stage);
+  const idParam = readConfig(stage)?.cloudFrontPublicKeyIdParam ?? defaultCloudFrontPublicKeyIdParam(stage);
+
+  return key.own
+    ? { mine: [key.privateParam, key.publicParam, idParam], shared: [] }
+    : { mine: [idParam], shared: [key.privateParam, key.publicParam] };
+}
+
+/**
+ * One report line for a signing key parameter a delete leaves where it is.
+ *
+ * Plain text rather than prose with markdown in it: these lines are drawn in the
+ * deleted-environment card as they arrive, not rendered.
+ */
+function sharedKeyLine(name: string): string {
+  return (
+    `${name} is part of the shared signing key pair — the one the distribution this environment ` +
+    "imports was created against — so it stays where it is."
+  );
+}
+
+/** Which of these parameter names exist. Names only: no value is ever read. */
+async function parameterNames(ctx: StepContext, names: string[]): Promise<string[]> {
+  if (names.length === 0) return [];
+
+  const answer = await awsJson<{ Parameters?: string[] }>(
+    [
+      "ssm",
+      "get-parameters",
+      "--names",
+      ...names,
+      // No `--with-decryption`: a `SecureString`'s name is all this needs, and the
+      // private key never crosses into this process.
+      "--query",
+      "{Parameters: Parameters[].Name}",
+    ],
+    { profile: ctx.profile, region: ctx.region, optional: true },
+  ).catch(() => null);
+
+  return answer?.Parameters ?? [];
+}
+
+async function googleSecretExists(ctx: StepContext): Promise<boolean> {
+  const answer = await awsJson<{ Name?: string }>(
+    ["secretsmanager", "describe-secret", "--secret-id", googleClientSecretName(ctx.stage)],
+    { profile: ctx.profile, region: ctx.region, optional: true },
+  ).catch(() => null);
+
+  return Boolean(answer?.Name);
+}
+
+/** What a step could not delete, for the last step to report. */
+function noteLeft(ctx: StepContext, line: string): void {
+  const lines = (ctx.data.left as string[] | undefined) ?? [];
+  if (!lines.includes(line)) lines.push(line);
+  ctx.data.left = lines;
+}
+
+function readLeft(ctx: StepContext): string[] | null {
+  return (ctx.data.left as string[] | undefined) ?? null;
+}
+
+/**
+ * An `aws` call that changes something.
+ *
+ * `awsJson` is the read half of this file's vocabulary, and it is a `JSON.parse`
+ * of whatever came back. A delete answers with nothing at all, so the write half
+ * is a plain `exec` with the profile and region on it, and `assertOk` — which is
+ * what turns "the CLI said no" into the step's failure rather than a note that
+ * claims the work is done.
+ */
+async function awsRun(
+  ctx: StepContext,
+  argv: string[],
+  what: string,
+  timeoutMs = 5 * 60_000,
+): Promise<void> {
+  const result = await exec(ctx, "aws", [...argv, "--profile", ctx.profile, "--region", ctx.region], {
+    timeoutMs,
+  });
+  assertOk(result, what, timeoutMs);
+}
+
+/**
+ * A few names and a count, for the one-line note beside a step.
+ *
+ * The notes are drawn beside a step's title, not in a transcript, and this plan
+ * has steps whose resources number twenty-eight — a note that listed every table
+ * would be a paragraph with a check box in front of it. The full list is in the
+ * transcript: every delete is logged as it runs.
+ */
+function listNames(names: string[], limit = 3): string {
+  if (names.length <= limit) return names.join(", ");
+  return `${names.slice(0, limit).join(", ")} and ${names.length - limit} more`;
+}
 
 /**
  * Whether this environment's own buckets are free to create.
@@ -1956,6 +2765,12 @@ async function callApi(apiUrl: string): Promise<Health> {
 
 interface UserPoolSummary {
   LambdaConfig?: { PreSignUp?: string };
+  /**
+   * How many accounts the pool has, as Cognito's own estimate rather than a
+   * count — `ListUsers` would be a paginated read of every account to answer a
+   * question the delete's note only needs to be roughly right about.
+   */
+  EstimatedNumberOfUsers?: number;
 }
 
 async function describeUserPool(

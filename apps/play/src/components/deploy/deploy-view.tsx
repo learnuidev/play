@@ -308,8 +308,8 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
       ) : null}
 
       {/* A delete's result is not a URL. It is the list of what it could not
-          take with it — the retained tables, buckets, pool and log groups — and
-          what a redeploy of this name will hit because they are still there. */}
+          take with it, and of what is still pointed at where the environment
+          was — the apps' own .env.local files, which nothing else unwrites. */}
       {run?.status === "succeeded" && run.action === "destroy" ? (
         <DeletedCard run={run} />
       ) : null}
@@ -330,13 +330,14 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
 }
 
 /**
- * What a delete left behind.
+ * What a delete could not take with it, and what is still pointed here.
  *
- * Every line was read after the stacks went — the log groups by prefix, the
- * tables by name, the apps' own `.env.local` files — rather than predicted here,
- * and `buildDestroyPlan`'s last step is where they come from. A card that
- * recited what a destroy *usually* leaves would be a second description of the
- * plan, which is the one thing this app does not do.
+ * Every line was read by the run's own last step — a signing key pair a
+ * migrating stage shares with an older distribution, a bucket that would not
+ * empty, the apps' own `.env.local` files still naming the API URL that just
+ * went — rather than predicted here, and `buildDestroyPlan`'s last step is where
+ * they come from. A card that recited what a delete *usually* leaves would be a
+ * second description of the plan, which is the one thing this app does not do.
  */
 function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["run"]> }) {
   const total = run.finishedAt ? run.finishedAt - run.startedAt : 0;
@@ -357,17 +358,15 @@ function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["r
           <p className="text-muted-foreground mt-1.5 text-sm">
             {run.steps.filter((step) => step.status === "passed").length} steps ran,{" "}
             {run.steps.filter((step) => step.status === "skipped").length} were already satisfied, in{" "}
-            {duration(total)}. The four stacks are gone
+            {duration(total)}. The four stacks are gone, and so is the data they stood on.{" "}
             {removed ? (
               <>
-                {" "}
-                and <span className="font-mono">infra/config/play-{run.stage}.json</span> was removed —
-                that file is tracked, so the deletion is yours to commit
+                <span className="font-mono">infra/config/play-{run.stage}.json</span> was removed too, and
+                that file is tracked — the deletion is yours to commit.
               </>
             ) : (
-              <> and there was no config file left to remove</>
+              <>There was no config file left to remove.</>
             )}
-            .
           </p>
 
           {run.report?.length ? (
@@ -383,7 +382,7 @@ function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["r
             </ul>
           ) : (
             <p className="text-muted-foreground mt-4 border-t border-border/40 pt-4 text-xs">
-              Nothing was left in AWS under this name.
+              Nothing was left behind, and nothing still points here.
             </p>
           )}
         </div>

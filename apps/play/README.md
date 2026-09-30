@@ -707,55 +707,78 @@ src/components/
 
 The Deployments tab is also where an environment is deleted from, at the bottom,
 below everything that is about the run you came for. It destroys the four
-CloudFormation stacks **and** removes `infra/config/play-<stage>.json`, which is
-the file that makes the stage an environment in this console at all — so the row
-goes with it. The deletion is a tracked file, so it is yours to commit.
+CloudFormation stacks, deletes everything they stood on, **and** removes
+`infra/config/play-<stage>.json`, which is the file that makes the stage an
+environment in this console at all — so the row goes with it. The deletion is a
+tracked file, so it is yours to commit.
 
-**No data is deleted.** Every stateful resource here is `RemovalPolicy.RETAIN` —
-the 27 tables, both buckets, the CloudFront distribution, the user pool, and every
-log group — so a destroy takes the API away and leaves the rest in AWS with
-nobody managing it. `infra/README.md` describes the same thing from the other side
-under *Destroying a stage*, including what the retained orphans do to a redeploy
-of the same name.
+**The data goes with it.** Every stateful resource here is `RemovalPolicy.RETAIN`,
+so `cdk destroy` on its own stops at the stacks and leaves 27 tables, both buckets,
+the distribution, the user pool and every log group in AWS with nobody managing
+them. Those orphans are not inert: they are what stops a redeploy of the same name
+at early validation, and they are what an environment nobody can deploy to is
+still paying for. So the run deletes them itself, reading every name rather than
+assuming one:
 
-That is why deleting is a **six-step run** rather than one `cdk destroy` behind a
-button, and why the button asks for the stage's name rather than a click:
+| What goes | Where the names come from |
+| --- | --- |
+| The DynamoDB tables | `existing.tables` for a stage that imports them, `play-<stage>-*` for one that created them |
+| Both S3 buckets, emptied first | the config, the `VideosBucketName` output read before the stacks went, the distribution's own origin and logging target, and `playmediastack-<stage>-*` |
+| The CloudFront distribution | `existing.cloudFrontDistributionId`, or the domain matched against `list-distributions` — an id CloudFront assigned is written down nowhere |
+| Its key group and public key | read off the distribution that trusted them |
+| The user pool, with every account in it | `existing.userPoolId`, the auth stack's output, or the Hosted UI domain `play-<stage>-<account>` |
+| Every `/aws/lambda/play-<stage>-*` log group | the account, by name rule |
+| The signing key pair, the key's id, and the Google client secret | `signingKeyParams`, the config's parameter names, Secrets Manager |
+
+Two things are **reported rather than deleted**, and both are in the run's own
+last step: a **shared** signing key pair — what a stage that imports its
+distribution points at, the pair that distribution was created against, which
+nothing in this repository can enumerate the readers of — and anything the run
+could not take with it. Alongside them it names the apps whose `.env.local` still
+reads the API URL that just went.
+
+That is why deleting is an **eleven-step run** rather than one `cdk destroy`
+behind a button, and why the button asks for the stage's name rather than a click:
 `infra/scripts/teardown-legacy-stack.sh` is built the same way, for the same
 reason. The steps are:
 
 | # | Step | What it is |
 | --- | --- | --- |
-| 1 | This machine can act on the account | The deploy plan's own first step, shared — a destroy in the wrong account deletes somebody else's environment |
-| 2 | No shared pool is calling into this environment | **Refuses** when an imported pool's pre sign-up trigger calls this stage's `link-federated-user`: destroying the stacks would delete a function Cognito is still invoking, and the symptom would be people unable to sign up |
-| 3 | The four stacks are destroyed | `cdk destroy --all --force` — `--force` because every process here has stdin on `ignore`, so CDK's confirmation would read an end-of-file. Skipped, with the reason, when there is nothing deployed |
+| 1 | This machine can act on the account | The deploy plan's own first step, shared — a delete in the wrong account deletes somebody else's environment |
+| 2 | Nothing else stands on what this environment stands on | **Refuses**, before anything is destroyed, when another stage's config names the same table, bucket, distribution or pool: that resource is not this environment's to delete, and taking it would be another stage's data or sign-up silently disappearing. It is also what the old pre sign-up trigger check became — a shared pool is now one more shared resource rather than a special case |
+| 3 | The four stacks are destroyed | `cdk destroy --all --force` — `--force` because every process here has stdin on `ignore`, so CDK's confirmation would read an end-of-file. Skipped, with the reason, when there is nothing deployed. This is also where the names only a stack knows are read: `VideosBucketName`, `CloudFrontDomain` and the pool id, out of the outputs, before the stacks that publish them go |
 | 4 | No stack of this environment is left | The post-condition. A stack in `DELETE_FAILED` stops the run **before** the config file goes, because that is the case where the file is still worth having |
-| 5 | What is left behind, and what a redeploy will hit | Reads it rather than predicting it: the log groups by prefix, the `play-<stage>-*` tables, the buckets and pool the config names, and the three apps' `.env.local` files compared against the `ApiUrl` captured before the stack publishing it went away |
-| 6 | The environment's config file is removed | The last thing, and only once the stacks are gone |
+| 5 | The tables are gone | Every table of this environment, deleted and waited for — the CLI's own waiter, so the step ends when the table is gone rather than when the request was accepted |
+| 6 | The media is gone | The distribution disabled, waited for and deleted; then its key group and public key; then both buckets, emptied and deleted. The order is forced: CloudFront will not delete an enabled distribution, and will not delete a key a key group still trusts |
+| 7 | The user pool is gone, with every account in it | Its own step because it is the one deletion that is about people: a redeploy of the same name makes a **new**, empty pool and everybody signs up again |
+| 8 | The log groups are gone | One per function, a hundred and fifty-odd of them, and the first thing that stops a redeploy of the same name |
+| 9 | This environment's signing key and secrets are gone | The SSM key pair, the key-id parameter and the Google client secret — the leftovers the Checklist would otherwise have to create again |
+| 10 | What is still pointed here | **Reports instead of applying**: what the delete could not take with it, and the three apps' `.env.local` files compared against the `ApiUrl` captured before the stack publishing it went away |
+| 11 | The environment's config file is removed | The last thing, and only once the stacks and the data are gone |
 
-Step 5 **reports instead of applying**, in the idiom of the deploy plan's
-pre-sign-up step: deleting a retained table full of courses, or pointing the
-frontends somewhere else, is a decision about this product rather than a step
-toward deleting this environment. What it read is also the run's result — a
-delete's answer is not a URL but a list of what it could not take with it, which
-the page draws where a deploy draws its outputs.
+Step 10 **reports instead of applying**, in the idiom of the deploy plan's
+pre-sign-up step: pointing the frontends somewhere else is a decision about this
+product rather than a step toward deleting this environment. What it read is also
+the run's result — a delete's answer is not a URL but a list of what it could not
+take with it, which the page draws where a deploy draws its outputs.
 
-Nothing else is deleted, on purpose. The stage's CloudFront signing key stays in
-SSM at `/play/<stage>/cloudfront/*` and its Google client secret stays in Secrets
-Manager: rotating a signing key means the deploy of a new public key
-`infra/scripts/ensure-cloudfront-key.mjs` exists to make a deliberate act, not a
-side effect of a delete. A stage that comes back uses the pair it always used.
+The one thing a delete leaves where it found it is what it does not own: a signing
+key pair whose names a **shared** config points at stays in SSM, because an older
+distribution was created against that pair and nothing here can enumerate who
+else reads it. Everything else the Checklist would have to create again is
+removed, so a stage that comes back comes back from the Checklist rather than from
+whatever was left of the last one.
 
 ## What it will not do
 
 - **Deploy anything by itself.** There is no timer, no watcher and no
   post-install hook. The plan runs when the button is pressed, and never
   otherwise.
-- **Delete anything but an environment's stacks and its config file.** `cdk
-  destroy` runs for one stage, from the Deployments tab, after its name has been
-  typed into the card — and it takes no data with it, because nothing stateful
-  here is deletable from this console. The retained tables, buckets, pool and log
-  groups are *reported* by the run's last step, since which of them should go is
-  a decision about the product rather than a step in deleting an environment.
+- **Delete anything but the environment you asked for.** The run destroys one
+  stage's four stacks, deletes the data behind them, and removes its config file
+  — after its name has been typed into the card. It refuses to start when another
+  stage's config names the same resources, and it leaves a shared signing key pair
+  where it is. *Deleting an environment* above is the whole of what goes.
 - **Deploy one environment twice at once.** A second request for a stage that is
   already deploying is refused by name: two `cdk deploy --all` runs against one
   set of stacks contend for the same resources, CloudFormation serialises them
