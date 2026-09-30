@@ -9,11 +9,11 @@
   },
   "mail": {
     "fromAddress": "learnuidev@gmail.com",
-    "appBaseUrl": "http://localhost:3000",
-    "marketplaceBaseUrl": "http://localhost:3001"
+    "appBaseUrl": "http://studio.lets-play.xyz",
+    "marketplaceBaseUrl": "https://lets-play.xyz"
   },
   "auth": {
-    "googleClientId": "853099901332-1f8kgnlcme078tutet9k7pc3njf2177m.apps.googleusercontent.com",
+    "googleClientId": "344458249806-pob2vjh9ctn3grhb9g3kcf26806cg2h3.apps.googleusercontent.com",
     "callbackUrls": [
       "http://localhost:3000",
       "http://localhost:3000/auth/callback",
