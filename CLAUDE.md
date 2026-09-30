@@ -2,6 +2,12 @@
 
 - Take screenshots to test your changes. it wastes token
 - Commit yourself! Thats my job!
+- Write throwaway scripts, and especially do not add new ones under
+  `infra/scripts/` or wire them into builds. A script that exists only because a
+  change was awkward to make by hand is a second build to keep working, and it
+  hides the awkwardness instead of solving it. If a change seems to need one,
+  stop and say so: either the design should be simpler, or the step belongs in a
+  deploy or in an existing script — ask before inventing anything.
 
 ## Frontend
 
