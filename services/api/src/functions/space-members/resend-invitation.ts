@@ -63,7 +63,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   return ok({
     member: toApiSpaceMember(corrected, user, true),
     delivery,
-    inviteUrl: spaceInvitationUrl(space.organizationId, spaceId),
+    inviteUrl: spaceInvitationUrl(spaceId),
   });
 }
 

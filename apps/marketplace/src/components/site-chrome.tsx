@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
-import { lessonRoute } from '@/lib/routes';
+import { authScreenRoute, lessonRoute } from '@/lib/routes';
 
 /**
  * The marketplace's frame, or the lack of one.
@@ -15,15 +15,15 @@ import { lessonRoute } from '@/lib/routes';
  * first line.
  *
  * Signed in or not, a reader of this site keeps the bar. What changes on the
- * sign-in route is only where it stands: the shared sign-in screen is a
- * windowful, and a bar left in the flow would take its own slice of the window
- * out of that screen — a page one bar taller than the window, with the card
- * sitting below the middle of a window it is meant to be the middle of. So the
- * bar is lifted out of the flow there and pinned across the top of the screen
- * instead, which is why that route wears the `group`/`data-chrome-overlay` hook
- * its header reads.
+ * screenful routes — signing in, and the invitation that is one — is only where
+ * the bar stands: the screen is a windowful, and a bar left in the flow would
+ * take its own slice of the window out of it — a page one bar taller than the
+ * window, with the form sitting below the middle of a window it is meant to be
+ * the middle of. So the bar is lifted out of the flow there and pinned across the
+ * top of the screen instead, which is why those routes wear the
+ * `group`/`data-chrome-overlay` hook the header reads.
  *
- * The footer goes further and is left out of that route entirely, which is a
+ * The footer goes further and is left out of those routes entirely, which is a
  * measurement rather than a preference: a screenful of screen plus a footer is a
  * page 65px taller than the window, and 65px of scrollbar under a page that has
  * nothing under it. A reader who is signing in has the bar above them, and the
@@ -46,11 +46,11 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
     return <div className="flex h-svh w-full flex-col overflow-hidden">{children}</div>;
   }
 
-  // The sign-in route is the screen and nothing else: the shared screen is a
-  // windowful of its own, and anything else the frame adds — a footer's worth —
-  // is height the window does not have, which shows up as a scrollbar on a page
-  // that is supposed to be one screen with nothing below it.
-  if (pathname === '/sign-in') {
+  // A door is the screen and nothing else: the shared screen is a windowful of
+  // its own, and anything else the frame adds — a footer's worth — is height the
+  // window does not have, which shows up as a scrollbar on a page that is
+  // supposed to be one screen with nothing below it.
+  if (authScreenRoute(pathname)) {
     return (
       <div className="group relative flex min-h-svh flex-col" data-chrome-overlay="true">
         <SiteHeader />

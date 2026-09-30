@@ -4,7 +4,10 @@
 # configuration the backend reads.
 #
 #   /play/mail/from-address  (String) address invitations are sent from
-#   /play/mail/app-base-url  (String) where an invitation email points
+#   /play/mail/app-base-url  (String) where an *organization* invitation points.
+#                                     A course invitation points at the
+#                                     marketplace instead — see MARKETPLACE_BASE_URL,
+#                                     which the Play console's Settings form writes.
 #
 # The backend reads these and sends through
 # Amazon SES. Nothing needs to live in .env or local environment files. With no
@@ -16,7 +19,8 @@
 #
 # Options:
 #   --from=<address>     Address to send from (prompted if omitted)
-#   --app-url=<url>      Where invitation emails point
+#   --app-url=<url>      Where an *organization* invitation email points; a
+#                        course invitation points at the marketplace
 #                        (default: http://localhost:3000)
 #   --no-verify          Skip the SES identity verification step, for an
 #                        address or domain that is already verified
@@ -205,7 +209,8 @@ cat <<EOF
 Then deploy the API, which is what puts them in the Lambdas' environment:
   npm run deploy:api --workspace play-infra
 
-Note: --app-url is where an invitation link points. Set it to the deployed studio
-before inviting people who are not on this machine, or every invitation will
-point at localhost.
+Note: --app-url is where an *organization* invitation link points. Set it to the
+deployed studio before inviting people who are not on this machine, or every one
+of those will point at localhost. Course invitations go to the marketplace, whose
+address is MARKETPLACE_BASE_URL in the Play console's Settings — set that too.
 EOF

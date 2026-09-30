@@ -600,8 +600,8 @@ scripts) to point somewhere else for one run.
 | Google OAuth client id/secret                         | AWS SSM Parameter Store (see [Google sign-in](#google-sign-in-optional))             |
 | Backend stage/region                                  | `--context stage=…` on `cdk deploy`; `infra/config/play-<stage>.json` names the resources it stands on |
 | Frontend API/Cognito values                           | `apps/studio/.env.local`, `apps/marketplace/.env.local`                              |
-| Where an _author's_ email points (course invitations) | `mail.appBaseUrl` in `infra/config/play-<stage>.json`, written by `set-mail-sender.sh` |
-| Where a _learner's_ email points (rewards)            | `mail.marketplaceBaseUrl`, in the same file                                          |
+| Where an _author's_ email points (organization invitations) | `mail.appBaseUrl` in `infra/config/play-<stage>.json`, written by `set-mail-sender.sh` |
+| Where everything a _learner_ is sent points (rewards, course invitations) | `mail.marketplaceBaseUrl`, in the same file<br>(set from the Play console's Settings form) |
 
 The backend has **no `.env` requirements** — the CloudFront private key is read
 from SSM at runtime, by name, and cached for the life of the container
@@ -733,6 +733,7 @@ an account:
 | `/courses/{spaceId}`                     | One course — its syllabus, section by section — and the button that registers you for it                                                                              |
 | `/courses/{spaceId}/lessons/{contentId}` | The lesson itself: the shared classroom in its reading arrangement, with no top bar and the whole window                                                              |
 | `/courses/{spaceId}/rewards`             | What this course has given you: the codes, what they are for, and how to use them                                                                                     |
+| `/join/{spaceId}`                        | Where a course invitation is claimed: the offer itself for somebody who is signed in, and the sign-in screen with "Join Acme" over it for somebody who is not          |
 | `/my-courses`                            | The courses you are registered for, wherever they came from                                                                                                           |
 | `/favourites`                            | The lessons you have hearted, newest first, with the course each came from                                                                                            |
 | `/sign-in`                               | Amplify's sign-in, then straight back to whatever you were doing (`?next=`)                                                                                           |
@@ -775,10 +776,17 @@ list of everything, so what the email promised — _this_ reward, in _this_ cour
 — is what is on screen when it opens, with the code on one line and a tap to
 copy it.
 
-That is why there are two addresses in the mail configuration: invitations are
-claimed in the studio (`appBaseUrl`) and rewards are read in the marketplace
-(`marketplaceBaseUrl`). Both default to localhost, and both must be set to the
-deployed app before either letter is sent to anybody real.
+That is why there are two addresses in the mail configuration, and the line
+between them is *who the letter is for* rather than which kind of letter it is.
+`marketplaceBaseUrl` is where anything addressed to somebody taking a course
+points — a reward, and a **course invitation** (`/join/{spaceId}`) — because the
+marketplace is the app courses are taken in. `appBaseUrl` is what is left: the
+organization invitation, which is an offer to join the place courses are
+*written*, and the studio is the only app that has an organization page to show.
+Both default to localhost, and both must be set to the deployed app before either
+letter is sent to anybody real — the studio one by `set-mail-sender.sh`, the
+marketplace one from the Play console's Settings form, which is where
+`MARKETPLACE_BASE_URL` is written.
 
 A grant issued by a _milestone_ — finishing a course, reaching a percentage —
 does not email: it already arrives in the classroom, with a toast and the

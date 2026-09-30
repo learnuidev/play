@@ -67,7 +67,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   return ok({
     members: rows,
     canManage,
-    ...(canManage ? { inviteUrl: spaceInvitationUrl(space.organizationId, spaceId) } : {}),
+    ...(canManage ? { inviteUrl: spaceInvitationUrl(spaceId) } : {}),
     nextToken: encodeNextToken(lastEvaluatedKey),
   });
 }

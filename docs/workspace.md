@@ -357,15 +357,20 @@ the marketplace are the same account. `@play/auth` is where that lives:
   rendering a wall over a URL an app is waiting on.
 - `SignIn` — the sign-in screen itself, and the *only* place `socialProviders` is
   passed. A page that renders Amplify's `Authenticator` directly would silently
-  offer passwords only, however the deployment is configured.
+  offer passwords only, however the deployment is configured. It takes an
+  optional `invitation`, which renames the sign-in and sign-up headings — "Join
+  Acme Learning" rather than "Make an account" — for the one page that arrives at
+  it holding an offer.
 - `SignInScreen` — what `SignIn` renders: Amplify's flows inside a frame this
   repository draws. `packages/auth/src/sign-in.css` re-points Amplify's design
   tokens at the app's, so the same screen is the studio's in the studio and the
   marketplace's in the marketplace. It has one contract with the app it renders
-  in: the screen is a windowful and the card centers in it, so an app that keeps a
-  bar of its own takes that bar *out of the flow* on the sign-in route and pins it
-  over the top instead of letting it take a slice of the window — which is what
-  both apps' sign-in pages do.
+  in: the screen is a windowful and the form centers in it, so an app that keeps a
+  bar of its own takes that bar *out of the flow* on the routes that are a screen
+  and pins it over the top instead of letting it take a slice of the window —
+  which is what both apps' sign-in pages do, and what the marketplace does for
+  `/join/{spaceId}` as well, since that page *is* this screen until the visitor
+  has an account.
 - `useIsSignedIn` / `useAuthStatus` — for pages that ask the API who the caller
   is, because "the courses I am in" is a 401 when nobody is signed in, not an
   empty list. The status has three states rather than two so a page can tell
@@ -373,10 +378,12 @@ the marketplace are the same account. `@play/auth` is where that lives:
   told to sign in for the length of one session restore.
 
 **What is public.** In the marketplace: `/`, `/discover`, a course page, an
-instructor's page and a lesson. In the studio: `/` (the front page), `/docs` (the
-API reference) and `/sign-in`; everything behind a gate is reached from them. A
-public page must not call an endpoint that needs a session — `/docs` is the
-worked example, where the playground offers a pasted key to a reader with no
+instructor's page, a lesson, and `/join/{spaceId}` — the page a course invitation
+opens, which is the sign-in screen for somebody who has no account yet and is
+read by nobody's token either way. In the studio: `/` (the front page), `/docs`
+(the API reference) and `/sign-in`; everything behind a gate is reached from
+them. A public page must not call an endpoint that needs a session — `/docs` is
+the worked example, where the playground offers a pasted key to a reader with no
 account and a sign-in link instead of the key-minting button, and waits for
 `useAuthStatus` to settle before deciding which.
 

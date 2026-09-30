@@ -4,7 +4,7 @@ import { Authenticator } from '@aws-amplify/ui-react';
 import { ThemeProvider } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { QueryProvider } from '@auth/components/query-provider';
-import { SignInScreen } from '@auth/components/sign-in';
+import { SignInScreen, type SignInInvitation } from '@auth/components/sign-in';
 import { isAuthConfigured, isGoogleSignInEnabled, oauthCallbackPath } from '@auth/lib/amplify';
 import { Toaster } from '@ui/components/ui/sonner';
 import { TooltipProvider } from '@ui/components/ui/tooltip';
@@ -50,8 +50,18 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
  * missing prop. What the screen looks like is `SignInScreen`'s business; this is
  * the one place that decides what it offers. With children it is still the gate
  * (they render once signed in); without them it is the sign-in page itself.
+ *
+ * `invitation` is passed straight through: an app standing in front of an
+ * invitation hands it over so the headline says what is being joined, and an app
+ * with no invitation in hand gets the screen it always got.
  */
-export function SignIn({ children }: { children?: React.ReactNode }) {
+export function SignIn({
+  invitation,
+  children,
+}: {
+  invitation?: SignInInvitation;
+  children?: React.ReactNode;
+}) {
   // Typed from the Authenticator's own props rather than a named type: the
   // providers it accepts are a closed set, and `['google']` on its own widens to
   // `string[]` — which the component refuses.
@@ -59,7 +69,11 @@ export function SignIn({ children }: { children?: React.ReactNode }) {
     ? ['google']
     : undefined;
 
-  return <SignInScreen socialProviders={socialProviders}>{children}</SignInScreen>;
+  return (
+    <SignInScreen socialProviders={socialProviders} invitation={invitation}>
+      {children}
+    </SignInScreen>
+  );
 }
 
 /**

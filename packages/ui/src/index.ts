@@ -4,6 +4,7 @@
  * One line per module beside it, so a new file is a new export and nothing else.
  */
 export * from './components/person-avatar';
+export * from './components/play-mark';
 export * from './components/reveal';
 export * from './components/theme-toggle';
 export * from './components/ui/badge';

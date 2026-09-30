@@ -34,3 +34,28 @@ export function lessonRoute(pathname: string): LessonRoute | null {
   if (!match) return null;
   return { spaceId: match[1], contentId: match[2] };
 }
+
+/** `/join/{spaceId}` */
+const JOIN_ROUTE = /^\/join\/[^/]+\/?$/;
+
+/**
+ * Whether a path is a door rather than a page: the shared sign-in screen, and
+ * the invitation that stands in front of one.
+ *
+ * The sign-in screen is a windowful of its own, so the frame has to know which
+ * pages are it — a bar left in the flow takes its own slice out of the window the
+ * screen is meant to be the middle of, which is a page one bar taller than the
+ * window with the form sitting below the middle of it.
+ *
+ * `/join` counts for the same reason and one more. An invitation link arrives at
+ * somebody who may have no account yet, so the page *is* the sign-in screen until
+ * they have one; once they do it is the offer the screen was standing in front
+ * of, drawn in the same column on the same canvas — so it is one screenful in
+ * both states, and it wants the same frame either way.
+ *
+ * Kept here rather than in the frame, like the lesson route above it, so the
+ * page's own idea of what it is and the frame's cannot drift apart.
+ */
+export function authScreenRoute(pathname: string): boolean {
+  return pathname === '/sign-in' || JOIN_ROUTE.test(pathname);
+}

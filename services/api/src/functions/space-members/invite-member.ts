@@ -86,7 +86,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
       delivery,
       // Carried whether or not the email went out: the inviter is the fallback
       // delivery mechanism, and the link is the offer itself.
-      inviteUrl: spaceInvitationUrl(space.organizationId, spaceId),
+      inviteUrl: spaceInvitationUrl(spaceId),
     },
     201,
   );

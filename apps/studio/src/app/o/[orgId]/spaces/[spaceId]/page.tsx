@@ -2,14 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import {
   ChevronLeftIcon,
   GiftIcon,
   LayersIcon,
   HelpCircleIcon,
   LayoutDashboardIcon,
-  MailPlusIcon,
   UsersIcon,
   UsersRoundIcon,
 } from "lucide-react";
@@ -17,7 +16,6 @@ import { useSpace } from "@api/modules/space/space.queries";
 import { useSections } from "@api/modules/section/section.queries";
 import { useOrganization } from "@api/modules/organization/organization.queries";
 import { useMySpaceInvitations } from "@api/modules/space-member/space-member.queries";
-import { Button } from "@ui/components/ui/button";
 import { Skeleton } from "@ui/components/ui/skeleton";
 import {
   Tabs,
@@ -25,7 +23,6 @@ import {
   TabsList,
   TabsTrigger,
 } from "@ui/components/ui/tabs";
-import { EmptyState } from "@/components/shell/page-card";
 import { SpaceAvatar } from "@learning/components/space/space-avatar";
 import { spaceScheduleLabel } from "@learning/components/space/space-card";
 import { SpaceOverviewTab } from "@/components/space/space-overview-tab";
@@ -97,16 +94,17 @@ export default function SpacePage() {
 
   // Invitations are read for the signed-in user across every organization, and
   // the one naming this course is the only one this page can act on.
+  //
+  // This is the studio's *second* way into an invitation, not the one the email
+  // offers: the link an invitation carries opens the marketplace's `/join` page,
+  // because an offer to take a course belongs to the app courses are taken in.
+  // What is left here is for somebody already working in the studio — an author
+  // invited to a colleague's course, who would otherwise be told the course is
+  // not theirs.
   const invitationsQuery = useMySpaceInvitations();
   const invitation = invitationsQuery.data?.invitations.find(
     (entry) => entry.spaceId === spaceId,
   );
-
-  // An invitation email links here with the course it names, which is the only
-  // way this page can tell "you were invited and have not accepted" from "this
-  // course is not yours" — the offer itself grants nothing, so the read that
-  // would have answered is refused either way.
-  const arrivedFromInvitation = useSearchParams().get("invitation") !== null;
 
   const [tab, setTab] = useState("overview");
 
@@ -135,26 +133,6 @@ export default function SpacePage() {
         <div className="grid gap-4 pb-4">
           <Skeleton className="h-24 rounded-2xl" />
         </div>
-      );
-    }
-
-    // A link that says it is an invitation, and no invitation for the account
-    // reading it. Almost always the same mistake, and one worth naming: an
-    // invitation is claimed by the address it was sent to, so a link forwarded to
-    // somebody else — or opened while signed in as somebody else — is not theirs
-    // to accept, and "forbidden" explains none of that.
-    if (arrivedFromInvitation && !invitationsQuery.isError) {
-      return (
-        <EmptyState
-          icon={<MailPlusIcon className="size-5 text-muted-foreground" />}
-          title="This invitation is not for this account"
-          description="An invitation is claimed by the email address it was sent to. Sign in as that address, or ask whoever invited you to send another one."
-          action={
-            <Button variant="outline" asChild>
-              <Link href="/invites">Your invitations</Link>
-            </Button>
-          }
-        />
       );
     }
 

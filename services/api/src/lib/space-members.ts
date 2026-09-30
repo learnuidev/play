@@ -427,12 +427,19 @@ export function toApiSpaceMember(
 /**
  * The page a course invitation is claimed on.
  *
- * The course itself, because that is what the offer is for: the recipient may
- * have no business in the organization around it, and the page is readable to
- * them either way — the course is what they were invited to.
+ * The marketplace, not the studio, and the difference is who the invitation is
+ * addressed to. An offer to *take* a course belongs to the app courses are taken
+ * in — the studio is where they are written, and an invited person who has no
+ * business in the organization around the course has no business in the studio
+ * either: it would greet them with a rail of authoring screens they cannot use.
+ * The marketplace's `/join` page reads the invitation and opens the course.
+ *
+ * Just the course id, because that is what the offer is for. An invitation is
+ * claimed by the address it was sent to rather than by a token in the link, so
+ * there is nothing else the URL has to carry.
  */
-export function spaceInvitationUrl(organizationId: string, spaceId: string): string {
-  return `${env.appBaseUrl}/o/${encodeURIComponent(organizationId)}/spaces/${encodeURIComponent(spaceId)}?invitation=${encodeURIComponent(spaceId)}`;
+export function spaceInvitationUrl(spaceId: string): string {
+  return `${env.marketplaceBaseUrl}/join/${encodeURIComponent(spaceId)}`;
 }
 
 /**
@@ -458,7 +465,7 @@ export async function sendSpaceInvitationFor(input: {
     organizationName: input.organizationName,
     role: input.invitation.role,
     invitedBy: input.inviterName,
-    inviteUrl: spaceInvitationUrl(input.invitation.organizationId, input.invitation.spaceId),
+    inviteUrl: spaceInvitationUrl(input.invitation.spaceId),
   });
 }
 
