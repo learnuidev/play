@@ -11,7 +11,12 @@ import type { PlanStep, StepContext } from "./plan";
 import { FRONTEND_OUTPUTS, OUTPUT_ENV_NAME, OUTPUT_LABEL } from "./backend";
 import { consoleDefaults, stageOutputs } from "./environments";
 import { run } from "./exec";
-import { requireVercelToken, vercelProject, vercelRequest, VERCEL_PROJECTS } from "./vercel";
+import {
+  requireVercelToken,
+  vercelProject,
+  vercelRequest,
+  VERCEL_PROJECTS,
+} from "./vercel";
 import { stepsOf, type RunSpec } from "./run";
 
 /**
@@ -63,7 +68,10 @@ function projectFor(app: VercelDeployTarget["app"]) {
 
 /** `NEXT_PUBLIC_API_URL` → "REST API base URL", so a row can say what a value is. */
 const ENV_LABEL: Record<string, string> = Object.fromEntries(
-  FRONTEND_OUTPUTS.map((output) => [OUTPUT_ENV_NAME[output], OUTPUT_LABEL[output] ?? output]),
+  FRONTEND_OUTPUTS.map((output) => [
+    OUTPUT_ENV_NAME[output],
+    OUTPUT_LABEL[output] ?? output,
+  ]),
 );
 
 /* ------------------------------------------------------------------ *
@@ -112,7 +120,8 @@ async function plannedVariables(
     rows.push({
       key: "NEXT_PUBLIC_MARKETPLACE_URL",
       value: url,
-      source: "the marketplace's domain, read from play-marketplace — not a stack output",
+      source:
+        "the marketplace's domain, read from play-marketplace — not a stack output",
       usedBy: ["studio"],
     });
   }
@@ -132,14 +141,17 @@ async function plannedVariables(
 async function marketplaceUrl(stage: string): Promise<string> {
   try {
     const project = await vercelProject("play-marketplace");
-    const wanted = stage === "dev" ? "lets-play.xyz" : `${stage}.lets-play.xyz`;
+    const wanted =
+      stage === "production" ? "lets-play.xyz" : `${stage}.lets-play.xyz`;
     const matching = project?.domains.find((domain) => domain.name === wanted);
     if (matching) return `https://${matching.name}`;
   } catch {
     // Not being able to read the marketplace's domains is not a reason to fail a
     // studio deploy: the rule is the answer, and the row says it came from there.
   }
-  return stage === "dev" ? "https://lets-play.xyz" : `https://${stage}.lets-play.xyz`;
+  return stage === "production"
+    ? "https://lets-play.xyz"
+    : `https://${stage}.lets-play.xyz`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -169,7 +181,10 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
       const { token } = requireVercelToken();
       const found = await vercelProject(project.name, { token });
       if (!found?.id) {
-        return { satisfied: false, note: `no project named '${project.name}' on this Vercel account` };
+        return {
+          satisfied: false,
+          note: `no project named '${project.name}' on this Vercel account`,
+        };
       }
       ctx.data.projectId = found.id;
       return {
@@ -258,11 +273,21 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
         "note",
         `$ ${Object.keys(values).length} values → ${project.name}, target ${input.target}`,
       );
-      const writes = await writeVariables(ctx, token, projectId, values, input.target);
+      const writes = await writeVariables(
+        ctx,
+        token,
+        projectId,
+        values,
+        input.target,
+      );
       ctx.data.writes = writes;
 
-      const created = writes.filter((write) => write.action === "created").length;
-      const updated = writes.filter((write) => write.action === "updated").length;
+      const created = writes.filter(
+        (write) => write.action === "created",
+      ).length;
+      const updated = writes.filter(
+        (write) => write.action === "updated",
+      ).length;
       const split = writes.filter((write) => write.action === "narrowed");
 
       if (split.length > 0) {
@@ -304,12 +329,16 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
           const projectId = await projectIdOf(ctx, token, project.name);
           const existing = await readDomains(token, projectId);
           const found = existing.find(
-            (domain) => domain.name.toLowerCase() === input.domain!.toLowerCase(),
+            (domain) =>
+              domain.name.toLowerCase() === input.domain!.toLowerCase(),
           );
           ctx.data.domain = found ?? null;
           return found
             ? { satisfied: true, note: describeDomain(found, project.name) }
-            : { satisfied: false, note: `${input.domain} is not on ${project.name}` };
+            : {
+                satisfied: false,
+                note: `${input.domain} is not on ${project.name}`,
+              };
         },
         apply: async (ctx) => {
           const token = requireVercelToken().token;
@@ -317,10 +346,14 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
           const name = input.domain!;
 
           ctx.log("note", `$ POST /v10/projects/${projectId}/domains ${name}`);
-          await vercelRequest(token, `/v10/projects/${encodeURIComponent(projectId)}/domains`, {
-            method: "POST",
-            body: { name },
-          });
+          await vercelRequest(
+            token,
+            `/v10/projects/${encodeURIComponent(projectId)}/domains`,
+            {
+              method: "POST",
+              body: { name },
+            },
+          );
 
           // Read back rather than trust the add call's own answer: whether a
           // domain is *configured* is a fact about DNS, and the add returns
@@ -405,23 +438,36 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
               ? {
                   name: project.name,
                   project: projectId,
-                  ...(input.target === "production" ? { target: "production" } : {}),
-                  gitSource: { type: "github", repoId: source.repoId, ref: source.ref },
+                  ...(input.target === "production"
+                    ? { target: "production" }
+                    : {}),
+                  gitSource: {
+                    type: "github",
+                    repoId: source.repoId,
+                    ref: source.ref,
+                  },
                 }
               : {
                   name: project.name,
                   deploymentId: source.deploymentId,
-                  ...(input.target === "production" ? { target: "production" } : {}),
+                  ...(input.target === "production"
+                    ? { target: "production" }
+                    : {}),
                 },
         },
       );
 
       const deployment = toDeploymentView(created);
       if (!deployment.id) {
-        throw new Error("Vercel accepted the deployment but returned no id, so it cannot be followed.");
+        throw new Error(
+          "Vercel accepted the deployment but returned no id, so it cannot be followed.",
+        );
       }
       ctx.data.deployment = deployment;
-      ctx.log("out", `created ${deployment.id} · ${deployment.url ?? "no URL yet"}`);
+      ctx.log(
+        "out",
+        `created ${deployment.id} · ${deployment.url ?? "no URL yet"}`,
+      );
       return { note: `${deployment.id.slice(0, 14)} · ${source.note}` };
     },
   };
@@ -449,7 +495,9 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
         satisfiedLabel: "Pointing here",
         timeoutMs: 2 * 60_000,
         check: async (ctx) => {
-          const deployment = ctx.data.deployment as { id?: string; aliases?: string[] } | undefined;
+          const deployment = ctx.data.deployment as
+            | { id?: string; aliases?: string[] }
+            | undefined;
           if (!deployment?.id) {
             // Not a failure: the development target has no deployment by design,
             // and there is nothing for a domain to point at.
@@ -462,8 +510,14 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
             (alias) => alias.toLowerCase() === input.domain!.toLowerCase(),
           );
           return points
-            ? { satisfied: true, note: `${input.domain} already resolves to ${deployment.id.slice(0, 14)}` }
-            : { satisfied: false, note: `${input.domain} does not point at this deployment` };
+            ? {
+                satisfied: true,
+                note: `${input.domain} already resolves to ${deployment.id.slice(0, 14)}`,
+              }
+            : {
+                satisfied: false,
+                note: `${input.domain} does not point at this deployment`,
+              };
         },
         apply: async (ctx) => {
           const deployment = ctx.data.deployment as { id?: string } | undefined;
@@ -481,7 +535,11 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
             token,
             `/v13/deployments/${encodeURIComponent(deployment.id)}`,
           );
-          const state = (current.readyState ?? current.state ?? "").toUpperCase();
+          const state = (
+            current.readyState ??
+            current.state ??
+            ""
+          ).toUpperCase();
           if (state !== "READY") {
             throw new Error(
               `The deployment is ${state || "not ready"}, and Vercel only aliases a deployment ` +
@@ -490,11 +548,18 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
             );
           }
 
-          ctx.log("note", `$ POST /v2/deployments/${deployment.id}/aliases ${input.domain}`);
-          await vercelRequest(token, `/v2/deployments/${encodeURIComponent(deployment.id)}/aliases`, {
-            method: "POST",
-            body: { alias: input.domain },
-          });
+          ctx.log(
+            "note",
+            `$ POST /v2/deployments/${deployment.id}/aliases ${input.domain}`,
+          );
+          await vercelRequest(
+            token,
+            `/v2/deployments/${encodeURIComponent(deployment.id)}/aliases`,
+            {
+              method: "POST",
+              body: { alias: input.domain },
+            },
+          );
           return { note: `${input.domain} → ${deployment.id.slice(0, 14)}` };
         },
       }
@@ -518,10 +583,17 @@ export function buildVercelPlan(input: VercelDeployTarget): PlanStep[] {
     timeoutMs: 25 * 60_000,
     check: async (ctx) => {
       const deployment = ctx.data.deployment as { state?: string } | undefined;
-      if (!deployment) return { satisfied: false, note: "nothing was deployed for this target" };
+      if (!deployment)
+        return {
+          satisfied: false,
+          note: "nothing was deployed for this target",
+        };
       return deployment.state === "READY"
         ? { satisfied: true, note: "the deployment came back ready" }
-        : { satisfied: false, note: `the deployment is ${deployment.state ?? "queued"}` };
+        : {
+            satisfied: false,
+            note: `the deployment is ${deployment.state ?? "queued"}`,
+          };
     },
     apply: async (ctx) => {
       const deployment = ctx.data.deployment as { id?: string } | undefined;
@@ -557,6 +629,10 @@ export function vercelRunSpec(input: VercelDeployTarget): RunSpec {
 
   return {
     kind: "frontend",
+    // A frontend run only ever builds. There is nothing in this console that
+    // deletes a Vercel project, and `buildDestroyPlan` is where that is said in
+    // full rather than left to be inferred from an absence.
+    action: "deploy",
     // One deploy per Vercel *project*, so the app is the subject: two builds
     // racing on one project would publish over each other, while studio and
     // marketplace are two projects and may build at once.
@@ -585,7 +661,9 @@ export function vercelRunSpec(input: VercelDeployTarget): RunSpec {
  * where the build would come from. Both are read rather than assumed, so the page
  * can say "3 of 6 differ" before the button is pressed rather than after.
  */
-export async function vercelDeployPreview(input: VercelDeployTarget): Promise<VercelDeployPreview> {
+export async function vercelDeployPreview(
+  input: VercelDeployTarget,
+): Promise<VercelDeployPreview> {
   const { profile, region } = consoleDefaults();
 
   let project: VercelDeployPreview["project"] = null;
@@ -633,7 +711,9 @@ function describeSource(
   if (!repo) {
     return "no Git connection on the project, so its last deployment of this target is rebuilt";
   }
-  const production = repo.productionBranch ? ` — or ${repo.productionBranch} for production` : "";
+  const production = repo.productionBranch
+    ? ` — or ${repo.productionBranch} for production`
+    : "";
   return `built from ${repo.org}/${repo.repo}, from the branch this checkout is on${production}`;
 }
 
@@ -667,12 +747,20 @@ interface RawFullDeployment {
   created_at?: number;
   alias?: string[];
   aliasFinal?: string | null;
-  meta?: { githubCommitRef?: string; githubCommitMessage?: string; githubCommitSha?: string };
+  meta?: {
+    githubCommitRef?: string;
+    githubCommitMessage?: string;
+    githubCommitSha?: string;
+  };
   errorMessage?: string | null;
 }
 
 const targetsOf = (record: RawEnvRecord): string[] =>
-  Array.isArray(record.target) ? record.target : record.target ? [record.target] : [];
+  Array.isArray(record.target)
+    ? record.target
+    : record.target
+      ? [record.target]
+      : [];
 
 /**
  * The project's id, once per run.
@@ -682,19 +770,28 @@ const targetsOf = (record: RawEnvRecord): string[] =>
  * than passed in, so a project renamed between the page loading and the button
  * being pressed is reported by the step that needed it.
  */
-async function projectIdOf(ctx: StepContext, token: string, name: string): Promise<string> {
+async function projectIdOf(
+  ctx: StepContext,
+  token: string,
+  name: string,
+): Promise<string> {
   const cached = ctx.data.projectId;
   if (typeof cached === "string" && cached) return cached;
 
   const found = await vercelProject(name, { token });
   if (!found?.id) {
-    throw new Error(`'${name}' did not resolve to a project with an id on this Vercel account.`);
+    throw new Error(
+      `'${name}' did not resolve to a project with an id on this Vercel account.`,
+    );
   }
   ctx.data.projectId = found.id;
   return found.id;
 }
 
-async function readEnv(token: string, projectId: string): Promise<RawEnvRecord[]> {
+async function readEnv(
+  token: string,
+  projectId: string,
+): Promise<RawEnvRecord[]> {
   const body = await vercelRequest<{ envs?: RawEnvRecord[] }>(
     token,
     `/v10/projects/${encodeURIComponent(projectId)}/env?decrypt=true`,
@@ -721,26 +818,42 @@ type Current =
   | { state: "unreadable"; type: string }
   | { state: "set"; value: string };
 
-function currentFor(env: RawEnvRecord[], key: string, target: VercelTarget): Current {
+function currentFor(
+  env: RawEnvRecord[],
+  key: string,
+  target: VercelTarget,
+): Current {
   const record = env.find(
-    (entry) => entry.key === key && targetsOf(entry).length === 1 && targetsOf(entry)[0] === target,
+    (entry) =>
+      entry.key === key &&
+      targetsOf(entry).length === 1 &&
+      targetsOf(entry)[0] === target,
   );
   if (!record) return { state: "unset" };
 
   const type = record.type ?? "plain";
-  if (type === "encrypted" || type === "sensitive" || typeof record.value !== "string") {
+  if (
+    type === "encrypted" ||
+    type === "sensitive" ||
+    typeof record.value !== "string"
+  ) {
     return { state: "unreadable", type };
   }
   return { state: "set", value: record.value };
 }
 
-async function readDomains(token: string, projectId: string): Promise<VercelDomainView[]> {
+async function readDomains(
+  token: string,
+  projectId: string,
+): Promise<VercelDomainView[]> {
   const body = await vercelRequest<{ domains?: RawDomain[] }>(
     token,
     `/v9/projects/${encodeURIComponent(projectId)}/domains`,
   );
   return (body.domains ?? [])
-    .filter((domain): domain is RawDomain & { name: string } => Boolean(domain.name))
+    .filter((domain): domain is RawDomain & { name: string } =>
+      Boolean(domain.name),
+    )
     .map((domain) => ({
       name: domain.name,
       verified: domain.verified ?? false,
@@ -788,7 +901,10 @@ async function writeVariable(
    * own and the transcript says the record stays encrypted. A refusal costs one
    * extra call, not the deploy.
    */
-  const patchValue = async (id: string, extra: Record<string, unknown> = {}) => {
+  const patchValue = async (
+    id: string,
+    extra: Record<string, unknown> = {},
+  ) => {
     try {
       return await vercelRequest(token, `${route}/${encodeURIComponent(id)}`, {
         method: "PATCH",
@@ -807,14 +923,14 @@ async function writeVariable(
   };
 
   const exact = records.find(
-    (record) => targetsOf(record).length === 1 && targetsOf(record)[0] === target,
+    (record) =>
+      targetsOf(record).length === 1 && targetsOf(record)[0] === target,
   );
   if (exact?.id) {
-    const wasEncrypted = exact.type === "encrypted" || exact.type === "sensitive";
+    const wasEncrypted =
+      exact.type === "encrypted" || exact.type === "sensitive";
     const current =
-      wasEncrypted || typeof exact.value !== "string"
-        ? null
-        : exact.value;
+      wasEncrypted || typeof exact.value !== "string" ? null : exact.value;
 
     if (current === value) {
       ctx.log("note", `${key} — already ${value} in ${target}`);
@@ -832,11 +948,17 @@ async function writeVariable(
   }
 
   const spanning = records.find(
-    (record) => targetsOf(record).includes(target) && targetsOf(record).length > 1,
+    (record) =>
+      targetsOf(record).includes(target) && targetsOf(record).length > 1,
   );
   if (spanning?.id) {
-    const rest = targetsOf(spanning).filter((candidate) => candidate !== target);
-    await patchValue(spanning.id, { target: rest, value: spanning.value ?? value });
+    const rest = targetsOf(spanning).filter(
+      (candidate) => candidate !== target,
+    );
+    await patchValue(spanning.id, {
+      target: rest,
+      value: spanning.value ?? value,
+    });
     await createVariable(token, projectId, key, value, target);
     ctx.log(
       "note",
@@ -865,10 +987,14 @@ async function createVariable(
   value: string,
   target: VercelTarget,
 ): Promise<void> {
-  await vercelRequest(token, `/v10/projects/${encodeURIComponent(projectId)}/env?upsert=true`, {
-    method: "POST",
-    body: { key, value, type: "plain", target: [target] },
-  });
+  await vercelRequest(
+    token,
+    `/v10/projects/${encodeURIComponent(projectId)}/env?upsert=true`,
+    {
+      method: "POST",
+      body: { key, value, type: "plain", target: [target] },
+    },
+  );
 }
 
 async function writeVariables(
@@ -881,8 +1007,12 @@ async function writeVariables(
   const env = await readEnv(token, projectId);
   const writes: VercelVariableWrite[] = [];
 
-  for (const [key, value] of Object.entries(values).sort(([a], [b]) => a.localeCompare(b))) {
-    writes.push(await writeVariable(ctx, token, projectId, env, key, value, target));
+  for (const [key, value] of Object.entries(values).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    writes.push(
+      await writeVariable(ctx, token, projectId, env, key, value, target),
+    );
   }
   return writes;
 }
@@ -902,15 +1032,20 @@ async function dnsRecords(token: string, domain: string): Promise<string[]> {
     }>(token, `/v6/domains/${encodeURIComponent(domain)}/config`);
 
     const byRank = <T extends { rank?: number }>(entries: T[] | undefined) =>
-      (entries ?? []).slice().sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99))[0];
+      (entries ?? [])
+        .slice()
+        .sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99))[0];
 
     const cname = byRank(config.recommendedCNAME)?.value;
     if (cname) return [`CNAME ${domain} → ${cname}`];
 
     const ipv4 = byRank(config.recommendedIPv4)?.value ?? [];
-    if (ipv4.length > 0) return ipv4.map((address) => `A     ${domain} → ${address}`);
+    if (ipv4.length > 0)
+      return ipv4.map((address) => `A     ${domain} → ${address}`);
 
-    return [`nothing Vercel can recommend for ${domain} until its nameservers are Vercel's`];
+    return [
+      `nothing Vercel can recommend for ${domain} until its nameservers are Vercel's`,
+    ];
   } catch {
     // A config read that fails is not a reason to fail a deploy; the domain is
     // added either way, and the Vercel dashboard shows the same record.
@@ -947,9 +1082,14 @@ async function buildSource(
 ): Promise<BuildSource> {
   if (project?.repo?.repoId) {
     const ref =
-      target === "production" ? (project.repo.productionBranch ?? "main") : await currentBranch(ctx.root);
+      target === "production"
+        ? (project.repo.productionBranch ?? "main")
+        : await currentBranch(ctx.root);
 
-    ctx.log("note", `building ${project.repo.org}/${project.repo.repo}@${ref} for ${target}`);
+    ctx.log(
+      "note",
+      `building ${project.repo.org}/${project.repo.repo}@${ref} for ${target}`,
+    );
     return {
       kind: "git",
       repoId: project.repo.repoId,
@@ -1000,7 +1140,10 @@ function toDeploymentView(raw: RawFullDeployment) {
     branch: raw.meta?.githubCommitRef ?? null,
     commitMessage: raw.meta?.githubCommitMessage?.split("\n")[0] ?? null,
     commitSha: raw.meta?.githubCommitSha?.slice(0, 7) ?? null,
-    aliases: [...(raw.alias ?? []), ...(raw.aliasFinal ? [raw.aliasFinal] : [])],
+    aliases: [
+      ...(raw.alias ?? []),
+      ...(raw.aliasFinal ? [raw.aliasFinal] : []),
+    ],
   };
 }
 
@@ -1031,7 +1174,9 @@ async function watchDeployment(
 
   while (Date.now() - started < limit) {
     if (ctx.stopped()) {
-      throw new Error("Stopped while the build was running. The deployment carries on in Vercel.");
+      throw new Error(
+        "Stopped while the build was running. The deployment carries on in Vercel.",
+      );
     }
 
     const status = await vercelRequest<RawFullDeployment>(
@@ -1044,7 +1189,9 @@ async function watchDeployment(
 
     if (state !== last) {
       ctx.log("out", `${state}${url ? ` · ${url}` : ""}`);
-      ctx.progress(`${state.toLowerCase()} · ${Math.round((Date.now() - started) / 1000)}s`);
+      ctx.progress(
+        `${state.toLowerCase()} · ${Math.round((Date.now() - started) / 1000)}s`,
+      );
       last = state;
     }
 
@@ -1092,14 +1239,21 @@ async function drainBuildLog(
     );
     const events = (Array.isArray(body) ? body : []) as Array<{
       type?: string;
-      payload?: { text?: string; info?: { name?: string; step?: string; readyState?: string } };
+      payload?: {
+        text?: string;
+        info?: { name?: string; step?: string; readyState?: string };
+      };
     }>;
 
     for (const [index, event] of events.entries()) {
       if (index < seen) continue;
       const text =
         event.payload?.text ??
-        [event.payload?.info?.name, event.payload?.info?.step, event.payload?.info?.readyState]
+        [
+          event.payload?.info?.name,
+          event.payload?.info?.step,
+          event.payload?.info?.readyState,
+        ]
           .filter(Boolean)
           .join(" ");
       if (text) ctx.log(event.type === "stderr" ? "err" : "out", text);

@@ -78,7 +78,9 @@ export function vercelAppOf(app: AppKey): VercelApp | undefined {
 export function suggestDomain(app: AppKey, stage: string): string {
   const deployed = vercelAppOf(app);
   if (!deployed) return "";
-  return stage === "dev" ? deployed.domain : `${stage}.${deployed.domain}`;
+  return stage === "production"
+    ? deployed.domain
+    : `${stage}.${deployed.domain}`;
 }
 
 /**

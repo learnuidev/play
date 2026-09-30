@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { LogStream } from "@/lib/types";
+import type { LogStream, RunAction } from "@/lib/types";
 import {
   awsJson,
   bucketAccess,
@@ -223,6 +223,18 @@ async function exec(
  * a failure that names nothing and is not about anything being wrong. Since two
  * environments can now be deployed at once, each writes `cdk.out/<stage>`, which
  * `infra/.gitignore` already covers with the parent.
+ *
+ * ## Why that directory is cleared before a synth
+ *
+ * **CDK never prunes an assembly.** Every synth stages the assets it just built
+ * under a content hash and leaves whatever was there before, so a directory that
+ * has been synthesized into a few times holds one copy of the handlers per
+ * distinct build — a gigabyte for one stage, and the checkout's root `cdk.out`
+ * had reached fourteen. Per environment that is a gigabyte kept per environment
+ * forever, so this deletes the stage's own directory first: the run that needs it
+ * is the run about to write it, `deploy` synthesizes before it deploys, and only
+ * one run per stage can be going at a time. `bootstrap` reads no assembly, so it
+ * is not worth the delete.
  */
 async function cdk(
   ctx: StepContext,
@@ -233,7 +245,12 @@ async function cdk(
   if (!fs.existsSync(path.join(infra, "cdk.json"))) {
     throw new Error(`No cdk.json in ${infra} — that is the file that names the CDK app.`);
   }
+
   const output = path.join("cdk.out", ctx.stage);
+  if (args[0] === "synth" || args[0] === "deploy") {
+    fs.rmSync(path.join(infra, output), { recursive: true, force: true });
+  }
+
   return exec(ctx, cdkBin(), [...args, "--output", output], { ...options, cwd: infra });
 }
 
@@ -371,6 +388,75 @@ function readEnvLocal(app: string): Record<string, string> {
 
 const FRONTEND_APPS = ["studio", "marketplace", "demo"] as const;
 
+/**
+ * The identity, and the account the environment claims.
+ *
+ * The mismatch check is the whole reason this is a step of its own. The stacks
+ * take their account and region from `infra/config/play-<stage>.json` rather than
+ * from the ambient credentials, so a profile pointing somewhere else does not
+ * fail until CDK refuses the first AWS call — halfway through a deploy, with
+ * assets already uploaded to the wrong place.
+ *
+ * It is shared by both plans because it is one question asked in two directions,
+ * and it matters more in one of them: a deploy in the wrong account creates
+ * stacks nobody wanted, and a **destroy in the wrong account deletes somebody
+ * else's environment**. So the sentence it refuses with names the direction it
+ * was asked about.
+ */
+function credentialsStep(stage: string, action: RunAction): PlanStep {
+  const stageConfigPath = path.relative(repoPath(), configFile(stage));
+  const verb = action === "destroy" ? "Deleting" : "Deploying";
+
+  return {
+    id: "credentials",
+    title: "This machine can act on the account",
+    detail:
+      "`aws sts get-caller-identity` with the repository's profile. The account it names has to be the one the environment's config names, because the stacks take their account and region from that file rather than from the credentials.",
+    satisfiedLabel: "Verified",
+    check: async (ctx) => {
+      const identity = await getIdentity({ profile: ctx.profile, region: ctx.region });
+      if (!identity) {
+        return {
+          satisfied: false,
+          note: await identityError({ profile: ctx.profile, region: ctx.region }),
+        };
+      }
+      ctx.data.identity = identity;
+
+      const config = readConfig(ctx.stage);
+      if (config?.account && config.account !== identity.account) {
+        return {
+          satisfied: false,
+          note: `profile '${ctx.profile}' is account ${identity.account}, but ${stageConfigPath} names ${config.account}`,
+        };
+      }
+      if (config?.region && config.region !== ctx.region) {
+        return {
+          satisfied: false,
+          note: `${stageConfigPath} names region ${config.region}, this console is reading ${ctx.region}`,
+        };
+      }
+
+      return { satisfied: true, note: `${identity.arn} · account ${identity.account}` };
+    },
+    apply: async (ctx) => {
+      const identity = await getIdentity({ profile: ctx.profile, region: ctx.region });
+      if (!identity) {
+        throw new Error(await identityError({ profile: ctx.profile, region: ctx.region }));
+      }
+      const config = readConfig(ctx.stage);
+      if (config?.account && config.account !== identity.account) {
+        throw new Error(
+          `Refusing to continue: profile '${ctx.profile}' resolves to account ${identity.account}, ` +
+            `and ${stageConfigPath} says this environment is account ${config.account}. ` +
+            `${verb} here would act on the wrong account's stacks.`,
+        );
+      }
+      return { note: `${identity.arn} · account ${identity.account}` };
+    },
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * The plan
  * ------------------------------------------------------------------ */
@@ -425,63 +511,7 @@ export function buildPlan(stage: string): PlanStep[] {
     },
   };
 
-  /**
-   * The identity, and the account the environment claims.
-   *
-   * The mismatch check is the whole reason this is a step of its own. The
-   * stacks take their account and region from `infra/config/play-<stage>.json`
-   * rather than from the ambient credentials, so a profile pointing somewhere
-   * else does not fail until CDK refuses the first AWS call — halfway through a
-   * deploy, with assets already uploaded to the wrong place.
-   */
-  const credentials: PlanStep = {
-    id: "credentials",
-    title: "This machine can act on the account",
-    detail:
-      "`aws sts get-caller-identity` with the repository's profile. The account it names has to be the one the environment's config names, because the stacks take their account and region from that file rather than from the credentials.",
-    satisfiedLabel: "Verified",
-    check: async (ctx) => {
-      const identity = await getIdentity({ profile: ctx.profile, region: ctx.region });
-      if (!identity) {
-        return {
-          satisfied: false,
-          note: await identityError({ profile: ctx.profile, region: ctx.region }),
-        };
-      }
-      ctx.data.identity = identity;
-
-      const config = readConfig(ctx.stage);
-      if (config?.account && config.account !== identity.account) {
-        return {
-          satisfied: false,
-          note: `profile '${ctx.profile}' is account ${identity.account}, but ${stageConfigPath} names ${config.account}`,
-        };
-      }
-      if (config?.region && config.region !== ctx.region) {
-        return {
-          satisfied: false,
-          note: `${stageConfigPath} names region ${config.region}, this console is reading ${ctx.region}`,
-        };
-      }
-
-      return { satisfied: true, note: `${identity.arn} · account ${identity.account}` };
-    },
-    apply: async (ctx) => {
-      const identity = await getIdentity({ profile: ctx.profile, region: ctx.region });
-      if (!identity) {
-        throw new Error(await identityError({ profile: ctx.profile, region: ctx.region }));
-      }
-      const config = readConfig(ctx.stage);
-      if (config?.account && config.account !== identity.account) {
-        throw new Error(
-          `Refusing to continue: profile '${ctx.profile}' resolves to account ${identity.account}, ` +
-            `and ${stageConfigPath} says this environment is account ${config.account}. ` +
-            "Deploying here would put stacks in the wrong account.",
-        );
-      }
-      return { note: `${identity.arn} · account ${identity.account}` };
-    },
-  };
+  const credentials = credentialsStep(stage, "deploy");
 
   /**
    * The config file, and the one step that makes "a new environment" mean
@@ -1385,6 +1415,386 @@ export function buildPlan(stage: string): PlanStep[] {
     probe,
     trigger,
   ];
+}
+
+/* ------------------------------------------------------------------ *
+ * The destroy plan
+ * ------------------------------------------------------------------ */
+
+/**
+ * Deleting an environment: what goes, what stays, and what the staying costs.
+ *
+ * The unit is the same one deployment uses — a stage — and what this removes is
+ * the four CloudFormation stacks **and** `infra/config/play-<stage>.json`, which
+ * is the file that makes the environment exist in this repository at all. What it
+ * does **not** remove is any of the data. Every stateful resource in this app is
+ * `RemovalPolicy.RETAIN` — the 27 tables, both buckets, the CloudFront
+ * distribution, the user pool and every log group — so a destroy takes the API
+ * away and leaves the rest in AWS, unmanaged, which is the state
+ * `infra/README.md` describes under *Destroying a stage*.
+ *
+ * That is why one `cdk destroy` is written down as six steps. The command is the
+ * easy part; the rest is the three ways this can hurt somebody who is not looking:
+ *
+ * - **A shared user pool's pre sign-up trigger.** A stage that imports its pool
+ *   is one of several pointing their own `link-federated-user` at one pool, and
+ *   the pool can call exactly one of them. If it calls *this* stage's function,
+ *   destroying the stacks deletes a function Cognito is still invoking, and the
+ *   symptom is not an error in a log — it is people unable to sign up. That step
+ *   refuses, exactly as `teardown-legacy-stack.sh` refuses for the same reason.
+ * - **What the next deploy of the same name will hit.** A retained table, a
+ *   retained bucket a config *names*, and a retained log group are all things
+ *   CloudFormation refuses to create again, and each fails as "already exists" —
+ *   a sentence that names the resource and nothing anybody can act on. The step
+ *   after the destroy names them instead.
+ * - **What is still pointed here.** The apps' `.env.local` files, which the
+ *   deploy plan's twelfth step writes; a frontend reading a deleted API URL is a
+ *   product that does not work, and nothing in AWS says so.
+ *
+ * Two of those are reported rather than fixed, and that is the same distinction
+ * the deploy plan makes for the pre sign-up trigger: which environment the apps
+ * point at, and whether a retained table should be deleted, are decisions rather
+ * than steps. The console says what is true and leaves the decision where it
+ * belongs.
+ */
+export function buildDestroyPlan(stage: string): PlanStep[] {
+  const stageConfigPath = path.relative(repoPath(), configFile(stage));
+
+  /**
+   * The one thing a destroy can break that is not this environment.
+   *
+   * An imported pool is shared — one pool, one pre sign-up trigger, every stage
+   * deploying its own function — and this is the check `teardown-legacy-stack.sh`
+   * makes before it deletes a Serverless stack for the same reason. The step
+   * cannot fix it: repointing the trigger takes federated sign-up away from
+   * whoever holds it, which is a decision about which environment owns sign-up,
+   * exactly as it is on the way in.
+   */
+  const trigger: PlanStep = {
+    id: "trigger",
+    title: "No shared pool is calling into this environment",
+    detail:
+      "A stage that **imports** its user pool is one of several pointing their own `link-federated-user` function at one pool, and the pool can call one of them. If it calls this stage's, deleting the stacks deletes a function Cognito is still invoking: sign-up stops working, and nothing in the transcript of the destroy says so. An environment that **creates** its own pool has no such problem — its pool is its own, and it is retained. This step is not optional, and that is the point of it: a failure here *stops* the delete.",
+    satisfiedLabel: "Nothing is calling here",
+    timeoutMs: 3 * 60_000,
+    check: async (ctx) => {
+      const loaded = readConfig(ctx.stage);
+      if (ownershipOf(loaded).auth) {
+        return {
+          satisfied: true,
+          note: `this environment's own pool — nothing else calls play-${ctx.stage}-link-federated-user`,
+        };
+      }
+
+      const poolId = loaded?.existing?.userPoolId;
+      if (!poolId) return { satisfied: true, note: "the config names no user pool" };
+
+      const expected = `arn:aws:lambda:${ctx.region}:${
+        (ctx.data.identity as { account?: string } | undefined)?.account ?? loaded?.account
+      }:function:play-${ctx.stage}-link-federated-user`;
+
+      const pool = await describeUserPool(poolId, ctx);
+      if (!pool) {
+        return { satisfied: false, note: `pool ${poolId} could not be read, so its trigger is unknown` };
+      }
+
+      const current = pool.LambdaConfig?.PreSignUp;
+      if (current === expected) {
+        return {
+          satisfied: false,
+          note: `the shared pool ${poolId} calls play-${ctx.stage}-link-federated-user, which this destroy deletes`,
+        };
+      }
+      return {
+        satisfied: true,
+        note: `the shared pool calls ${current ? (current.split(":function:")[1] ?? current) : "nothing"} — not this environment's function`,
+      };
+    },
+    apply: async (ctx) => {
+      throw new Error(
+        `The user pool ${readConfig(ctx.stage)?.existing?.userPoolId} is shared, and its pre sign-up ` +
+          `trigger calls play-${ctx.stage}-link-federated-user — the function this destroy deletes. ` +
+          "Cognito would go on invoking a function that no longer exists, and people would be unable " +
+          "to sign up.\n\n" +
+          "Deploy the environment that should own sign-up for this pool, then move the trigger to it:\n\n" +
+          "  node infra/scripts/adopt-cognito.mjs --stage=<that-stage> " +
+          `--profile=${ctx.profile} --region=${ctx.region}\n\n` +
+          "Then delete this environment again.",
+      );
+    },
+  };
+
+  /**
+   * The destroy itself.
+   *
+   * `--force` is not a convenience: there is no terminal here. Every process this
+   * console starts has stdin on `ignore`, so CDK's "are you sure" would take the
+   * question and get an end-of-file — the run would stop on a prompt nobody can
+   * see. The confirmation this operation has is the typed stage name on the page,
+   * which is asked for before the run exists at all.
+   *
+   * There is **no check that makes this unnecessary**, and the check that is here
+   * is the opposite of one: it asks whether any stack exists, so that deleting an
+   * environment somebody has already emptied is a check mark rather than a CDK
+   * run against nothing. What it also does is the one read this plan cannot do
+   * afterwards — `ApiUrl`, before the stack that publishes it goes — because the
+   * report at the end is about what is still pointed at this environment.
+   */
+  const destroy: PlanStep = {
+    id: "destroy",
+    title: "The four stacks are destroyed",
+    detail:
+      "`cdk destroy --all --context stage=<stage>`: the API, its 158 functions, the gateway, the roles and the nested stacks that hold the routes. **The data is not part of this** — every stateful resource here is `RemovalPolicy.RETAIN`, so the tables, the buckets, the distribution and the pool are left in AWS and CloudFormation stops managing them. What stops working is everything that talks to this environment's API, and the next step says what that is.",
+    satisfiedLabel: "Nothing to destroy",
+    timeoutMs: 60 * 60_000,
+    check: async (ctx) => {
+      const details = await describeStacks(rootStackNames(ctx.stage), {
+        profile: ctx.profile,
+        region: ctx.region,
+      });
+      if (details.length === 0) {
+        return {
+          satisfied: true,
+          note: `no stack of '${ctx.stage}' exists in ${ctx.region}`,
+        };
+      }
+
+      // Read now, because the stack that publishes it is about to go, and the
+      // report compares it against what the three apps are reading.
+      const merged = details.reduce<Record<string, string>>(
+        (acc, detail) => ({ ...acc, ...detail.outputs }),
+        {},
+      );
+      ctx.data.apiUrlBefore = merged.ApiUrl ?? null;
+      ctx.data.stacksBefore = details.map((detail) => detail.name);
+
+      return {
+        satisfied: false,
+        note: `${details.length} of 4 root stacks exist${merged.ApiUrl ? ` · API ${merged.ApiUrl}` : ""}`,
+      };
+    },
+    apply: async (ctx) => {
+      /** `<stack>: 'destroyed' | 'failed'`, as CDK reports each one. */
+      const perStack = new Map<string, "destroyed" | "failed">();
+
+      const onLine = (stream: LogStream, text: string) => {
+        ctx.log(stream, text);
+        // ` ✅  PlayApiStack-staging: destroyed`. The variation selector is
+        // optional in the pattern for the reason it is optional in the deploy
+        // step: whether an emoji carries U+FE0F depends on how it was typed.
+        const match = /^\s*(?:✅|❌)\uFE0F?\s+(Play[^\s:]+)/.exec(text.replace(/^\s+/, " "));
+        if (match) {
+          perStack.set(match[1], text.includes("❌") ? "failed" : "destroyed");
+          const gone = [...perStack.values()].filter((value) => value === "destroyed").length;
+          ctx.progress(`${gone} of ${perStack.size} destroyed`);
+        }
+      };
+
+      const result = await cdk(
+        ctx,
+        ["destroy", "--all", "--force", "--context", `stage=${ctx.stage}`],
+        { timeoutMs: 60 * 60_000, onLine },
+      );
+      assertOk(result, "cdk destroy", 60 * 60_000);
+
+      const gone = [...perStack.values()].filter((value) => value === "destroyed").length;
+      if (perStack.size === 0) {
+        return { note: "the destroy finished; read the transcript for the per-stack result" };
+      }
+      return { note: `${gone} stack${gone === 1 ? "" : "s"} destroyed` };
+    },
+  };
+
+  /**
+   * The post-condition, and the reason the config file is deleted after it.
+   *
+   * A stack in `DELETE_FAILED` is a stack that has mostly gone and is waiting for
+   * something — a bucket with objects in it, a resource somebody deleted by hand.
+   * That is precisely when the config file must *stay*: it is the record of what
+   * the environment stood on, and a failed delete is the case where somebody will
+   * want it. So this step comes before the file goes, and a stack still standing
+   * stops the run here.
+   */
+  const verify: PlanStep = {
+    id: "verify",
+    title: "No stack of this environment is left",
+    detail:
+      "The four root stacks are gone. A stack in `DELETE_FAILED` has mostly been deleted and is waiting for whatever blocked it, which is the state where the config file is still worth having: this step stops there rather than letting the environment be forgotten.",
+    satisfiedLabel: "Gone",
+    timeoutMs: 5 * 60_000,
+    check: async (ctx) => {
+      const details = await describeStacks(rootStackNames(ctx.stage), {
+        profile: ctx.profile,
+        region: ctx.region,
+      });
+      if (details.length === 0) {
+        return { satisfied: true, note: "all four root stacks are gone" };
+      }
+      return {
+        satisfied: false,
+        note: details.map((detail) => `${detail.name} is ${stackLabel(detail.status)}`).join("; "),
+      };
+    },
+    apply: async (ctx) => {
+      const details = await describeStacks(rootStackNames(ctx.stage), {
+        profile: ctx.profile,
+        region: ctx.region,
+      });
+      throw new Error(
+        details.length === 0
+          ? "The stacks are gone; this step should have been satisfied."
+          : `${details.map((detail) => `${detail.name} is ${stackLabel(detail.status)}`).join("; ")}. ` +
+            `Clear what blocked the deletion and delete this environment again — ${stageConfigPath} is ` +
+            "still there, and it is what a second attempt reads.",
+      );
+    },
+  };
+
+  /**
+   * What is left, and what it costs — the step this console is here for.
+   *
+   * Every line is read rather than assumed: the log groups by prefix, the tables
+   * by name prefix, the buckets and the pool out of the config that names them,
+   * and the apps' own `.env.local` files compared against the `ApiUrl` the
+   * destroy step captured before the stack publishing it went away.
+   *
+   * It **reports instead of applying**, in the idiom of the deploy plan's
+   * pre-sign-up step: deleting a retained table full of courses, or pointing the
+   * apps somewhere else, is a decision about this product rather than a step
+   * toward deleting this environment. The check is satisfied — this step is a
+   * reading, and a reading that found what it expected is a check mark labelled
+   * *Reported* — and its transcript is the full account.
+   */
+  const retained: PlanStep = {
+    id: "retained",
+    title: "What is left behind, and what a redeploy of this name will hit",
+    detail:
+      "A destroy does not delete data: the tables, the buckets, the distribution and the pool are `RemovalPolicy.RETAIN`, so they stay in AWS with nobody managing them, and a **redeploy of the same stage name** stops at early validation naming whatever it cannot create — a `play-<stage>-*` table, a bucket this config names, a log group. This step names the ones that exist and says what each costs; it deletes nothing, because which of them should go is a decision about this product rather than a step in deleting an environment.",
+    satisfiedLabel: "Reported",
+    timeoutMs: 3 * 60_000,
+    check: async (ctx) => {
+      const loaded = readConfig(ctx.stage);
+      const ownership = ownershipOf(loaded);
+      const lines: string[] = [];
+
+      // Log groups: named after the functions, and retained so that a deleted
+      // environment is not a deleted record of what it did.
+      const groups = await awsJson<{ logGroups?: Array<{ logGroupName: string }> }>(
+        ["logs", "describe-log-groups", "--log-group-name-prefix", `/aws/lambda/play-${ctx.stage}`],
+        { profile: ctx.profile, region: ctx.region, optional: true },
+      ).catch(() => null);
+      const logGroups = groups?.logGroups?.length ?? 0;
+      if (logGroups > 0) {
+        lines.push(
+          `${logGroups} CloudWatch log groups under /aws/lambda/play-${ctx.stage}* — retained, and the ` +
+            "only record of what this environment did. They are also what a redeploy of this name stops " +
+            'on ("a log group with identifier … already exists").',
+        );
+      }
+
+      // Tables: named `play-<stage>-*` for an environment that creates them, and
+      // never touched for one that imports them.
+      const tables = await awsJson<{ TableNames?: string[] }>(["dynamodb", "list-tables"], {
+        profile: ctx.profile,
+        region: ctx.region,
+        optional: true,
+      }).catch(() => null);
+      const mine = (tables?.TableNames ?? []).filter((name) => name.startsWith(`play-${ctx.stage}-`));
+      if (ownership.tables && mine.length > 0) {
+        lines.push(
+          `${mine.length} DynamoDB tables named play-${ctx.stage}-* — retained, with point-in-time ` +
+            "recovery, and full of whatever was in them. A redeploy of this name cannot create them " +
+            "again, so the choice is to deploy under a different name or to delete them deliberately.",
+        );
+      } else if (!ownership.tables && loaded) {
+        const imported = Object.keys(loaded.existing?.tables ?? {}).length;
+        lines.push(
+          `The tables this environment imported${imported ? ` (${imported} of them)` : ""} were never ` +
+            "managed by it: a destroy here did not touch them, and neither did it touch the shared " +
+            "bucket or the user pool.",
+        );
+      }
+
+      // Buckets and the distribution, out of the config that names them.
+      const named = [
+        loaded?.videosBucketName ? `the videos bucket ${loaded.videosBucketName}` : null,
+        loaded?.cloudFrontLogsBucketName ? `the CloudFront logs bucket ${loaded.cloudFrontLogsBucketName}` : null,
+      ].filter((part): part is string => part !== null);
+      if (ownership.media && named.length > 0) {
+        lines.push(
+          `${named.join(" and ")} — retained, and **named by this config**, which is what a redeploy of ` +
+            "this name stops on: CloudFormation will not create a bucket that exists.",
+        );
+      } else if (ownership.media) {
+        lines.push(
+          "Its videos bucket and CloudFront logs bucket were named by CloudFormation and are retained — " +
+            "a redeploy of this name makes new ones and leaves these where they are.",
+        );
+      }
+
+      if (ownership.auth) {
+        lines.push(
+          "Its own Cognito user pool is retained, with the accounts that were in it. A redeploy of this " +
+            "name creates a *new* pool, so nobody who signed up here can sign in to that one — and the " +
+            "retained pool still carries a pre sign-up trigger pointing at a function that no longer exists.",
+        );
+      }
+
+      // What is still pointed here: the three apps, which the deploy plan's
+      // twelfth step writes and nothing unwrites.
+      const apiUrl = ctx.data.apiUrlBefore as string | null | undefined;
+      if (apiUrl) {
+        const pointing = FRONTEND_APPS.filter((app) => readEnvLocal(app).NEXT_PUBLIC_API_URL === apiUrl);
+        if (pointing.length > 0) {
+          lines.push(
+            `${pointing.join(", ")} still read${pointing.length === 1 ? "s" : ""} this environment's API ` +
+              `URL in .env.local — anything they send now fails. Start them against another environment, ` +
+              "or deploy this one again.",
+          );
+        }
+      }
+
+      for (const line of lines) ctx.log("out", line);
+      ctx.data.retained = lines;
+
+      return {
+        satisfied: true,
+        note: lines.length
+          ? `${lines.length} thing${lines.length === 1 ? "" : "s"} left behind — open this step to read what they cost`
+          : "nothing was left behind",
+      };
+    },
+    apply: async () => ({ note: "reported, not applied" }),
+  };
+
+  /**
+   * The environment itself: the file that makes this stage exist.
+   *
+   * Last, and only once the stacks are gone. The config is a tracked file, so
+   * this is a change to commit rather than a fact in AWS — and for a stage that
+   * *imported* its resources it was also the only written record of which tables,
+   * which bucket and which pool that stage stood on, which is the cost of the
+   * console doing this rather than somebody deleting a file.
+   */
+  const config: PlanStep = {
+    id: "config",
+    title: "The environment's config file is removed",
+    detail: `\`${stageConfigPath}\` is what makes this stage an environment: the stacks read it for the account, the region, the ownership of the tables, the media and the pool, and for the product settings. Removing it is what takes the environment out of the console — and it is a **tracked file**, so it is a change to commit. Steps 3 and 4 in \`docs/migration.md\` are the way back for a stage that imported its resources; a stage that created its own is re-created from the Checklist once whatever it left behind has been dealt with.`,
+    satisfiedLabel: "Already gone",
+    check: async () => {
+      return fs.existsSync(configFile(stage))
+        ? { satisfied: false, note: `${stageConfigPath} is still there` }
+        : { satisfied: true, note: `there is no ${stageConfigPath}` };
+    },
+    apply: async () => {
+      fs.rmSync(configFile(stage));
+      return {
+        note: `removed ${stageConfigPath} — the environment is gone from the console; commit the deletion`,
+      };
+    },
+  };
+
+  return [credentialsStep(stage, "destroy"), trigger, destroy, verify, retained, config];
 }
 
 /* ------------------------------------------------------------------ *

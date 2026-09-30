@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   DeployEvent,
   LogLine,
+  RunAction,
   RunKind,
   RunResult,
   RunView,
@@ -11,7 +12,7 @@ import type {
   VercelDeployResult,
   VercelDeployTarget,
 } from "@/lib/types";
-import { buildPlan, type PlanStep, type StepContext, type LockName } from "./plan";
+import { buildDestroyPlan, buildPlan, type PlanStep, type StepContext, type LockName } from "./plan";
 import type { PipedChild } from "./exec";
 import { repoRoot } from "./repo";
 
@@ -310,10 +311,17 @@ export function lockReason(name: LockName): string {
  */
 export interface RunSpec {
   kind: RunKind;
+  /** Which way this run goes. A destroy takes an environment away; a deploy builds it. */
+  action: RunAction;
   /**
    * What this run is about, as an identity rather than a sentence: the stage of
    * a backend run, the app of a frontend one. Two runs with the same key are the
    * same subject and cannot overlap; two with different keys can, and do.
+   *
+   * A **destroy** and a **deploy** of one stage share a key on purpose: deleting
+   * an environment that is being deployed — or deploying one that is being
+   * deleted — is not a race anybody wins, and the refusal names whichever of the
+   * two is running.
    */
   key: string;
   /** What the run is about, for the refusal a second start gets. */
@@ -326,6 +334,8 @@ export interface RunSpec {
   vercel?: VercelDeployTarget | null;
   /** A backend run's four stacks and the outputs an app needs. */
   result?: (data: Record<string, unknown>) => RunResult | null;
+  /** A destroy run's account of what it left behind. */
+  report?: (data: Record<string, unknown>) => string[] | null;
   /** A frontend run's own deployment. */
   deployment?: (data: Record<string, unknown>) => VercelDeployResult | null;
   /** The AWS account the steps acted on, when they learned one. */
@@ -347,6 +357,7 @@ export interface StartOptions {
 export function startDeploy(options: StartOptions): RunView {
   return startRun({
     kind: "backend",
+    action: "deploy",
     key: options.stage,
     subject: `'${options.stage}'`,
     stage: options.stage,
@@ -370,15 +381,46 @@ export function startDeploy(options: StartOptions): RunView {
   });
 }
 
+/**
+ * Deleting an environment — the other direction, through the same engine.
+ *
+ * It is a run rather than a button that fires one command because `cdk destroy`
+ * is minutes long, because the transcript is the only record of what was deleted,
+ * and because the engine already has the two things this needs: a Stop that
+ * reaches the `cdk` process group, and the per-stage lock that makes "not while a
+ * deploy is running" a property of the store rather than a rule somebody has to
+ * remember. `buildDestroyPlan` is the checklist.
+ */
+export function startDestroy(options: StartOptions): RunView {
+  return startRun({
+    kind: "backend",
+    action: "destroy",
+    key: options.stage,
+    subject: `'${options.stage}'`,
+    stage: options.stage,
+    profile: options.profile,
+    region: options.region,
+    steps: buildDestroyPlan(options.stage),
+    // What a delete produces is not a URL but an account of what it left in AWS,
+    // which the page draws where a deploy draws its outputs.
+    report: (data) => ((data.retained as string[] | undefined) ?? []).slice() || null,
+    account: (data) => (data.identity as { account?: string } | undefined)?.account ?? null,
+  });
+}
+
 export function startRun(spec: RunSpec): RunView {
   const runs = store.runs[spec.kind];
   const going = runs.get(spec.key);
 
   if (going?.view.status === "running") {
     // Refused by subject, not by kind: another *environment* deploying is not a
-    // reason to refuse this one.
+    // reason to refuse this one. The sentence names what the running run is
+    // *doing*, because "a deploy is already running" over a delete in progress
+    // sends somebody looking for the wrong button.
+    const doing =
+      going.view.kind === "frontend" ? "frontend deploy" : going.view.action === "destroy" ? "delete" : "deploy";
     const error = new Error(
-      `A ${spec.kind === "backend" ? "deploy" : "frontend deploy"} is already running against ` +
+      `A ${doing} is already running against ` +
         `${going.view.vercel ? `'${going.view.vercel.app} → ${going.view.vercel.target}'` : going.view.stage}. ` +
         "Wait for it, or stop it.",
     );
@@ -390,6 +432,7 @@ export function startRun(spec: RunSpec): RunView {
     view: {
       id: randomUUID(),
       kind: spec.kind,
+      action: spec.action,
       stage: spec.stage,
       profile: spec.profile,
       region: spec.region,
@@ -400,6 +443,7 @@ export function startRun(spec: RunSpec): RunView {
       finishedAt: null,
       steps: spec.steps.map(toStepView),
       result: null,
+      report: null,
       deployment: null,
       error: null,
     },
@@ -701,6 +745,7 @@ function finish(run: InternalRun, failure: string | null): void {
   // run that failed halfway still reports whatever it did get to.
   view.account = run.spec.account?.(run.data) ?? null;
   view.result = run.spec.result?.(run.data) ?? null;
+  view.report = run.spec.report?.(run.data) ?? null;
   view.deployment = run.spec.deployment?.(run.data) ?? null;
 
   // The subject keeps its entry: it *is* the last run for this stage, which is

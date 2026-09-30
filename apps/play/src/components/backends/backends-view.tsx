@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { ChevronRightIcon, ExternalLinkIcon, PlusIcon, XIcon } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import {
+  ChevronRightIcon,
+  ExternalLinkIcon,
+  PlusIcon,
+  RocketIcon,
+  XIcon,
+} from "lucide-react";
 
 import { useNameStage, useShell } from "@/components/console/state";
 import { Button, IconButton } from "@/components/ui/button";
@@ -14,11 +20,11 @@ import {
   backendBlurb,
   backendPath,
   backendState,
-  deployingRun,
-  deployProgress,
+  runProgress,
+  runningFor,
 } from "@/lib/backends";
 import { apiHost } from "@/lib/format";
-import type { EnvironmentView, RunView } from "@/lib/types";
+import type { EnvironmentView, RunSummary } from "@/lib/types";
 
 /**
  * The backends: a row per environment, and the one button that starts a new one.
@@ -38,17 +44,25 @@ import type { EnvironmentView, RunView } from "@/lib/types";
  * built from the deployed stacks would be empty on a fresh checkout, which is
  * exactly when somebody needs to deploy the first one.
  *
- * ## Why the button does not deploy
+ * ## Why "Deploy to a new backend env" does not deploy
  *
  * "Deploy to a new backend env" asks for a name and then *opens* that
  * environment's page on its **Checklist** tab, because that is what a new
  * environment needs first: a config file, a Google client id and secret for the
  * pool it creates, and a signing key. The first of those is written and the
- * other two are supplied or generated there — and nothing in this app deploys
- * without a press on the Deployments tab.
+ * other two are supplied or generated there.
+ *
+ * ## Why each row has a Deploy on it
+ *
+ * The row's own button is the same press as the Deployments tab's, one page
+ * earlier: the same `POST /api/deploy`, the same plan, the same run — so an
+ * environment somebody already knows is ready does not need a page opened to
+ * start it. It is deliberately the *small* button, and the Deployments tab is
+ * still where the checklist is read before a first deploy: this one is for the
+ * fourth deploy of an environment that has been up for months.
  */
 export function BackendsView() {
-  const { stages, state, loading, runs } = useShell();
+  const { stages, state, loading, runs, refreshRuns } = useShell();
   const router = useRouter();
   const [choice, setChoice] = useState("");
 
@@ -77,11 +91,11 @@ export function BackendsView() {
       { value: "", label: "Open an environment…" },
       ...allRows.map((stage) => {
         const environment = environmentOf.get(stage) ?? null;
-        const deploying = deployingRun(runs, stage) !== null;
+        const activity = runningFor(runs, stage)?.action ?? null;
         return {
           value: stage,
           label: stage,
-          hint: loading ? "reading…" : backendState(environment, account, deploying).label,
+          hint: loading ? "reading…" : backendState(environment, account, activity).label,
         };
       }),
     ],
@@ -124,7 +138,8 @@ export function BackendsView() {
             environment={environmentOf.get(stage) ?? null}
             account={account}
             loading={loading}
-            deploying={deployingRun(runs, stage)}
+            running={runningFor(runs, stage)}
+            onStarted={refreshRuns}
           />
         ))}
       </div>
@@ -141,7 +156,8 @@ function BackendRow({
   environment,
   account,
   loading,
-  deploying,
+  running,
+  onStarted,
 }: {
   stage: string;
   environment: EnvironmentView | null;
@@ -152,12 +168,47 @@ function BackendRow({
    * one — and so is every other verdict this row could carry, so it carries none.
    */
   loading: boolean;
-  /** The deploy running against this stage, when there is one. */
-  deploying: RunView | null;
+  /** The run going against this stage, when there is one — either direction. */
+  running: RunSummary | null;
+  /** Told when a deploy was accepted, so the list re-reads what is running. */
+  onStarted: () => void;
 }) {
-  const status = backendState(environment, account, deploying !== null);
+  const status = backendState(environment, account, running?.action ?? null);
   const stacks = environment?.stacks ?? [];
   const complete = stacks.filter((stack) => stack.healthy).length;
+
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  /**
+   * The same `POST /api/deploy` the Deployments tab makes, and the same plan.
+   *
+   * A refusal is the server's own sentence — most often that this environment is
+   * already deploying, which is also the state the button is disabled in, so it
+   * is mostly the race between two tabs. It is shown here rather than swallowed:
+   * a button that does nothing and says nothing is the worst of the three.
+   */
+  const deploy = useCallback(async () => {
+    setStarting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/deploy", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ stage }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setError(body.error ?? `The deploy could not start (HTTP ${response.status}).`);
+        return;
+      }
+      onStarted();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setStarting(false);
+    }
+  }, [stage, onStarted]);
 
   return (
     <Card className="flex flex-col gap-4">
@@ -185,27 +236,50 @@ function BackendRow({
           </p>
         </div>
 
-        {environment?.apiUrl ? (
-          <a
-            href={environment.apiUrl}
-            target="_blank"
-            rel="noreferrer"
-            title={`Open ${environment.apiUrl}`}
-            className="border-border/70 bg-card hover:bg-accent inline-flex h-10 max-w-full items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors"
+        <div className="flex items-center gap-2">
+          {environment?.apiUrl ? (
+            <a
+              href={environment.apiUrl}
+              target="_blank"
+              rel="noreferrer"
+              title={`Open ${environment.apiUrl}`}
+              className="border-border/70 bg-card hover:bg-accent inline-flex h-8 max-w-full items-center gap-2 rounded-full border px-3 text-xs font-medium transition-colors"
+            >
+              <span className="truncate font-mono text-xs">{apiHost(environment.apiUrl)}</span>
+              <ExternalLinkIcon className="size-3.5 shrink-0" />
+            </a>
+          ) : null}
+
+          {/* The row's Deploy: the same press as the Deployments tab's, one page
+              earlier. Disabled, not hidden, while a run is going — the chip
+              beside the name is what says why. Its label follows the run that is
+              going, because "Deploying" over a delete would be a lie about
+              somebody's environment. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            busy={starting}
+            disabled={status.running}
+            onClick={() => void deploy()}
+            icon={<RocketIcon className="size-3.5" />}
+            title={
+              status.running
+                ? `A ${running?.action === "destroy" ? "delete" : "deploy"} is already running against ${stage}`
+                : `Deploy ${stage} — the same plan the Deployments tab runs`
+            }
           >
-            <span className="truncate font-mono text-xs">{apiHost(environment.apiUrl)}</span>
-            <ExternalLinkIcon className="size-3.5 shrink-0" />
-          </a>
-        ) : null}
+            {running?.action === "destroy" ? "Deleting" : status.running ? "Deploying" : "Deploy"}
+          </Button>
+        </div>
       </div>
 
       <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-        {/* A deploy in flight is the one thing this line should say: the stack
+        {/* A run in flight is the one thing this line should say: the stack
             count below it is the half-built set the run is in the middle of
             producing, which reads as a warning about work that is going fine. */}
-        {deploying ? (
+        {running ? (
           <>
-            <span className="text-foreground/80">{deployProgress(deploying)}</span>
+            <span className="text-foreground/80">{runProgress(running)}</span>
             <Link
               href={`${backendPath(stage)}?tab=deployments`}
               className="text-foreground/80 hover:text-foreground inline-flex items-center gap-1 font-medium underline underline-offset-4"
@@ -229,6 +303,8 @@ function BackendRow({
           </span>
         ) : null}
       </div>
+
+      {error ? <p className="text-destructive text-xs">{error}</p> : null}
     </Card>
   );
 }

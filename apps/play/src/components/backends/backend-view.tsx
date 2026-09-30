@@ -17,7 +17,7 @@ import {
   BACKEND_TABS,
   backendBlurb,
   backendState,
-  deployingRun,
+  runningFor,
   type BackendTab,
 } from "@/lib/backends";
 import { apiHost, relative } from "@/lib/format";
@@ -57,7 +57,7 @@ export function BackendView({ stage, tab: initialTab }: { stage: string; tab: Ba
   const status = backendState(
     environment,
     state?.identity?.account ?? null,
-    deployingRun(runs, stage) !== null,
+    runningFor(runs, stage)?.action ?? null,
   );
   /** Before the first read, nothing about this environment is known — not even whether it exists. */
   const reading = state === null;

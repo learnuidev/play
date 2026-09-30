@@ -55,7 +55,11 @@ Starting a frontend is **above the tabs**, beside the environment it would be
 started against: it is the page's subject rather than one of its three views. A
 backend has no equivalent control there, because its equivalent *is* one of the
 tabs — the Deployments tab is the deploy page, and the six-hundred-word
-consequences of pressing the button belong next to the button.
+consequences of pressing the button belong next to the button. The **short
+Deploy on each row of the list** is the other half of that trade: the same press,
+one page earlier, for the fourth deploy of an environment that has been up for
+months. It is the small secondary button rather than the primary one, and the
+Deployments tab is still where the checklist is read before a first deploy.
 
 ### Why `/backends` is a list of environments
 
@@ -94,7 +98,10 @@ loudest is the one that is working correctly. That verdict comes from
 from `/api/state`, which is cached and costs two `aws` processes — a deploy's
 progress is stale within seconds, a stack's status is not. The same function
 draws the chip on the environment's own page and on the deploy card, so a row
-cannot say "deploying" above a page that says "partly deployed".
+cannot say "deploying" above a page that says "partly deployed". While that is
+true the row's **Deploy** button is disabled rather than hidden, because the chip
+beside the name already says why — and a refusal the server *does* send, from the
+race between two tabs, is printed in the row rather than swallowed.
 
 ### Checklist — what a person has to supply
 
@@ -144,11 +151,12 @@ about any of it: which direction the value travels, and who reads it.
 
 For a backend, this tab *is* the deploy page — the fourteen-step checklist, the
 transcript, the button — plus what CloudFormation has actually done, read from
-the stacks rather than remembered by this process. A history kept on
-`globalThis` would begin when you opened the page. The environment it is about
-comes from the URL rather than from the shell's selection: `/backends/<stage>` *is*
-that environment, and a checklist that drew another stage's step notes while the
-shell caught up would be a page about two environments at once.
+the stacks rather than remembered by this process, plus the card an environment is
+deleted from at the very bottom. A history kept on `globalThis` would begin when
+you opened the page. The environment it is about comes from the URL rather than
+from the shell's selection: `/backends/<stage>` *is* that environment, and a
+checklist that drew another stage's step notes while the shell caught up would be
+a page about two environments at once.
 
 For a frontend it is where the app is running: locally from here, and on Vercel
 if that project is connected.
@@ -168,7 +176,10 @@ Three things make that safe rather than merely allowed:
 - **Each stage synthesizes into its own directory** — `cdk.out/<stage>`. That
   directory is the whole of what a deploy reads, templates and staged assets
   together, so two runs sharing the default `cdk.out` would each read the other's
-  templates and report a diff for stacks nobody asked about.
+  templates and report a diff for stacks nobody asked about. It is also deleted
+  before each synth, because CDK never prunes an assembly: every build leaves its
+  staged assets beside the previous one under a new content hash, which is how one
+  staging directory reaches a gigabyte.
 - **The steps that touch something shared hold a named lock.** `plan.ts` marks
   them, and `server/run.ts` queues them: `infra/dist` (one bundle for every
   stage) and `apps/<app>/.env.local` (one file per app) are `checkout`, and
@@ -215,7 +226,9 @@ So the plan is written down, in `src/server/plan.ts`, as fourteen steps. Each st
 is a **check** and an **apply**: the check asks "is this already true?", and when
 it is, the step is a check mark with the reason beside it and nothing is run.
 That is what makes a second press of the button cheap — on an environment that is
-already up, most of the plan reports *already satisfied*.
+already up, most of the plan reports *already satisfied*. `buildDestroyPlan` sits
+beside it with the six steps that go the other way, and the same check first
+discipline: *Deleting an environment*, below, is that plan.
 
 | # | Step | Already satisfied when |
 | --- | --- | --- |
@@ -621,7 +634,8 @@ src/server/
   aws.ts           the AWS CLI as a function or two — every call is a read
   environments.ts  infra/config/play-<stage>.json, and the stack outputs an app needs
   settings.ts      what a person supplies: the config file, and the secret
-  plan.ts          THE BACKEND PLAN: the fourteen steps, their checks and their work
+  plan.ts          THE BACKEND PLANS, one per direction: the fourteen steps a
+                   deploy walks, and the six a delete walks
   signing-key.ts   the CloudFront key pair: is it in SSM, and putting it there
   run.ts           the run engine — steps, transcript, cancel, result — for both
                    kinds of run
@@ -638,7 +652,9 @@ src/app/api/
   deploy           start, read or cancel one environment's  (POST / GET / DELETE)
                    run — `?stage=` names it, because more
                    than one can be going
-  deploy/runs      every backend deploy going right now     (GET)
+  deploy/destroy   delete one environment: its four        (POST)
+                   stacks and its config file
+  deploy/runs      every backend run going right now        (GET)
                    — what the list of environments draws
                    its "deploying" from
   deploy/events    its transcript, as it happens            (SSE)
@@ -680,17 +696,66 @@ src/components/
                    and the Vercel deploy card
   integrations/    AWS and Vercel, and the sign-in stream
   deploy/          the checklist, the step rows, the transcript, the result,
-                   and the hook both kinds of run are read through
+                   the card an environment is deleted from, and the hook both
+                   kinds of run are read through
   apps/            the service hook the frontend pages are built on
   settings/        the credentials form, and the hook that loads it
   ui/              button, card, chip, field, tabs, picker — the design system
 ```
 
+## Deleting an environment
+
+The Deployments tab is also where an environment is deleted from, at the bottom,
+below everything that is about the run you came for. It destroys the four
+CloudFormation stacks **and** removes `infra/config/play-<stage>.json`, which is
+the file that makes the stage an environment in this console at all — so the row
+goes with it. The deletion is a tracked file, so it is yours to commit.
+
+**No data is deleted.** Every stateful resource here is `RemovalPolicy.RETAIN` —
+the 27 tables, both buckets, the CloudFront distribution, the user pool, and every
+log group — so a destroy takes the API away and leaves the rest in AWS with
+nobody managing it. `infra/README.md` describes the same thing from the other side
+under *Destroying a stage*, including what the retained orphans do to a redeploy
+of the same name.
+
+That is why deleting is a **six-step run** rather than one `cdk destroy` behind a
+button, and why the button asks for the stage's name rather than a click:
+`infra/scripts/teardown-legacy-stack.sh` is built the same way, for the same
+reason. The steps are:
+
+| # | Step | What it is |
+| --- | --- | --- |
+| 1 | This machine can act on the account | The deploy plan's own first step, shared — a destroy in the wrong account deletes somebody else's environment |
+| 2 | No shared pool is calling into this environment | **Refuses** when an imported pool's pre sign-up trigger calls this stage's `link-federated-user`: destroying the stacks would delete a function Cognito is still invoking, and the symptom would be people unable to sign up |
+| 3 | The four stacks are destroyed | `cdk destroy --all --force` — `--force` because every process here has stdin on `ignore`, so CDK's confirmation would read an end-of-file. Skipped, with the reason, when there is nothing deployed |
+| 4 | No stack of this environment is left | The post-condition. A stack in `DELETE_FAILED` stops the run **before** the config file goes, because that is the case where the file is still worth having |
+| 5 | What is left behind, and what a redeploy will hit | Reads it rather than predicting it: the log groups by prefix, the `play-<stage>-*` tables, the buckets and pool the config names, and the three apps' `.env.local` files compared against the `ApiUrl` captured before the stack publishing it went away |
+| 6 | The environment's config file is removed | The last thing, and only once the stacks are gone |
+
+Step 5 **reports instead of applying**, in the idiom of the deploy plan's
+pre-sign-up step: deleting a retained table full of courses, or pointing the
+frontends somewhere else, is a decision about this product rather than a step
+toward deleting this environment. What it read is also the run's result — a
+delete's answer is not a URL but a list of what it could not take with it, which
+the page draws where a deploy draws its outputs.
+
+Nothing else is deleted, on purpose. The stage's CloudFront signing key stays in
+SSM at `/play/<stage>/cloudfront/*` and its Google client secret stays in Secrets
+Manager: rotating a signing key means the deploy of a new public key
+`infra/scripts/ensure-cloudfront-key.mjs` exists to make a deliberate act, not a
+side effect of a delete. A stage that comes back uses the pair it always used.
+
 ## What it will not do
 
 - **Deploy anything by itself.** There is no timer, no watcher and no
   post-install hook. The plan runs when the button is pressed, and never
-  otherwise. It also never runs `cdk destroy`.
+  otherwise.
+- **Delete anything but an environment's stacks and its config file.** `cdk
+  destroy` runs for one stage, from the Deployments tab, after its name has been
+  typed into the card — and it takes no data with it, because nothing stateful
+  here is deletable from this console. The retained tables, buckets, pool and log
+  groups are *reported* by the run's last step, since which of them should go is
+  a decision about the product rather than a step in deleting an environment.
 - **Deploy one environment twice at once.** A second request for a stage that is
   already deploying is refused by name: two `cdk deploy --all` runs against one
   set of stacks contend for the same resources, CloudFormation serialises them

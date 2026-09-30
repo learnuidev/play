@@ -61,6 +61,21 @@ export interface StepView {
 export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
 
 /**
+ * What a backend run does to an environment.
+ *
+ * One engine, two directions: a **deploy** takes a stage from nothing to four
+ * complete stacks, and a **destroy** takes it back to none — the four stacks and
+ * the config file, and never the data (every stateful resource here is
+ * `RemovalPolicy.RETAIN`).
+ *
+ * It is on the run rather than inferred from the steps because the whole console
+ * reads it: the chip on a row, the line under a name, what the page calls the
+ * thing that is going. A row that said "deploying" over a destroy would be
+ * telling somebody the opposite of what is happening to their environment.
+ */
+export type RunAction = "deploy" | "destroy";
+
+/**
  * What a run is about.
  *
  * Two runs, one engine: a **backend** run takes an environment from nothing to
@@ -94,6 +109,8 @@ export interface RunResult {
 export interface RunView {
   id: string;
   kind: RunKind;
+  /** Which way this run goes: building the environment, or taking it away. */
+  action: RunAction;
   /**
    * The backend environment, in both cases — a frontend run deploys *against*
    * one, because the values it writes to Vercel are that environment's outputs.
@@ -114,10 +131,40 @@ export interface RunView {
   steps: StepView[];
   /** A backend run's four stacks, and the outputs an app needs. */
   result: RunResult | null;
+  /**
+   * A destroy run's account of what it left behind, one thing per line.
+   *
+   * The result of deleting an environment is not a URL: it is a list of things
+   * still in AWS and what they cost the next deploy of the same name. Written by
+   * the run's last step out of what it read, and shown when the run is over.
+   */
+  report: string[] | null;
   /** A frontend run's own deployment — the one it created, not the latest one. */
   deployment: VercelDeployResult | null;
   /** Why the run stopped, when it did. */
   error: string | null;
+}
+
+/**
+ * A run as the *list* of environments needs it: what it is about, and how far it
+ * has got.
+ *
+ * Deliberately not a `RunView`. Most of a run is text — each of the fourteen
+ * steps carries the paragraph explaining why it exists, which is the bulk of the
+ * payload and the reason the deploy page is worth reading — and the list asks
+ * every three seconds, for every environment at once, to draw a chip and a step
+ * number. So it reads this instead: the same facts, without the prose.
+ */
+export interface RunSummary {
+  id: string;
+  /** The environment it is about. */
+  stage: string;
+  /** Which way it goes — so a row can say "deleting" and not "deploying". */
+  action: RunAction;
+  status: RunStatus;
+  startedAt: number;
+  /** Which step it is on, and what that step is called. */
+  steps: Array<{ id: string; title: string; status: StepStatus }>;
 }
 
 /* ------------------------------------------------------------------ *
@@ -125,7 +172,6 @@ export interface RunView {
  * ------------------------------------------------------------------ */
 
 export type AppKey = "studio" | "marketplace" | "demo";
-
 export type ServiceStatus = "stopped" | "starting" | "running" | "failed";
 
 export interface ServiceView {

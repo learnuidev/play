@@ -27,6 +27,43 @@ import { backlog, currentRun, runTranscript, subscribe } from "./run";
 const HEARTBEAT_MS = 15_000;
 
 /**
+ * The environment a start request names, checked rather than trusted.
+ *
+ * Shared by the two ways a backend run starts — a deploy and a delete — because
+ * the stage becomes a `--context` value, a filename and a stack-name suffix in
+ * both, and a path separator or a space in it is a file written somewhere else.
+ * One validation for both is one place to get that right.
+ */
+export async function stageFromBody(
+  request: Request,
+): Promise<{ stage: string } | NextResponse> {
+  let stage: string;
+  try {
+    const body = (await request.json()) as { stage?: unknown };
+    if (typeof body.stage !== "string" || !body.stage.trim()) {
+      throw new Error("a stage is required");
+    }
+    stage = body.stage.trim();
+  } catch {
+    return NextResponse.json(
+      { error: "Expected a JSON body of the shape { stage: string }." },
+      { status: 400 },
+    );
+  }
+
+  if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(stage)) {
+    return NextResponse.json(
+      {
+        error: `'${stage}' is not a stage name. Use lower-case letters, digits and dashes — it becomes a stack-name suffix and a config filename.`,
+      },
+      { status: 400 },
+    );
+  }
+
+  return { stage };
+}
+
+/**
  * One step's lines, after the fact.
  *
  * The live stream carries the lines while a run is going. This is the other

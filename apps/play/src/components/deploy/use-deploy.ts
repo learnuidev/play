@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { DeployEvent, LogLine, RunView } from "@/lib/types";
+import type { DeployEvent, LogLine, RunAction, RunView } from "@/lib/types";
 
 /**
  * The deploy, as the page sees it.
@@ -55,7 +55,7 @@ export interface DeployState {
   selected: string | null;
   select: (stepId: string | null) => void;
   /** Starts a run. The body is the route's own — a stage, or a Vercel target. */
-  start: (body: unknown) => Promise<string | null>;
+  start: (body: unknown, action?: RunAction) => Promise<string | null>;
   stop: () => Promise<void>;
   starting: boolean;
   /** A line of explanation for whatever just went wrong. */
@@ -98,6 +98,25 @@ export function useDeploy(base: string = BACKEND_RUN, scope: RunScope = {}): Dep
   // every render; the query string it amounts to is not. Everything below keys
   // off the string, or every effect would re-run on every render.
   const search = query(scope);
+
+  /**
+   * A different environment is a different run, and nothing held here survives it.
+   *
+   * This matters because the two plans are the *same* plan: `staging`'s checklist
+   * has the step ids `dev`'s has, so a page that kept its buffered lines across a
+   * navigation would draw one environment's `cdk deploy` output under another
+   * environment's steps — the wrong transcript, with nothing on screen saying so.
+   * Declared before the stream below on purpose: React runs this commit's effects
+   * in order, so the buffer is empty before the new stream can deliver a line.
+   */
+  useEffect(() => {
+    setRun(null);
+    setLines(EMPTY);
+    setSelected(null);
+    setFollowing(true);
+    buffer.current = [];
+    fetched.current = new Set();
+  }, [base, search]);
 
   const flush = useCallback(() => {
     frame.current = null;
@@ -257,11 +276,14 @@ export function useDeploy(base: string = BACKEND_RUN, scope: RunScope = {}): Dep
    * ---------------------------------------------------------------- */
 
   const start = useCallback(
-    async (body: unknown): Promise<string | null> => {
+    async (body: unknown, action: RunAction = "deploy"): Promise<string | null> => {
       setStarting(true);
       setError(null);
       try {
-        const response = await fetch(`${base}${search}`, {
+        // A delete is a route of its own rather than a different body: `DELETE`
+        // on this base already means "stop the run", so the two directions of a
+        // backend run are told apart by the path and read the same way after.
+        const response = await fetch(action === "destroy" ? `${base}/destroy` : `${base}${search}`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),

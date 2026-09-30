@@ -7,6 +7,7 @@ import {
   CheckIcon,
   CircleStopIcon,
   TerminalIcon,
+  Trash2Icon,
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import { Chip, Spinner } from "@/components/ui/chip";
 import { CopyRow } from "@/components/ui/copy-row";
 import { Prose } from "@/components/ui/prose";
 import { EnvironmentCard } from "@/components/deploy/environment-card";
+import { DestroyCard } from "@/components/deploy/destroy-card";
 import { StepList } from "@/components/deploy/step-list";
 import { Transcript } from "@/components/deploy/transcript";
 import { BACKEND_RUN, useDeploy } from "@/components/deploy/use-deploy";
@@ -64,6 +66,9 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
 
   const run = deploy.run;
   const elsewhere = runs.filter((candidate) => candidate.stage !== stage);
+  const running = run?.status === "running";
+  /** Which way the run going is going: building this environment, or deleting it. */
+  const activity = running ? (run?.action ?? null) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -104,7 +109,6 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
     ["passed", "skipped", "warned", "manual"].includes(step.status),
   ).length;
   const done = settledSteps;
-  const running = run?.status === "running";
   const settled = steps.length > 0 && done === steps.length;
 
   return (
@@ -125,7 +129,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
         state={state}
         deployable={!running}
         busy={deploy.starting}
-        deploying={running}
+        activity={activity}
         onDeploy={() => void deploy.start({ stage })}
       />
 
@@ -235,8 +239,9 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
       </Card>
 
       {/* The other half of "one run per environment": another stage can be
-          deploying while you read this, and a page that said nothing about it
-          would leave somebody guessing whether the button is contended. */}
+          deploying — or being deleted — while you read this, and a page that
+          said nothing about it would leave somebody guessing whether the button
+          is contended. */}
       {elsewhere.length > 0 ? (
         <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs">
           <Spinner tone="run" />
@@ -244,8 +249,9 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
             <span className="text-foreground/80 font-mono">
               {elsewhere.map((run) => run.stage).join(", ")}
             </span>{" "}
-            {elsewhere.length === 1 ? "is" : "are"} deploying in the background — one run per
-            environment, so this page is not affected.
+            {elsewhere.length === 1 ? "is" : "are"}{" "}
+            {elsewhere.some((run) => run.action === "destroy") ? "being deleted" : "deploying"} in the
+            background — one run per environment, so this page is not affected.
           </span>
           <Link
             href={`${backendPath(elsewhere[0].stage)}?tab=deployments`}
@@ -300,7 +306,89 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
       {run?.status === "succeeded" && run.result?.apiUrl ? (
         <ResultCard run={run} />
       ) : null}
+
+      {/* A delete's result is not a URL. It is the list of what it could not
+          take with it — the retained tables, buckets, pool and log groups — and
+          what a redeploy of this name will hit because they are still there. */}
+      {run?.status === "succeeded" && run.action === "destroy" ? (
+        <DeletedCard run={run} />
+      ) : null}
+
+      {/* Last, below everything that is about *this* run: the one control that
+          undoes the page. A delete cannot be reached past by accident, and while
+          any run is going it is refused — by this card, and by the server, which
+          is the authority on two runs not sharing one set of stacks. */}
+      <DestroyCard
+        stage={stage}
+        environment={environment}
+        reading={state === null}
+        running={running}
+        onDestroy={() => deploy.start({ stage }, "destroy")}
+      />
     </div>
+  );
+}
+
+/**
+ * What a delete left behind.
+ *
+ * Every line was read after the stacks went — the log groups by prefix, the
+ * tables by name, the apps' own `.env.local` files — rather than predicted here,
+ * and `buildDestroyPlan`'s last step is where they come from. A card that
+ * recited what a destroy *usually* leaves would be a second description of the
+ * plan, which is the one thing this app does not do.
+ */
+function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["run"]> }) {
+  const total = run.finishedAt ? run.finishedAt - run.startedAt : 0;
+  // Read off the step rather than assumed: a stage that had no config file
+  // deletes just as cleanly, and the card should not claim to have removed one.
+  const removed = run.steps.find((step) => step.id === "config")?.status === "passed";
+
+  return (
+    <Card className="border-destructive/25">
+      <div className="flex items-start gap-3">
+        <span className="bg-destructive/15 text-destructive mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full">
+          <Trash2Icon className="size-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-semibold tracking-tight">
+            <span className="font-mono">{run.stage}</span> is deleted
+          </h2>
+          <p className="text-muted-foreground mt-1.5 text-sm">
+            {run.steps.filter((step) => step.status === "passed").length} steps ran,{" "}
+            {run.steps.filter((step) => step.status === "skipped").length} were already satisfied, in{" "}
+            {duration(total)}. The four stacks are gone
+            {removed ? (
+              <>
+                {" "}
+                and <span className="font-mono">infra/config/play-{run.stage}.json</span> was removed —
+                that file is tracked, so the deletion is yours to commit
+              </>
+            ) : (
+              <> and there was no config file left to remove</>
+            )}
+            .
+          </p>
+
+          {run.report?.length ? (
+            <ul className="mt-4 flex flex-col gap-2.5 border-t border-border/40 pt-4">
+              {run.report.map((line) => (
+                <li key={line} className="text-muted-foreground flex gap-2.5 text-xs leading-relaxed">
+                  <span className="mt-0.5 shrink-0 font-mono" aria-hidden>
+                    ·
+                  </span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground mt-4 border-t border-border/40 pt-4 text-xs">
+              Nothing was left in AWS under this name.
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
 

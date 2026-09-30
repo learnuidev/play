@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { ConsoleState, EnvironmentView, RunView } from "@/lib/types";
+import type { ConsoleState, EnvironmentView, RunSummary } from "@/lib/types";
 
 /**
  * What the whole console knows: who we are, what environments exist, which one
@@ -32,11 +32,12 @@ import type { ConsoleState, EnvironmentView, RunView } from "@/lib/types";
  *
  * A deploy's progress is the opposite kind of fact from a stack's status: it is
  * free to read (it is this process's own memory), and it is stale within seconds.
- * So it comes from `/api/deploy/runs` rather than from the state above, which is
- * cached and costs two `aws` processes. It lives here because three pages need
- * the same answer — the list of environments, one environment's page, and the
- * deploy page's own card — and a row that said "deploying" above a header that
- * said "partly deployed" would be two answers to one question.
+ * So it comes from `/api/deploy/runs` — a summary per run, not the run — rather
+ * than from the state above, which is cached and costs two `aws` processes. It
+ * lives here because three pages need the same answer: the list of environments,
+ * one environment's page, and the deploy page's own card. A row that said
+ * "deploying" above a header that said "partly deployed" would be two answers to
+ * one question.
  */
 
 const STAGE_KEY = "play-console:stage";
@@ -60,8 +61,24 @@ interface ShellValue {
   environment: EnvironmentView | null;
   /** A stage nobody has a config for yet — what the deploy page creates. */
   unknown: boolean;
-  /** Every backend deploy going right now, whatever environment it is about. */
-  runs: RunView[];
+  /**
+   * Every backend deploy going right now, whatever environment it is about.
+   *
+   * Summaries rather than whole runs: this is read every three seconds to draw a
+   * chip and a step number, and the paragraph behind each step is most of what a
+   * run is.
+   */
+  runs: RunSummary[];
+  /**
+   * Read them again now.
+   *
+   * The read schedules itself — three seconds while something is deploying,
+   * fifteen when nothing is — which is right for a page somebody is watching and
+   * too slow for a button that has just started a run: the row would say
+   * "deploying" up to fifteen seconds later, which reads as a button that did
+   * nothing.
+   */
+  refreshRuns: () => void;
 }
 
 const ShellContext = createContext<ShellValue | null>(null);
@@ -82,7 +99,9 @@ export function ShellProvider({ children }: { children: ReactNode }) {
   const [refreshing, setRefreshing] = useState(false);
   const [named, setNamed] = useState<string[]>([]);
   const [stage, setStageState] = useState("dev");
-  const [runs, setRuns] = useState<RunView[]>([]);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  /** Bumped to ask for the runs again before the schedule's next turn. */
+  const [runsTick, setRunsTick] = useState(0);
   const inFlight = useRef(false);
 
   const load = useCallback(async (mode: "initial" | "refresh") => {
@@ -136,11 +155,11 @@ export function ShellProvider({ children }: { children: ReactNode }) {
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const read = async () => {
-      let next: RunView[] = [];
+      let next: RunSummary[] = [];
       try {
         const response = await fetch("/api/deploy/runs", { cache: "no-store" });
         if (response.ok) {
-          next = ((await response.json()) as { runs: RunView[] }).runs;
+          next = ((await response.json()) as { runs: RunSummary[] }).runs;
         }
       } catch {
         // A list that could not be read is a list that says nothing is
@@ -157,7 +176,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, []);
+  }, [runsTick]);
 
   // The selection survives a reload, because a console that forgets which
   // environment you were looking at is a console you re-navigate every time.
@@ -204,6 +223,7 @@ export function ShellProvider({ children }: { children: ReactNode }) {
       environment,
       unknown: environment === null,
       runs,
+      refreshRuns: () => setRunsTick((tick) => tick + 1),
     }),
     [state, error, loading, refreshing, load, stages, stage, setStage, environment, runs],
   );

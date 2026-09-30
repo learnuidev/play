@@ -1,5 +1,5 @@
 import type { Tone } from "@/components/ui/chip";
-import type { EnvironmentView, RunView } from "@/lib/types";
+import type { EnvironmentView, RunAction, RunSummary } from "@/lib/types";
 
 /**
  * A backend, named once — and the words the console uses about one.
@@ -28,7 +28,7 @@ export function backendPath(stage: string): string {
 export interface BackendState {
   tone: Tone;
   label: string;
-  /** The console is running a deploy against this environment right now. */
+  /** The console is running something against this environment right now. */
   running: boolean;
 }
 
@@ -40,23 +40,30 @@ export interface BackendState {
  * "deployed" above a page that said "partly deployed" would be two answers to
  * one question.
  *
- * **A deploy in flight is the first thing it says**, and it has to be. The stacks
- * of an environment being deployed are exactly the half-built set a "partly
+ * **A run in flight is the first thing it says**, and it has to be. The stacks of
+ * an environment being deployed are exactly the half-built set a "partly
  * deployed" chip describes, so without this the row that says the most alarming
  * possible thing is the one that is working correctly — and it says it about a
  * deploy that has been running for forty seconds. The stack statuses catch up a
  * few seconds after the run ends, which is when this stops applying.
  *
+ * `activity` is the *direction* rather than a flag, because a delete is not a
+ * deploy and a row that said "deploying" over one would be telling somebody the
+ * opposite of what is happening to their environment. Deleting gets the
+ * destructive tone for the same reason.
+ *
  * `new` is the only state that is about an environment the repository has never
  * heard of, and it is not a verdict: a stage with no config file is the normal
- * state of a stage somebody is about to create.
+ * state of a stage somebody is about to create — or of one that has just been
+ * deleted, which is the same thing said from the other side.
  */
 export function backendState(
   environment: EnvironmentView | null,
   account: string | null,
-  deploying = false,
+  activity: RunAction | null = null,
 ): BackendState {
-  if (deploying) return { tone: "run", label: "deploying", running: true };
+  if (activity === "destroy") return { tone: "bad", label: "deleting", running: true };
+  if (activity === "deploy") return { tone: "run", label: "deploying", running: true };
   if (!environment) return { tone: "muted", label: "new", running: false };
   if (environment.deployed) return { tone: "ok", label: "deployed", running: false };
   if (environment.partial) return { tone: "warn", label: "partly deployed", running: false };
@@ -70,29 +77,31 @@ export function backendState(
 }
 
 /**
- * The deploy going for one stage, out of everything the console knows is running.
+ * The run going for one stage, out of everything the console knows is running.
  *
- * Null for a stage nobody is deploying, which is nearly always. A stage can only
- * have one run at a time — `server/run.ts` refuses the second — so the first
- * match is the only match.
+ * Null for a stage nobody is running anything against, which is nearly always. A
+ * stage can only have one run at a time — `server/run.ts` refuses the second,
+ * whichever direction it goes in — so the first match is the only match, and its
+ * `action` is what a row's chip and line are written from.
  */
-export function deployingRun(runs: RunView[], stage: string): RunView | null {
+export function runningFor(runs: RunSummary[], stage: string): RunSummary | null {
   return runs.find((run) => run.stage === stage && run.status === "running") ?? null;
 }
 
 /**
- * What a deploy is doing, in one line, for a row that is not the deploy page.
+ * What a run is doing, in one line, for a row that is not the run's own page.
  *
  * The step it is on and how far it has got, which is the whole of what somebody
  * glancing at the list wants: *which* step is the difference between "it is
  * going" and "it has been stuck on the same thing for ten minutes".
  */
-export function deployProgress(run: RunView): string {
+export function runProgress(run: RunSummary): string {
   const running = run.steps.findIndex((step) => step.status === "running");
   const pending = run.steps.findIndex((step) => step.status === "pending");
   const at = running >= 0 ? running : pending >= 0 ? pending : run.steps.length - 1;
   const step = run.steps[at];
-  return `Deploying — step ${at + 1} of ${run.steps.length}${step ? ` · ${step.title}` : ""}`;
+  const what = run.action === "destroy" ? "Deleting" : "Deploying";
+  return `${what} — step ${at + 1} of ${run.steps.length}${step ? ` · ${step.title}` : ""}`;
 }
 
 /**
@@ -161,7 +170,7 @@ export const BACKEND_TABS = [
   {
     id: "deployments",
     label: "Deployments",
-    hint: "The checklist a deploy walks, and what CloudFormation has actually done to this environment.",
+    hint: "The checklist a deploy walks, what CloudFormation has actually done to this environment, and where the environment itself is deleted from.",
   },
   {
     id: "logs",

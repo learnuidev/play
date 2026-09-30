@@ -8,7 +8,7 @@ import { Chip, Dot, Spinner, type Tone } from "@/components/ui/chip";
 import { backendState } from "@/lib/backends";
 import { cn } from "@/lib/cn";
 import { apiHost, stackInitials, stackWord } from "@/lib/format";
-import type { ConsoleState, EnvironmentView, StackSummary } from "@/lib/types";
+import type { ConsoleState, EnvironmentView, RunAction, StackSummary } from "@/lib/types";
 
 /**
  * The environment, and the one button.
@@ -21,9 +21,11 @@ import type { ConsoleState, EnvironmentView, StackSummary } from "@/lib/types";
  * that behind a tooltip would be hiding the single fact an operator most needs
  * before pressing a button that creates a second API over production tables.
  *
- * `deploying` is this *environment's* run, not the console's: another stage
+ * `activity` is this *environment's* run, not the console's: another stage
  * deploying elsewhere leaves this button alone, because that is the whole point
- * of one run per environment.
+ * of one run per environment. Which direction it is going is part of it — a card
+ * that said "deploying" over a delete would be describing the opposite of what is
+ * happening.
  */
 
 export function EnvironmentCard({
@@ -33,7 +35,7 @@ export function EnvironmentCard({
   onDeploy,
   deployable,
   busy,
-  deploying,
+  activity,
 }: {
   stage: string;
   environment: EnvironmentView | null;
@@ -42,12 +44,12 @@ export function EnvironmentCard({
   deployable: boolean;
   busy: boolean;
   /** A run against this stage is going — possibly started in another tab. */
-  deploying: boolean;
+  activity: RunAction | null;
 }) {
   const healthy = environment?.stacks.filter((stack) => stack.healthy).length ?? 0;
   // The same verdict the environment's row carries in the list: one function, so
   // a row that says "deployed" cannot sit above a card that says otherwise.
-  const status = backendState(environment, state?.identity?.account ?? null, deploying);
+  const status = backendState(environment, state?.identity?.account ?? null, activity);
   // Before the first read, `environment` is null for *every* stage — so nothing
   // here may treat that as "there is no config file". The two are the same shape
   // and opposite meanings, and the wrong one is the alarming one.
