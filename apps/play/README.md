@@ -89,6 +89,23 @@ place to select the same thing, which is a second answer to one question — and
 naming a new one lives on the list where the environments are, rather than in the
 chrome, so the rail is left with the three parts of the problem instead of a menu.
 
+### Which tab, in the URL
+
+An environment's page and a frontend's are each a strip of tabs over one page, and
+**which tab is showing is `?tab=`** — `useTabParam` in
+`components/ui/tabs.tsx`, shared by both. So `/backends/staging?tab=logs` is a
+link somebody can be sent, a reload lands where the reloader was, and the tab a new
+environment opens on comes from the same parameter the strip writes. Anything the
+list does not know — a typo, a tab that has been renamed — is the first tab rather
+than an error, which is what makes the parameter safe to leave out.
+
+Switching a tab **replaces** the current history entry rather than pushing one. The
+back button on these pages is documented above as leaving the page for the list,
+and a `push` per tab change would quietly turn it into a walk back through the
+strip. `scroll: false` for the same kind of reason: `router.replace` scrolls to the
+top by default, and a strip halfway down a long page would jump out from under the
+pointer that clicked it.
+
 **A row that is deploying says so.** Its chip reads *deploying*, with a spinner
 rather than a dot, and the line underneath is the step the run is on rather than
 the stack count — because a deploy in flight leaves exactly the half-built set of
@@ -227,8 +244,8 @@ is a **check** and an **apply**: the check asks "is this already true?", and whe
 it is, the step is a check mark with the reason beside it and nothing is run.
 That is what makes a second press of the button cheap — on an environment that is
 already up, most of the plan reports *already satisfied*. `buildDestroyPlan` sits
-beside it with the six steps that go the other way, and the same check first
-discipline: *Deleting an environment*, below, is that plan.
+beside it with the six or eleven steps that go the other way, and the same check
+first discipline: *Deleting an environment*, below, is that plan.
 
 | # | Step | Already satisfied when |
 | --- | --- | --- |
@@ -707,20 +724,30 @@ src/components/
 
 The Deployments tab is also where an environment is deleted from, at the bottom,
 below everything that is about the run you came for. It destroys the four
-CloudFormation stacks, deletes everything they stood on, **and** removes
-`infra/config/play-<stage>.json`, which is the file that makes the stage an
-environment in this console at all — so the row goes with it. The deletion is a
-tracked file, so it is yours to commit.
+CloudFormation stacks **and** removes `infra/config/play-<stage>.json`, which is
+the file that makes the stage an environment in this console at all — so the row
+goes with it. The deletion is a tracked file, so it is yours to commit.
 
-**The data goes with it.** Every stateful resource here is `RemovalPolicy.RETAIN`,
-so `cdk destroy` on its own stops at the stacks and leaves 27 tables, both buckets,
+**The data is a tick.** Every stateful resource here is `RemovalPolicy.RETAIN`, so
+`cdk destroy` on its own stops at the stacks and leaves 27 tables, both buckets,
 the distribution, the user pool and every log group in AWS with nobody managing
 them. Those orphans are not inert: they are what stops a redeploy of the same name
 at early validation, and they are what an environment nobody can deploy to is
-still paying for. So the run deletes them itself, reading every name rather than
-assuming one:
+still paying for. Deleting the product's only copy of its data is a different act
+from deleting the environment, though — the accounts and the courses do not come
+back — so it is a checkbox in the confirmation rather than the whole of the delete:
 
-| What goes | Where the names come from |
+- **Unticked (the default)**: the six-step plan. The stacks and the config file go,
+  the data stays, and the run's last step reads back what is still there and what a
+  redeploy of the same name will hit.
+- **Ticked**: the eleven-step plan. Five more steps delete everything the
+  environment stood on, and the last step reports what it could not take with it.
+
+Which one ran is legible afterwards from the run itself — the steps are in it, and
+the page reads `data` out of them rather than remembering what was ticked — so the
+deleted-environment card says which of the two happened.
+
+| What the tick adds | Where the names come from |
 | --- | --- |
 | The DynamoDB tables | `existing.tables` for a stage that imports them, `play-<stage>-*` for one that created them |
 | Both S3 buckets, emptied first | the config, the `VideosBucketName` output read before the stacks went, the distribution's own origin and logging target, and `playmediastack-<stage>-*` |
@@ -730,55 +757,61 @@ assuming one:
 | Every `/aws/lambda/play-<stage>-*` log group | the account, by name rule |
 | The signing key pair, the key's id, and the Google client secret | `signingKeyParams`, the config's parameter names, Secrets Manager |
 
-Two things are **reported rather than deleted**, and both are in the run's own
-last step: a **shared** signing key pair — what a stage that imports its
-distribution points at, the pair that distribution was created against, which
-nothing in this repository can enumerate the readers of — and anything the run
-could not take with it. Alongside them it names the apps whose `.env.local` still
-reads the API URL that just went.
+Two things are **reported rather than deleted** when the tick is set, and both are
+in the run's own last step: a **shared** signing key pair — what a stage that
+imports its distribution points at, the pair that distribution was created against,
+which nothing in this repository can enumerate the readers of — and anything the
+run could not take with it. Alongside them, in both shapes, it names the apps whose
+`.env.local` still reads the API URL that just went.
 
-That is why deleting is an **eleven-step run** rather than one `cdk destroy`
-behind a button, and why the button asks for the stage's name rather than a click:
-`infra/scripts/teardown-legacy-stack.sh` is built the same way, for the same
-reason. The steps are:
+That is why deleting is a **run of six or eleven steps** rather than one `cdk
+destroy` behind a button, and why the button asks for the stage's name rather than
+a click: `infra/scripts/teardown-legacy-stack.sh` is built the same way, for the
+same reason. The steps are:
 
-| # | Step | What it is |
-| --- | --- | --- |
-| 1 | This machine can act on the account | The deploy plan's own first step, shared — a delete in the wrong account deletes somebody else's environment |
-| 2 | Nothing else stands on what this environment stands on | **Refuses**, before anything is destroyed, when another stage's config names the same table, bucket, distribution or pool: that resource is not this environment's to delete, and taking it would be another stage's data or sign-up silently disappearing. It is also what the old pre sign-up trigger check became — a shared pool is now one more shared resource rather than a special case |
-| 3 | The four stacks are destroyed | `cdk destroy --all --force` — `--force` because every process here has stdin on `ignore`, so CDK's confirmation would read an end-of-file. Skipped, with the reason, when there is nothing deployed. This is also where the names only a stack knows are read: `VideosBucketName`, `CloudFrontDomain` and the pool id, out of the outputs, before the stacks that publish them go |
-| 4 | No stack of this environment is left | The post-condition. A stack in `DELETE_FAILED` stops the run **before** the config file goes, because that is the case where the file is still worth having |
-| 5 | The tables are gone | Every table of this environment, deleted and waited for — the CLI's own waiter, so the step ends when the table is gone rather than when the request was accepted |
-| 6 | The media is gone | The distribution disabled, waited for and deleted; then its key group and public key; then both buckets, emptied and deleted. The order is forced: CloudFront will not delete an enabled distribution, and will not delete a key a key group still trusts |
-| 7 | The user pool is gone, with every account in it | Its own step because it is the one deletion that is about people: a redeploy of the same name makes a **new**, empty pool and everybody signs up again |
-| 8 | The log groups are gone | One per function, a hundred and fifty-odd of them, and the first thing that stops a redeploy of the same name |
-| 9 | This environment's signing key and secrets are gone | The SSM key pair, the key-id parameter and the Google client secret — the leftovers the Checklist would otherwise have to create again |
-| 10 | What is still pointed here | **Reports instead of applying**: what the delete could not take with it, and the three apps' `.env.local` files compared against the `ApiUrl` captured before the stack publishing it went away |
-| 11 | The environment's config file is removed | The last thing, and only once the stacks and the data are gone |
+| # | Step | In which plan | What it is |
+| --- | --- | --- | --- |
+| 1 | This machine can act on the account | both | The deploy plan's own first step, shared — a delete in the wrong account deletes somebody else's environment |
+| 2 | Nothing else stands on what this environment stands on | ticked | **Refuses**, before anything is destroyed, when another stage's config names the same table, bucket, distribution or pool: that resource is not this environment's to delete, and taking it would be another stage's data or sign-up silently disappearing |
+| 2 | No shared pool is calling into this environment | unticked | **Refuses** when a shared pool's pre sign-up trigger calls this stage's `link-federated-user`: the stacks go and the pool stays, so Cognito would go on invoking a function that no longer exists and people could not sign up. With the tick this question disappears — the pool goes too — which is why the two plans guard differently |
+| 3 | The four stacks are destroyed | both | `cdk destroy --all --force` — `--force` because every process here has stdin on `ignore`, so CDK's confirmation would read an end-of-file. Skipped, with the reason, when there is nothing deployed. This is also where the names only a stack knows are read: `VideosBucketName`, `CloudFrontDomain` and the pool id, out of the outputs, before the stacks that publish them go |
+| 4 | No stack of this environment is left | both | The post-condition. A stack in `DELETE_FAILED` stops the run **before** the config file goes, because that is the case where the file is still worth having |
+| 5 | The tables are gone | ticked | Every table of this environment, deleted and waited for — the CLI's own waiter, so the step ends when the table is gone rather than when the request was accepted |
+| 6 | The media is gone | ticked | The distribution disabled, waited for and deleted; then its key group and public key; then both buckets, emptied and deleted. The order is forced: CloudFront will not delete an enabled distribution, and will not delete a key a key group still trusts |
+| 7 | The user pool is gone, with every account in it | ticked | Its own step because it is the one deletion that is about people: a redeploy of the same name makes a **new**, empty pool and everybody signs up again |
+| 8 | The log groups are gone | ticked | One per function, a hundred and fifty-odd of them, and the first thing that stops a redeploy of the same name |
+| 9 | This environment's signing key and secrets are gone | ticked | The SSM key pair, the key-id parameter and the Google client secret — the leftovers the Checklist would otherwise have to create again |
+| 10 | What is still pointed here | ticked | **Reports instead of applying**: what the delete could not take with it, and the three apps' `.env.local` files compared against the `ApiUrl` captured before the stack publishing it went away |
+| 10 | What is left behind, and what a redeploy of this name will hit | unticked | **Reports instead of applying** too, and reads the account rather than predicting it: how many tables, buckets and log groups are still there by name, the pool with how many accounts are in it, the distribution if the environment imports one — and what each of them does to a redeploy of the same name |
+| 11 | The environment's config file is removed | both | The last thing, and only once the stacks — and, when it was asked for, the data — are gone |
 
-Step 10 **reports instead of applying**, in the idiom of the deploy plan's
-pre-sign-up step: pointing the frontends somewhere else is a decision about this
-product rather than a step toward deleting this environment. What it read is also
-the run's result — a delete's answer is not a URL but a list of what it could not
-take with it, which the page draws where a deploy draws its outputs.
+The reporting step in either plan is **satisfied by finding what it expected**: it
+is a reading, not a decision, in the idiom of the deploy plan's pre-sign-up step.
+Pointing the frontends somewhere else is a decision about this product rather than
+a step toward deleting this environment, and so is whether the data should go —
+which is why the tick is asked *before* the run rather than offered inside it. What
+that step read is also the run's result: a delete's answer is not a URL but a list
+of lines, which the page draws where a deploy draws its outputs.
 
-The one thing a delete leaves where it found it is what it does not own: a signing
-key pair whose names a **shared** config points at stays in SSM, because an older
-distribution was created against that pair and nothing here can enumerate who
-else reads it. Everything else the Checklist would have to create again is
-removed, so a stage that comes back comes back from the Checklist rather than from
-whatever was left of the last one.
+The one thing the ticked plan leaves where it found it is what the environment does
+not own: a signing key pair whose names a **shared** config points at stays in SSM,
+because an older distribution was created against that pair and nothing here can
+enumerate who else reads it. Everything else the Checklist would have to create
+again is removed, so a stage that comes back comes back from the Checklist rather
+than from whatever was left of the last one.
 
 ## What it will not do
 
 - **Deploy anything by itself.** There is no timer, no watcher and no
   post-install hook. The plan runs when the button is pressed, and never
   otherwise.
-- **Delete anything but the environment you asked for.** The run destroys one
-  stage's four stacks, deletes the data behind them, and removes its config file
-  — after its name has been typed into the card. It refuses to start when another
-  stage's config names the same resources, and it leaves a shared signing key pair
-  where it is. *Deleting an environment* above is the whole of what goes.
+- **Delete data it was not asked to delete.** The run destroys one stage's four
+  stacks and removes its config file, after its name has been typed into the card
+  — and the tables, the buckets, the pool and the log groups go only if the box
+  beside that name was ticked, because a run that was not asked has no steps that
+  could. It refuses to start when another stage's config names the same resources,
+  and it leaves a shared signing key pair where it is. *Deleting an environment*
+  above is the whole of what goes.
 - **Deploy one environment twice at once.** A second request for a stage that is
   already deploying is refused by name: two `cdk deploy --all` runs against one
   set of stacks contend for the same resources, CloudFormation serialises them

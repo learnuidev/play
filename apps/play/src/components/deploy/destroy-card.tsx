@@ -12,15 +12,27 @@ import type { EnvironmentView } from "@/lib/types";
  * Deleting an environment, and why it is the one control that asks for typing.
  *
  * Everything else in this console is reversible by pressing another button. This
- * is not: it destroys the four CloudFormation stacks, deletes everything they
- * stood on — the tables, both buckets and the video in them, the distribution,
- * the user pool with every account in it, every log group and this stage's
- * signing key — and removes `infra/config/play-<stage>.json`, which is what takes
- * the environment out of this console. What it can undo is nothing. So it is
- * built the way `infra/scripts/teardown-legacy-stack.sh` is built: the
- * consequences are stated *before* the control, and the control asks for the
- * stage's name rather than a click. A button one slip away from the Deploy button
- * above it would be a bad trade for the two seconds typing costs.
+ * is not: it destroys the four CloudFormation stacks and removes
+ * `infra/config/play-<stage>.json`, which is what takes the environment out of
+ * this console — and, if the tick is set, it deletes the data behind them: the
+ * tables, both buckets and the video in them, the distribution, the user pool
+ * with every account in it, every log group and this stage's signing key. What it
+ * can undo is nothing. So it is built the way
+ * `infra/scripts/teardown-legacy-stack.sh` is built: the consequences are stated
+ * *before* the control, and the control asks for the stage's name rather than a
+ * click. A button one slip away from the Deploy button above it would be a bad
+ * trade for the two seconds typing costs.
+ *
+ * ## Why the data is a tick rather than the whole of the delete
+ *
+ * Because they are two different things to want, and only one of them is
+ * recoverable. Deleting the stacks is how an experiment is cleaned up; deleting
+ * the data is how an environment *ends*, and it takes the accounts and the
+ * courses with it. The old card could only offer the first, and said so — which
+ * left the tables, the buckets, the pool and 162 log groups in AWS, stopping the
+ * next deploy of the same name at early validation. The tick is the second, and
+ * it is **off** until somebody says otherwise: a run that was not asked to delete
+ * the data cannot, because the steps that would are not in its plan.
  *
  * Two things make a delete this broad safe to have on a page at all, and both are
  * said here because they are what somebody deciding whether to press it needs to
@@ -47,11 +59,19 @@ export function DestroyCard({
   reading: boolean;
   /** A run — a deploy or a delete — is going against this environment. */
   running: boolean;
-  /** Starts the destroy run, and answers with a refusal or null. */
-  onDestroy: () => Promise<string | null>;
+  /**
+   * Starts the destroy run, and answers with a refusal or null.
+   *
+   * The argument is the tick: whether this delete takes the data with it. It is
+   * passed at the moment the button is pressed rather than held by the page,
+   * because what the run does has to be what the box said at the second somebody
+   * confirmed it.
+   */
+  onDestroy: (deleteData: boolean) => Promise<string | null>;
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
+  const [deleteData, setDeleteData] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,13 +80,14 @@ export function DestroyCard({
   const close = () => {
     setOpen(false);
     setTyped("");
+    setDeleteData(false);
     setError(null);
   };
 
   const destroy = async () => {
     setBusy(true);
     setError(null);
-    const refusal = await onDestroy();
+    const refusal = await onDestroy(deleteData);
     setBusy(false);
     if (refusal) {
       setError(refusal);
@@ -81,7 +102,7 @@ export function DestroyCard({
     <Card className="border-destructive/25">
       <CardHeading
         title="Delete this environment"
-        hint={`Destroys the four CloudFormation stacks — PlayDataStack-${stage}, PlayMediaStack-${stage}, PlayAuthStack-${stage} and PlayApiStack-${stage} — deletes the tables, both buckets, the CloudFront distribution, the user pool, the log groups and this stage's secrets, and removes infra/config/play-${stage}.json, which is what takes ${stage} out of this console.`}
+        hint={`Destroys the four CloudFormation stacks — PlayDataStack-${stage}, PlayMediaStack-${stage}, PlayAuthStack-${stage} and PlayApiStack-${stage} — and removes infra/config/play-${stage}.json, which is what takes ${stage} out of this console. What happens to the data behind them is the tick below.`}
         action={
           open ? (
             <IconButton onClick={close} title="Cancel" aria-label="Cancel">
@@ -95,27 +116,26 @@ export function DestroyCard({
         <Prose
           className="text-muted-foreground max-w-3xl text-xs"
           text={
-            `**All of it goes, and none of it comes back.** Every stateful resource here is ` +
-            `\`RemovalPolicy.RETAIN\`, so the destroy is only half of the work: the tables, both ` +
-            `buckets and the video in them, the CloudFront distribution, the user pool with every ` +
-            `account in it, every log group and this stage's signing key are deleted by the run's own ` +
-            `steps, one by one. A redeploy of \`${stage}\` afterwards starts empty — the courses are ` +
-            `gone, and everybody who had an account here makes another one. ` +
+            `**The stacks go either way, and the config with them.** Every stateful resource here is ` +
+            `\`RemovalPolicy.RETAIN\`, so \`cdk destroy\` stops at the stacks and leaves the data in AWS ` +
+            `with nobody managing it — which is why a redeploy of \`${stage}\` afterwards stops at early ` +
+            `validation naming a table, a bucket or a log group it cannot create. ` +
             (reading
-              ? `Which of those exist is read as the run goes: the steps that find nothing are check ` +
-                `marks, and the last one reports anything they could not take with them.`
+              ? `Reading this environment is what fills the rest of this card in: what it stands on, and ` +
+                `what a delete would have to take with it.`
               : environment === null
                 ? `There is no config file for this environment, so there is nothing here to delete — ` +
                   `but a redeploy of \`${stage}\` would run against whatever AWS still holds under that name.`
                 : environment.ownsEverything
-                  ? `This environment **creates** everything it stands on — 27 tables named ` +
-                    `\`play-${stage}-*\`, its buckets, its distribution and its pool — so all of that is ` +
-                    `its own to delete, and the run's last step reports anything left over.`
+                  ? `This environment **creates** everything it stands on: 27 tables named ` +
+                    `\`play-${stage}-*\`, its buckets, its distribution and its pool.`
                   : `This environment **imports** the tables, media and pool it stands on: the legacy ` +
-                    `stack made them and this config is the only thing that names them. A delete takes ` +
-                    `them too, because they are this environment's data however they were created — ` +
-                    `unless a **second** stage's config names one of them, in which case the run refuses ` +
-                    `before anything is destroyed.`)
+                    `stack made them and this config is the only thing that names them.`) +
+            ` The tick below decides whether the data goes with the stacks. ` +
+            `**Untick it** and the tables, both buckets, the distribution, the pool and every log group ` +
+            `stay where they are, with the run's last step reading back what it left. **Tick it** and ` +
+            `every one of them is deleted, one by one: the courses are gone, the video is gone, and ` +
+            `everybody who had an account here makes another one.`
           }
         />
 
@@ -150,6 +170,24 @@ export function DestroyCard({
               />
             </label>
 
+            {/* The one choice a delete has, and it is a tick rather than a second
+                button because the two are the same operation with a different
+                reach: the stacks go either way, and this is how far. */}
+            <label className="flex max-w-3xl cursor-pointer items-start gap-2.5 text-xs leading-relaxed">
+              <input
+                type="checkbox"
+                checked={deleteData}
+                onChange={(event) => setDeleteData(event.target.checked)}
+                className="accent-destructive mt-0.5 size-3.5 shrink-0"
+              />
+              <span className="text-muted-foreground">
+                <span className="text-foreground font-medium">Delete the data as well</span> — the 27
+                tables, both buckets and the video in them, the CloudFront distribution and the key that
+                signs for it, the user pool with every account in it, every log group and this stage&rsquo;s
+                signing key. Left unticked, all of that stays in AWS and the run reports what it left.
+              </span>
+            </label>
+
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="danger"
@@ -159,7 +197,7 @@ export function DestroyCard({
                 onClick={() => void destroy()}
                 icon={<Trash2Icon className="size-3.5" />}
               >
-                Destroy the stacks and delete the data
+                {deleteData ? "Delete the stacks and the data" : "Delete the stacks"}
               </Button>
               <Button variant="ghost" size="sm" onClick={close}>
                 Cancel
@@ -184,7 +222,7 @@ export function DestroyCard({
                 ? "Reading the environment…"
                 : environment === null
                   ? "There is no config file for this environment, so there is nothing here to delete."
-                  : "The stacks go, and the data with them."}
+                  : "The stacks go. The data goes only if you tick the box."}
             </span>
           </div>
         )}

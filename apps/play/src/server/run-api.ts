@@ -37,20 +37,49 @@ const HEARTBEAT_MS = 15_000;
 export async function stageFromBody(
   request: Request,
 ): Promise<{ stage: string } | NextResponse> {
-  let stage: string;
+  const stage = stageName((await bodyOf(request))?.stage);
+  return stage instanceof NextResponse ? stage : { stage };
+}
+
+/**
+ * The same, plus the one choice a delete has: whether the data goes with it.
+ *
+ * `deleteData` is read as **exactly `true`**, not as anything truthy. The flag
+ * decides whether five steps that delete the product's only copy of its data are
+ * in the run, and a string `"false"` — which is what a form or a hand-rolled
+ * client sends — would turn them on. Only a caller that meant it can set it, and
+ * a body without the field at all is the safe shape: the stacks go and the data
+ * stays.
+ */
+export async function destroyFromBody(
+  request: Request,
+): Promise<{ stage: string; deleteData: boolean } | NextResponse> {
+  const body = await bodyOf(request);
+  const stage = stageName(body?.stage);
+  if (stage instanceof NextResponse) return stage;
+  return { stage, deleteData: body?.deleteData === true };
+}
+
+/** A request body as a plain object, or null when it is not one at all. */
+async function bodyOf(request: Request): Promise<Record<string, unknown> | null> {
   try {
-    const body = (await request.json()) as { stage?: unknown };
-    if (typeof body.stage !== "string" || !body.stage.trim()) {
-      throw new Error("a stage is required");
-    }
-    stage = body.stage.trim();
+    const parsed = (await request.json()) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
   } catch {
+    return null;
+  }
+}
+
+/** A stage name, or the answer that refuses the request that named it. */
+function stageName(value: unknown): string | NextResponse {
+  if (typeof value !== "string" || !value.trim()) {
     return NextResponse.json(
       { error: "Expected a JSON body of the shape { stage: string }." },
       { status: 400 },
     );
   }
 
+  const stage = value.trim();
   if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(stage)) {
     return NextResponse.json(
       {
@@ -60,7 +89,7 @@ export async function stageFromBody(
     );
   }
 
-  return { stage };
+  return stage;
 }
 
 /**

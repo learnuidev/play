@@ -116,13 +116,15 @@ identifier 'play-staging-videos' already exists" once the stack is gone. The
 deploy console checks for exactly that before a run starts.
 
 **That is what `cdk destroy` leaves — not what deleting a stage leaves.** The Play
-console's Deployments tab deletes a stage by running `cdk destroy` and then
-removing every one of these itself: the tables, both buckets with their contents,
-the distribution and its key group and key, the user pool, the log groups and the
-stage's secrets. `apps/play/README.md` has that run step by step under *Deleting
-an environment*. What follows is what the leftovers do to a redeploy of the same
-name when they are removed **by hand** instead, which is the case this section
-exists for.
+console's Deployments tab deletes a stage by running `cdk destroy` and then, when
+the confirmation's **delete the data as well** box is ticked, removing every one of
+these itself: the tables, both buckets with their contents, the distribution and
+its key group and key, the user pool, the log groups and the stage's secrets. Left
+unticked it removes the stacks and the config file only, and its last step reads
+back what is still there — which is the state this section describes.
+`apps/play/README.md` has both runs step by step under *Deleting an environment*.
+What follows is what the leftovers do to a redeploy of the same name when they are
+removed **by hand** instead, which is the case this section exists for.
 
 The cost shows up when you **delete a stage and deploy it again
 under the same name**: the retained log groups outlive the stack, and the next

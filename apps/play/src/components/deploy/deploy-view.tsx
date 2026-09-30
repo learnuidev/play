@@ -323,7 +323,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
         environment={environment}
         reading={state === null}
         running={running}
-        onDestroy={() => deploy.start({ stage }, "destroy")}
+        onDestroy={(deleteData) => deploy.start({ stage, deleteData }, "destroy")}
       />
     </div>
   );
@@ -341,9 +341,12 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
  */
 function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["run"]> }) {
   const total = run.finishedAt ? run.finishedAt - run.startedAt : 0;
-  // Read off the step rather than assumed: a stage that had no config file
-  // deletes just as cleanly, and the card should not claim to have removed one.
+  // Read off the steps rather than assumed, both of them: a stage that had no
+  // config file deletes just as cleanly, and the card should not claim to have
+  // removed one — and whether the data went is which plan this run had, not
+  // something the page has to remember about the tick somebody pressed.
   const removed = run.steps.find((step) => step.id === "config")?.status === "passed";
+  const withData = run.steps.some((step) => step.id === "data");
 
   return (
     <Card className="border-destructive/25">
@@ -358,7 +361,10 @@ function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["r
           <p className="text-muted-foreground mt-1.5 text-sm">
             {run.steps.filter((step) => step.status === "passed").length} steps ran,{" "}
             {run.steps.filter((step) => step.status === "skipped").length} were already satisfied, in{" "}
-            {duration(total)}. The four stacks are gone, and so is the data they stood on.{" "}
+            {duration(total)}.{" "}
+            {withData
+              ? "The four stacks are gone, and so is the data they stood on."
+              : "The four stacks are gone. The data behind them was left where it is."}{" "}
             {removed ? (
               <>
                 <span className="font-mono">infra/config/play-{run.stage}.json</span> was removed too, and

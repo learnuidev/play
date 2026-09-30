@@ -352,6 +352,13 @@ export interface StartOptions {
   stage: string;
   profile: string;
   region: string;
+  /**
+   * A delete's one choice: whether the data goes with the stacks.
+   *
+   * Absent everywhere else, and absent means false — a run that was not asked to
+   * delete the data has no steps that could, because they are not in its plan.
+   */
+  deleteData?: boolean;
 }
 
 export function startDeploy(options: StartOptions): RunView {
@@ -392,6 +399,11 @@ export function startDeploy(options: StartOptions): RunView {
  * remember. `buildDestroyPlan` is the checklist.
  */
 export function startDestroy(options: StartOptions): RunView {
+  // Read once, as `true` or not at all: the flag decides whether the plan has the
+  // steps that delete the data, so it is answered before the run exists rather
+  // than consulted by a step while one is going.
+  const deleteData = options.deleteData === true;
+
   return startRun({
     kind: "backend",
     action: "destroy",
@@ -400,7 +412,7 @@ export function startDestroy(options: StartOptions): RunView {
     stage: options.stage,
     profile: options.profile,
     region: options.region,
-    steps: buildDestroyPlan(options.stage),
+    steps: buildDestroyPlan(options.stage, { deleteData }),
     // What a delete produces is not a URL but an account of what it could not
     // take with it and what is still pointed at where the environment was, which
     // the page draws where a deploy draws its outputs.

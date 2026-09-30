@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { BackendView } from "@/components/backends/backend-view";
-import { backendTab } from "@/lib/backends";
 
 /**
  * One environment's backend, addressed by stage.
@@ -15,7 +14,11 @@ import { backendTab } from "@/lib/backends";
  * `?tab=` is the one thing the URL carries beyond the name. "The checklist" is
  * where a new environment starts — it is the deploy page's third step that writes
  * the config file — so the button that names a new environment links straight to
- * it, and the tab is a link like any other.
+ * it, and every tab after that is a link too. **The strip is what reads and writes
+ * it** (`useTabParam`, in `components/ui/tabs.tsx`), so this page takes no
+ * `tab` prop at all: a tab passed from here would be the value the page first
+ * rendered with, and the one thing it could never do is change when somebody
+ * clicked a tab.
  *
  * A name that could never be a stage is a 404. A stage that does not exist yet is
  * emphatically **not**: that page is the one this console exists to draw, and its
@@ -24,19 +27,14 @@ import { backendTab } from "@/lib/backends";
 
 const STAGE = /^[a-z0-9][a-z0-9-]{0,30}$/;
 
-type Props = {
-  params: { stage: string };
-  searchParams: { tab?: string | string[] };
-};
+type Props = { params: { stage: string } };
 
 export function generateMetadata({ params }: Props): Metadata {
   return { title: `${params.stage} · Backends · Play Console` };
 }
 
-export default function BackendPage({ params, searchParams }: Props) {
+export default function BackendPage({ params }: Props) {
   if (!STAGE.test(params.stage)) notFound();
 
-  return (
-    <BackendView key={params.stage} stage={params.stage} tab={backendTab(searchParams.tab)} />
-  );
+  return <BackendView key={params.stage} stage={params.stage} />;
 }

@@ -1424,51 +1424,73 @@ export function buildPlan(stage: string): PlanStep[] {
  * ------------------------------------------------------------------ */
 
 /**
- * Deleting an environment: the stacks, then everything they stood on.
+ * Deleting an environment: the stacks, and then — if it was asked for — the data.
  *
- * The unit is the same one deployment uses — a stage — and what this removes is
- * the four CloudFormation stacks **and the data behind them**: the tables, both
- * buckets and the video in them, the CloudFront distribution and the key that
- * signs for it, the user pool with every account in it, every log group, and this
- * stage's secrets. `infra/config/play-<stage>.json` goes last, because it is the
- * only written record of what the environment stood on until the moment it does
- * not.
+ * The unit is the same one deployment uses — a stage — and there are two ways to
+ * delete one, told apart by a single choice the page asks for:
  *
- * ## Why the data goes with the stacks
+ * - **The stacks**, which is what `cdk destroy` does on its own, plus
+ *   `infra/config/play-<stage>.json`, which is the file that makes the environment
+ *   exist in this repository at all. Every stateful resource in this app is
+ *   `RemovalPolicy.RETAIN`, so this leaves the tables, both buckets, the
+ *   distribution, the user pool and every log group in AWS with nobody managing
+ *   them — and the run's last step reads back what is still there, because that
+ *   is what a redeploy of the same name will hit.
+ * - **The data as well**, which is the five steps this plan adds when the tick is
+ *   set: the tables, both buckets with the video in them, the distribution and the
+ *   key that signs for it, the user pool with every account in it, every log
+ *   group, and this stage's secrets. `infra/config/play-<stage>.json` goes last
+ *   either way, because it is the only written record of what the environment
+ *   stood on until the moment it does not.
  *
- * Every stateful resource in this app is `RemovalPolicy.RETAIN`, so `cdk destroy`
- * alone stops at the stacks: the tables, both buckets, the distribution, the pool
- * and every log group stay in AWS with nobody managing them. That default is
- * right for a *deploy* — a table replaced by CloudFormation is an empty table,
- * and `docs/migration.md` phase E is that argument — but it made "delete this
- * environment" an operation nobody could finish:
+ * ## Why the data is a choice rather than a consequence
+ *
+ * Deleting an environment and deleting the product's only copy of its data are
+ * two different things to want, and the difference is not recoverable in one
+ * direction. Retaining is right for a *deploy* — a table replaced by
+ * CloudFormation is an empty table, and `docs/migration.md` phase E is that
+ * argument — but a delete that always keeps the data leaves an environment nobody
+ * can deploy to again:
  *
  * - **A redeploy of the same name stops at early validation.** CloudFormation
  *   will not create a `play-<stage>-*` table, a named bucket or a log group that
  *   already exists, and it fails with a sentence that names the resource and
- *   nothing anybody can act on. The ways out were to deploy under a second name
- *   or to delete twenty-eight tables by hand in the console, one at a time.
+ *   nothing anybody can act on.
  * - **They cost money for nothing.** A user pool, a distribution and a bucket
  *   full of video are most of what an environment costs, and an environment
  *   nobody can deploy to again is an environment that is paying for itself.
  *
- * So a delete here is a delete. What is removed is what the environment's config
- * names, what CloudFormation named after it (`play-<stage>-*`,
- * `playmediastack-<stage>-*`), and what only the stacks knew how to name — a
- * generated bucket, an imported distribution's id — which is why the destroy step
- * reads those out of the stack outputs *before* the stacks go.
+ * So the tick is offered, and what it does is the second shape above: the run is
+ * the same run, with five more steps in it and a different last step. Which one
+ * ran is legible from the plan itself — the steps are in the run — so nothing has
+ * to remember the choice afterwards.
  *
- * ## The two things standing in front of it
+ * ## What is removed, and where the names come from
  *
- * - **A second stage's config.** A table, a bucket, a distribution or a pool that
- *   another stage's config also names belongs to both of them, and this delete
- *   would take it away from the one still using it. For a pool that is sign-up
- *   silently stopping for that stage — the failure the old trigger check existed
- *   to prevent, which is now the same question as every other shared resource and
- *   is answered once, up front, by `shared`. It refuses rather than reporting,
- *   because the delete cannot be *completed* while it is true.
- * - **The typed stage name**, which is asked for on the page before this run
- *   exists at all. Nothing in this plan asks again.
+ * What the environment's config names, what CloudFormation named after it
+ * (`play-<stage>-*`, `playmediastack-<stage>-*`), and what only the stacks knew
+ * how to name — a generated bucket, an imported distribution's id — which is why
+ * the destroy step reads those out of the stack outputs *before* the stacks go.
+ *
+ * ## The two guards
+ *
+ * Whichever shape runs, something stands in front of it, and it is a different
+ * something:
+ *
+ * - **With the data**, `shared` refuses to start when another stage's config names
+ *   the same table, bucket, distribution or pool. That resource belongs to both
+ *   environments, and this delete would take it away from the one still using it.
+ * - **Without it**, `trigger` refuses when a shared pool's pre sign-up trigger
+ *   calls this stage's `link-federated-user` — the check
+ *   `teardown-legacy-stack.sh` makes, and the one this plan was built around
+ *   before the data was deletable at all: the pool outlives the stacks, and
+ *   Cognito would go on invoking a function that no longer exists, which reads as
+ *   people being unable to sign up rather than as an error anywhere.
+ *
+ * A shared pool is why the two are not one check. With the data, the pool is
+ * deleted and the trigger stops mattering; without the data, the pool stays and
+ * the trigger is the whole of the risk. The typed stage name on the page is the
+ * third thing in front of both, and it is asked for before a run exists at all.
  *
  * ## The order
  *
@@ -1480,61 +1502,29 @@ export function buildPlan(stage: string): PlanStep[] {
  * this console, which is exactly when removing them is safe.
  *
  * Within the data: the distribution before the buckets it writes its access logs
- * into and reads its video from, the tables and the media before the pool, and
- * the log groups after everything — they are the only record of what the
- * environment did, and losing them should be the last thing that happens rather
- * than the first.
+ * into and reads its video from, the tables and the media before the pool, and the
+ * log groups after everything — they are the only record of what the environment
+ * did, and losing them should be the last thing that happens rather than the
+ * first.
  */
-export function buildDestroyPlan(stage: string): PlanStep[] {
+export interface DestroyOptions {
+  /**
+   * Whether the run takes the data with it.
+   *
+   * The default is `false`, and that is the whole of the safety argument: a run
+   * that is not asked to delete the data cannot delete it, because the steps that
+   * would are not in the plan. Nothing in the data steps is reachable any other
+   * way — no flag on a step, no `optional` a run could fall into.
+   */
+  deleteData?: boolean;
+}
+
+export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): PlanStep[] {
+  const deleteData = options.deleteData === true;
   const stageConfigPath = path.relative(repoPath(), configFile(stage));
 
-  /**
-   * The one thing a delete can break that is not this environment.
-   *
-   * Two stages sharing a resource is not hypothetical in this repository: it is
-   * what an *imported* pool is, and `teardown-legacy-stack.sh` refuses to delete
-   * a Serverless stack for the same reason — the pool can call exactly one
-   * stage's `link-federated-user` function, and deleting the environment that
-   * owns it takes sign-up away from the pool everybody else signs in through.
-   * The old check watched only that trigger, because the pool outlived the
-   * stacks and a delete could not touch it. Now that a delete takes the pool with
-   * it, the question is the one it always was underneath: **is another stage's
-   * config still naming this?**
-   *
-   * Read from the configs rather than from AWS, and deliberately: what makes a
-   * resource shared is that two stages point at it, and `infra/config/*.json` is
-   * where pointing lives. A resource this stage's config names and no other's
-   * does is this stage's to delete, whichever way it was created.
-   */
-  const shared: PlanStep = {
-    id: "shared",
-    title: "Nothing else stands on what this environment stands on",
-    detail:
-      "A table, a bucket, a distribution or a user pool that another stage's config also names belongs to both of them, and a delete here would take it away from the one still using it — for a pool that is sign-up quietly stopping for that stage, for a table it is another environment's product data. This step reads every other `infra/config/play-*.json` and refuses rather than reporting, because the delete cannot be completed correctly while it is true. It runs before anything has been destroyed, so a refusal costs nothing but the reading.",
-    satisfiedLabel: "Nothing shared",
-    timeoutMs: 60_000,
-    check: async (ctx) => {
-      const conflicts = sharingConflicts(ctx.stage);
-      if (conflicts.length === 0) {
-        return {
-          satisfied: true,
-          note: `no other stage's config names a table, bucket, pool or distribution of '${ctx.stage}'`,
-        };
-      }
-      return { satisfied: false, note: describeConflicts(conflicts) };
-    },
-    apply: async (ctx) => {
-      const conflicts = sharingConflicts(ctx.stage);
-      if (conflicts.length === 0) return { note: "nothing shared" };
-      throw new Error(
-        `Refusing to delete '${ctx.stage}': ${describeConflicts(conflicts)}. ` +
-          "Deleting this environment would delete those, and the stage that still uses them would stop " +
-          "working with nothing in its own console to say why.\n\n" +
-          "Point that stage at resources of its own first — its config is infra/config/play-<stage>.json — " +
-          "or delete it first and this one afterwards.",
-      );
-    },
-  };
+  /** Whichever guard this shape of delete needs — see `sharedGuard` and `triggerGuard`. */
+  const guard = deleteData ? sharedGuard() : triggerGuard();
 
   /**
    * The destroy itself.
@@ -1975,58 +1965,15 @@ export function buildDestroyPlan(stage: string): PlanStep[] {
   };
 
   /**
-   * What is still pointed here — the one thing a delete cannot undo for you.
-   *
-   * The apps' own `.env.local` files are written by the deploy plan's twelfth
-   * step and unwritten by nothing: a frontend reading a deleted API URL is a
-   * product that does not work, and the fix is somebody pointing it at another
-   * environment. That is a decision rather than a step, which is the same
-   * distinction the deploy plan's pre sign-up step makes — so this step
-   * **reports instead of applying**, and its transcript is the account of what
-   * the delete did and could not do. The check is satisfied by finding what it
-   * expected, and the run's own report is the lines below.
+   * The last thing either shape of delete does before the config file goes, and
+   * the reason it is a step rather than a line in the transcript: what a delete
+   * could not take with it, and what is still pointed at where the environment
+   * was, are things somebody has to read. Which report it is depends on the tick —
+   * `leftReport` when the data went, `remainingReport` when it did not — and both
+   * are the run's own answer: the page draws these lines where a deploy draws its
+   * outputs.
    */
-  const left: PlanStep = {
-    id: "left",
-    title: "What is still pointed here",
-    detail:
-      "The delete removed the stacks and everything they stood on. What it cannot remove is a `.env.local` in this checkout naming the API URL it just deleted — the deploy plan's twelfth step writes those and nothing unwrites them, so the three apps would go on talking to an address that answers with a DNS failure until somebody points them somewhere else. That is a decision about which environment the apps are for, so this step reports it and stops.",
-    satisfiedLabel: "Reported",
-    timeoutMs: 3 * 60_000,
-    check: async (ctx) => {
-      // What the delete could not take with it, collected by the steps above:
-      // today that is a signing key pair a migrating stage shares with an older
-      // distribution, and a public key a second key group still trusts. Written
-      // as the steps find them rather than predicted here, and empty on an
-      // environment that had neither.
-      const lines: string[] = [...(readLeft(ctx) ?? [])];
-
-      // What is still pointed here: the three apps, which the deploy plan's
-      // twelfth step writes and nothing unwrites.
-      const apiUrl = ctx.data.apiUrlBefore as string | null | undefined;
-      if (apiUrl) {
-        const pointing = FRONTEND_APPS.filter((app) => readEnvLocal(app).NEXT_PUBLIC_API_URL === apiUrl);
-        if (pointing.length > 0) {
-          lines.push(
-            `${pointing.join(", ")} still read${pointing.length === 1 ? "s" : ""} this environment's API ` +
-              `URL in .env.local — anything they send now fails. Start them against another environment, ` +
-              "or deploy this one again.",
-          );
-        }
-      }
-
-      for (const line of lines) ctx.log("out", line);
-      ctx.data.left = lines;
-
-      return {
-        satisfied: true,
-        note: lines.length
-          ? `${lines.length} thing${lines.length === 1 ? "" : "s"} to read — open this step`
-          : "nothing is pointed at what was deleted",
-      };
-    },
-    apply: async () => ({ note: "reported, not applied" }),
-  };
+  const report = deleteData ? leftReport() : remainingReport();
 
   /**
    * The environment itself: the file that makes this stage exist.
@@ -2055,19 +2002,312 @@ export function buildDestroyPlan(stage: string): PlanStep[] {
     },
   };
 
+  /**
+   * The five steps that are the tick.
+   *
+   * Below the destroy and the post-condition, because they are about resources
+   * the stacks no longer hold, and spread rather than conditional inside one
+   * another so that a run that was *not* asked to delete the data does not have
+   * them at all: there is no flag a step reads and no `optional` a run could fall
+   * into. An empty plan fragment is the whole of the safety argument.
+   */
+  const removal = deleteData ? [data, media, auth, traces, secrets] : [];
+
   return [
     credentialsStep(stage, "destroy"),
-    shared,
+    guard,
     destroy,
     verify,
-    data,
-    media,
-    auth,
-    traces,
-    secrets,
-    left,
+    ...removal,
+    report,
     config,
   ];
+}
+
+/* ------------------------------------------------------------------ *
+ * The two guards, and the two reports
+ *
+ * Which pair is in the plan is the tick: a delete that takes the data has one
+ * way of hurting somebody else and one thing to report, and a delete that leaves
+ * it has another of each. They are separate steps rather than one step with a
+ * branch, because the sentence each of them says is the part that matters and a
+ * sentence assembled from two halves reads like neither.
+ * ------------------------------------------------------------------ */
+
+/**
+ * The guard for a delete that **takes the data**: nothing else may be standing on it.
+ *
+ * Two stages sharing a resource is not hypothetical in this repository: it is
+ * what an *imported* pool is, and `teardown-legacy-stack.sh` refuses to delete a
+ * Serverless stack for the same reason. Here it is a question about every stateful
+ * resource rather than about one trigger, because this delete removes all of them:
+ * a table a second stage's config names is that stage's product data, a pool it
+ * names is where its people sign in, and a bucket it names holds its video.
+ *
+ * Read from the configs rather than from AWS, and deliberately: what makes a
+ * resource shared is that two stages point at it, and `infra/config/*.json` is
+ * where pointing lives. A resource this stage's config names and no other's does
+ * is this stage's to delete, whichever way it was created.
+ */
+function sharedGuard(): PlanStep {
+  return {
+    id: "shared",
+    title: "Nothing else stands on what this environment stands on",
+    detail:
+      "A table, a bucket, a distribution or a user pool that another stage's config also names belongs to both of them, and a delete here would take it away from the one still using it — for a pool that is sign-up quietly stopping for that stage, for a table it is another environment's product data. This step reads every other `infra/config/play-*.json` and refuses rather than reporting, because the delete cannot be completed correctly while it is true. It runs before anything has been destroyed, so a refusal costs nothing but the reading.",
+    satisfiedLabel: "Nothing shared",
+    timeoutMs: 60_000,
+    check: async (ctx) => {
+      const conflicts = sharingConflicts(ctx.stage);
+      if (conflicts.length === 0) {
+        return {
+          satisfied: true,
+          note: `no other stage's config names a table, bucket, pool or distribution of '${ctx.stage}'`,
+        };
+      }
+      return { satisfied: false, note: describeConflicts(conflicts) };
+    },
+    apply: async (ctx) => {
+      const conflicts = sharingConflicts(ctx.stage);
+      if (conflicts.length === 0) return { note: "nothing shared" };
+      throw new Error(
+        `Refusing to delete '${ctx.stage}': ${describeConflicts(conflicts)}. ` +
+          "Deleting this environment would delete those, and the stage that still uses them would stop " +
+          "working with nothing in its own console to say why.\n\n" +
+          "Point that stage at resources of its own first — its config is infra/config/play-<stage>.json — " +
+          "or delete it first and this one afterwards.",
+      );
+    },
+  };
+}
+
+/**
+ * The guard for a delete that **leaves the data**: the shared pool's trigger.
+ *
+ * This is the check the plan was built around before the data was deletable at
+ * all, and it is still exactly as necessary: a stage that imports its pool is one
+ * of several pointing their own `link-federated-user` at one pool, the pool can
+ * call exactly one of them, and destroying the stacks deletes a function Cognito
+ * is still invoking. The symptom is not an error in a log — it is people unable
+ * to sign up, from a stage that has just been deleted and cannot be asked.
+ *
+ * With the data, this question disappears: the pool goes with the stacks, so
+ * nothing is left calling anything. That is why the check is not in that shape of
+ * the plan at all rather than being answered twice.
+ */
+function triggerGuard(): PlanStep {
+  return {
+    id: "trigger",
+    title: "No shared pool is calling into this environment",
+    detail:
+      "A stage that **imports** its user pool is one of several pointing their own `link-federated-user` function at one pool, and the pool can call one of them. If it calls this stage's, deleting the stacks deletes a function Cognito is still invoking: sign-up stops working, and nothing in the transcript of the delete says so. An environment that **creates** its own pool has no such problem — its pool is its own, and it is retained — and an environment whose pool is being deleted along with the stacks has none either, which is why this step is only in a delete that leaves the data behind. It is not optional, and that is the point of it: a failure here *stops* the delete.",
+    satisfiedLabel: "Nothing is calling here",
+    timeoutMs: 3 * 60_000,
+    check: async (ctx) => {
+      const loaded = readConfig(ctx.stage);
+      if (ownershipOf(loaded).auth) {
+        return {
+          satisfied: true,
+          note: `this environment's own pool — nothing else calls play-${ctx.stage}-link-federated-user`,
+        };
+      }
+
+      const poolId = loaded?.existing?.userPoolId;
+      if (!poolId) return { satisfied: true, note: "the config names no user pool" };
+
+      const expected = `arn:aws:lambda:${ctx.region}:${
+        (ctx.data.identity as { account?: string } | undefined)?.account ?? loaded?.account
+      }:function:play-${ctx.stage}-link-federated-user`;
+
+      const pool = await describeUserPool(poolId, ctx);
+      if (!pool) {
+        return { satisfied: false, note: `pool ${poolId} could not be read, so its trigger is unknown` };
+      }
+
+      const current = pool.LambdaConfig?.PreSignUp;
+      if (current === expected) {
+        return {
+          satisfied: false,
+          note: `the shared pool ${poolId} calls play-${ctx.stage}-link-federated-user, which this delete deletes`,
+        };
+      }
+      return {
+        satisfied: true,
+        note: `the shared pool calls ${current ? (current.split(":function:")[1] ?? current) : "nothing"} — not this environment's function`,
+      };
+    },
+    apply: async (ctx) => {
+      throw new Error(
+        `The user pool ${readConfig(ctx.stage)?.existing?.userPoolId} is shared, and its pre sign-up ` +
+          `trigger calls play-${ctx.stage}-link-federated-user — the function this delete removes. ` +
+          "Cognito would go on invoking a function that no longer exists, and people would be unable " +
+          "to sign up.\n\n" +
+          "Either tick **delete the data as well**, which deletes the pool and takes the question away, " +
+          "or deploy the environment that should own sign-up for this pool and move the trigger to it:\n\n" +
+          "  node infra/scripts/adopt-cognito.mjs --stage=<that-stage> " +
+          `--profile=${ctx.profile} --region=${ctx.region}\n\n` +
+          "Then delete this environment again.",
+      );
+    },
+  };
+}
+
+/**
+ * The report for a delete that **took the data**: what it could not take.
+ *
+ * Two things can survive a delete that meant to remove everything, and both are
+ * found rather than predicted. A **shared** signing key pair is not this
+ * environment's to delete — it is the pair an imported distribution was created
+ * against — and a public key a second key group still trusts cannot be deleted at
+ * all. Alongside them: the apps' own `.env.local` files, which the deploy plan's
+ * twelfth step writes and nothing unwrites, so a frontend would go on talking to
+ * an address that answers with a DNS failure.
+ *
+ * The step **reports instead of applying**, in the idiom of the deploy plan's
+ * pre-sign-up step: pointing the frontends somewhere else is a decision about
+ * which environment the apps are for. The check is satisfied by finding what it
+ * expected — this is a reading — and its lines are also the run's own answer,
+ * which the page draws where a deploy draws its outputs.
+ */
+function leftReport(): PlanStep {
+  return {
+    id: "left",
+    title: "What is still pointed here",
+    detail:
+      "The delete removed the stacks and everything they stood on. What it cannot remove is a `.env.local` in this checkout naming the API URL it just deleted, a signing key pair this environment shares with an older distribution, or a public key another key group still trusts. This step lists what it found and stops: which environment the apps are for is a decision rather than a step.",
+    satisfiedLabel: "Reported",
+    timeoutMs: 3 * 60_000,
+    check: async (ctx) => {
+      // Whatever the steps above could not take with them, as they found it.
+      const lines: string[] = [...(readLeft(ctx) ?? [])];
+
+      const pointing = frontendsStillPointing(ctx);
+      if (pointing) lines.push(pointing);
+
+      for (const line of lines) ctx.log("out", line);
+      ctx.data.left = lines;
+
+      return {
+        satisfied: true,
+        note: lines.length
+          ? `${lines.length} thing${lines.length === 1 ? "" : "s"} to read — open this step`
+          : "nothing was left behind and nothing is pointed here",
+      };
+    },
+    apply: async () => ({ note: "reported, not applied" }),
+  };
+}
+
+/**
+ * The report for a delete that **left the data**: what is still there, and what it costs.
+ *
+ * Every line is read rather than assumed, and the numbers are the account's own:
+ * the tables and buckets by the names this stage's config and CloudFormation gave
+ * them, the pool with how many accounts are in it, the log groups by the name
+ * rule. What they have in common is the reason this report exists — a **redeploy
+ * of the same stage name** stops at early validation naming whichever of them it
+ * cannot create, and the error names the resource and nothing anybody can act on.
+ *
+ * It deletes nothing, for the reason the whole report exists: whether the data
+ * should go is the tick that was not ticked when this run started, and a step
+ * that decided it afterwards would be the console making that choice on somebody's
+ * behalf.
+ */
+function remainingReport(): PlanStep {
+  return {
+    id: "retained",
+    title: "What is left behind, and what a redeploy of this name will hit",
+    detail:
+      "The stacks are gone and the data is not. Every stateful resource here is `RemovalPolicy.RETAIN`, so the tables, both buckets, the user pool and every log group stay in AWS with nobody managing them — and a distribution stays too when the environment **imports** it, since only a stage that created its own had a stack that could delete one. That is what a redeploy of the same name stops on, and what an environment nobody can deploy to again keeps paying for. This step reads what is actually there and says what it costs. It deletes nothing: the data goes only when a delete is asked to take it.",
+    satisfiedLabel: "Reported",
+    timeoutMs: 5 * 60_000,
+    check: async (ctx) => {
+      const lines: string[] = [];
+      const { tables, buckets, userPoolId } = await resourcesOf(ctx);
+
+      if (tables.length > 0) {
+        lines.push(
+          `${tables.length} DynamoDB table${tables.length === 1 ? "" : "s"} are still in AWS — ${listNames(tables)} — ` +
+            "with point-in-time recovery and whatever was in them. A redeploy of this name cannot create " +
+            "one of them again.",
+        );
+      }
+
+      if (buckets.length > 0) {
+        lines.push(
+          `${buckets.length} S3 bucket${buckets.length === 1 ? "" : "s"} are still in AWS — ${listNames(buckets)} — ` +
+            "with the video and the distribution's access logs in them.",
+        );
+      }
+
+      const distribution = await distributionOf(ctx);
+      if (distribution) {
+        lines.push(
+          `The CloudFront distribution ${distribution.id} is still in AWS and still serving. An environment ` +
+            "that imports its media has no stack that owns it: a destroy cannot take it, and a redeploy " +
+            "cannot replace it.",
+        );
+      }
+
+      if (userPoolId) {
+        const pool = await describeUserPool(userPoolId, ctx);
+        if (pool) {
+          const accounts = pool.EstimatedNumberOfUsers ?? 0;
+          lines.push(
+            `The user pool ${userPoolId} is still in AWS with about ${accounts} account${accounts === 1 ? "" : "s"} ` +
+              "in it. A redeploy of this name creates a new, empty pool — nobody who signed up here can sign " +
+              "in to that one — and the retained pool still carries a pre sign-up trigger pointing at a " +
+              "function that no longer exists.",
+          );
+        }
+      }
+
+      const groups = await logGroupsOf(ctx);
+      if (groups.length > 0) {
+        lines.push(
+          `${groups.length} CloudWatch log groups under /aws/lambda/play-${ctx.stage}* are still in AWS. They ` +
+            "are the only record of what this environment did — and they are the first thing a redeploy of " +
+            "this name stops on, because CloudFormation will not create a log group that exists.",
+        );
+      }
+
+      const pointing = frontendsStillPointing(ctx);
+      if (pointing) lines.push(pointing);
+
+      for (const line of lines) ctx.log("out", line);
+      ctx.data.left = lines;
+
+      return {
+        satisfied: true,
+        note: lines.length
+          ? `${lines.length} thing${lines.length === 1 ? "" : "s"} left behind — open this step to read what they cost`
+          : "nothing was left behind",
+      };
+    },
+    apply: async () => ({ note: "reported, not applied" }),
+  };
+}
+
+/**
+ * The apps whose `.env.local` still reads the API URL that was just deleted.
+ *
+ * Shared by both reports, because it is the one line neither shape of delete can
+ * do anything about: the files are written by the deploy plan's twelfth step and
+ * unwritten by nothing, so what is left is somebody deciding which environment
+ * these apps are for.
+ */
+function frontendsStillPointing(ctx: StepContext): string | null {
+  const apiUrl = ctx.data.apiUrlBefore as string | null | undefined;
+  if (!apiUrl) return null;
+
+  const pointing = FRONTEND_APPS.filter((app) => readEnvLocal(app).NEXT_PUBLIC_API_URL === apiUrl);
+  if (pointing.length === 0) return null;
+
+  return (
+    `${pointing.join(", ")} still read${pointing.length === 1 ? "s" : ""} this environment's API URL in ` +
+    ".env.local — anything they send now fails. Start them against another environment, or deploy this " +
+    "one again."
+  );
 }
 
 /* ------------------------------------------------------------------ *

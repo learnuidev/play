@@ -141,10 +141,8 @@ function listOf(parts: string[]): string {
 }
 
 /* ------------------------------------------------------------------ *
- * The three views of one environment
+ * The four views of one environment
  * ------------------------------------------------------------------ */
-
-export type BackendTab = "checklist" | "env" | "deployments" | "logs";
 
 /**
  * Four questions, in the order they are asked: is this environment ready, what
@@ -155,6 +153,10 @@ export type BackendTab = "checklist" | "env" | "deployments" | "logs";
  * the things a person has to supply before there is anything to deploy, and the
  * row that says which of them is missing. Env variables is the read-only half of
  * the same picture: the outputs a deploy published and the inputs it read.
+ *
+ * Which one is showing is `?tab=`, and the list below is the whole of what a URL
+ * may ask for: `useTabParam` matches against it and treats anything else as the
+ * first tab, so a link written before a tab existed still lands somewhere real.
  */
 export const BACKEND_TABS = [
   {
@@ -178,17 +180,3 @@ export const BACKEND_TABS = [
     hint: "CloudWatch, one function at a time. Event-driven functions first — they are the ones with nowhere else to speak.",
   },
 ] as const;
-
-/**
- * Which tab a URL asked for.
- *
- * The tab is in the query string because "go straight to the checklist" is a
- * thing worth linking to — a new environment starts there, and the button that
- * names one links to it — and anything unrecognised is the first tab rather than
- * an error.
- */
-export function backendTab(value: string | string[] | undefined): BackendTab {
-  const wanted = Array.isArray(value) ? value[0] : value;
-  const match = BACKEND_TABS.find((tab) => tab.id === wanted);
-  return match ? match.id : "checklist";
-}

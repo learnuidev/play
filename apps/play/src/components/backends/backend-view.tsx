@@ -12,14 +12,8 @@ import { Card, CardHeading } from "@/components/ui/card";
 import { Chip, Dot, Spinner } from "@/components/ui/chip";
 import { EnvTable } from "@/components/ui/env-table";
 import { Picker } from "@/components/ui/picker";
-import { Tabs } from "@/components/ui/tabs";
-import {
-  BACKEND_TABS,
-  backendBlurb,
-  backendState,
-  runningFor,
-  type BackendTab,
-} from "@/lib/backends";
+import { Tabs, useTabParam } from "@/components/ui/tabs";
+import { BACKEND_TABS, backendBlurb, backendState, runningFor } from "@/lib/backends";
 import { apiHost, relative } from "@/lib/format";
 import type {
   BackendEnvView,
@@ -40,7 +34,9 @@ import type {
  * The four tabs below are that page's four views, in the order they are asked:
  * **is this environment ready** (Checklist — the things a person supplies), what
  * is in it and what came out (Env variables), what has been deployed to it, and
- * what it is saying.
+ * what it is saying. Which one is showing is `?tab=` — in the URL, so that a
+ * reload and a link both land on the same view, and `replace`d rather than
+ * pushed so the back button still leaves the page rather than walking the strip.
  *
  * There is deliberately no 404 here, unlike `/frontends/<app>`. The set of
  * frontends is three names the console knows; the set of environments is open,
@@ -48,10 +44,12 @@ import type {
  * page for — the Deployments tab is how it stops not existing.
  */
 
-export function BackendView({ stage, tab: initialTab }: { stage: string; tab: BackendTab }) {
+export function BackendView({ stage }: { stage: string }) {
   const { state, runs } = useShell();
   const nameStage = useNameStage();
-  const [tab, setTab] = useState<BackendTab>(initialTab);
+  // The tab lives in the URL rather than in this component: `?tab=logs` is what a
+  // reload, the back button and a link somebody is sent all have in common.
+  const { tab, select } = useTabParam(BACKEND_TABS);
 
   const environment = state?.environments.find((item) => item.stage === stage) ?? null;
   const status = backendState(
@@ -116,7 +114,7 @@ export function BackendView({ stage, tab: initialTab }: { stage: string; tab: Ba
         </p>
       </header>
 
-      <Tabs tabs={BACKEND_TABS} value={tab} onChange={setTab} />
+      <Tabs tabs={BACKEND_TABS} value={tab} onChange={select} />
 
       {tab === "checklist" ? <ChecklistView stage={stage} /> : null}
       {tab === "env" ? (

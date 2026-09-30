@@ -58,10 +58,26 @@ import type {
  * it would write — and the transcript underneath is what the build says.
  */
 
-const TARGETS: ReadonlyArray<{ value: VercelTarget; label: string; hint: string }> = [
-  { value: "production", label: "Production", hint: "the project's live deployment" },
-  { value: "preview", label: "Preview", hint: "a branch build, on its own URL" },
-  { value: "development", label: "Development", hint: "no build — read locally by vercel dev" },
+const TARGETS: ReadonlyArray<{
+  value: VercelTarget;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: "production",
+    label: "Production",
+    hint: "the project's live deployment",
+  },
+  {
+    value: "preview",
+    label: "Preview",
+    hint: "a branch build, on its own URL",
+  },
+  {
+    value: "development",
+    label: "Development",
+    hint: "no build — read locally by vercel dev",
+  },
 ];
 
 export function VercelDeployCard({
@@ -117,7 +133,10 @@ export function VercelDeployCard({
 
       fetch(`/api/vercel/deploy?${query}`, { cache: "no-store" })
         .then(async (response) => {
-          const body = (await response.json()) as { preview?: VercelDeployPreview; error?: string };
+          const body = (await response.json()) as {
+            preview?: VercelDeployPreview;
+            error?: string;
+          };
           if (cancelled) return;
           if (!response.ok || !body.preview) {
             setReadError(body.error ?? "The deployment could not be planned.");
@@ -151,7 +170,9 @@ export function VercelDeployCard({
 
   const steps: StepView[] = mine ? mine.steps : (preview?.steps ?? []);
   const selected = steps.find((step) => step.id === deploy.selected) ?? null;
-  const lines = deploy.selected ? (deploy.lines.get(deploy.selected) ?? []) : [];
+  const lines = deploy.selected
+    ? (deploy.lines.get(deploy.selected) ?? [])
+    : [];
 
   const settled = steps.filter((step) =>
     ["passed", "skipped", "warned", "manual"].includes(step.status),
@@ -273,11 +294,12 @@ export function VercelDeployCard({
 
       {preview?.project?.found === false ? (
         <p className="text-muted-foreground mt-4 text-xs leading-relaxed">
-          No project named <span className="font-mono">{deployed.name}</span> on this Vercel
-          account. Import the repository once with Root Directory{" "}
+          No project named <span className="font-mono">{deployed.name}</span> on
+          this Vercel account. Import the repository once with Root Directory{" "}
           <span className="font-mono">{deployed.rootDirectory}</span> —{" "}
-          <span className="font-mono">docs/deploy.md</span> has the three settings. The console
-          writes variables to a project; it does not create one.
+          <span className="font-mono">docs/deploy.md</span> has the three
+          settings. The console writes variables to a project; it does not
+          create one.
         </p>
       ) : null}
 
@@ -294,11 +316,12 @@ export function VercelDeployCard({
 
       {target === "development" ? (
         <p className="text-muted-foreground mt-4 text-xs leading-relaxed">
-          Vercel has three variable targets and two deployment targets: a build is either
-          production or preview. <span className="text-foreground/80">Development</span> is what{" "}
+          Vercel has three variable targets and two deployment targets: a build
+          is either production or preview.{" "}
+          <span className="text-foreground/80">Development</span> is what{" "}
           <span className="font-mono">vercel dev</span> and{" "}
-          <span className="font-mono">vercel env pull</span> read on a laptop, so this writes the
-          values and builds nothing.
+          <span className="font-mono">vercel env pull</span> read on a laptop,
+          so this writes the values and builds nothing.
         </p>
       ) : null}
 
@@ -311,7 +334,8 @@ export function VercelDeployCard({
             {preview.variables.map((variable) => {
               const current = preview.project?.env.find(
                 (existing) =>
-                  existing.key === variable.key && existing.targets.includes(target),
+                  existing.key === variable.key &&
+                  existing.targets.includes(target),
               );
               // Three answers, not two: a variable Vercel will not return is not
               // the same as one that differs, and calling it "differs" would be
@@ -328,10 +352,16 @@ export function VercelDeployCard({
                   key={variable.key}
                   className="border-border/40 flex flex-wrap items-baseline gap-3 border-t py-2 text-xs first:border-t-0"
                 >
-                  <span className="w-64 shrink-0 truncate font-mono" title={variable.key}>
+                  <span
+                    className="w-64 shrink-0 truncate font-mono"
+                    title={variable.key}
+                  >
                     {variable.key}
                   </span>
-                  <code className="min-w-0 flex-1 truncate" title={variable.value ?? ""}>
+                  <code
+                    className="min-w-0 flex-1 truncate"
+                    title={variable.value ?? ""}
+                  >
                     {variable.value ?? "—"}
                   </code>
                   <Chip
@@ -358,9 +388,15 @@ export function VercelDeployCard({
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-500",
-                mine?.status === "failed" ? "bg-destructive" : settled === steps.length ? "bg-ok" : "bg-run",
+                mine?.status === "failed"
+                  ? "bg-destructive"
+                  : settled === steps.length
+                    ? "bg-ok"
+                    : "bg-run",
               )}
-              style={{ width: `${steps.length ? (settled / steps.length) * 100 : 0}%` }}
+              style={{
+                width: `${steps.length ? (settled / steps.length) * 100 : 0}%`,
+              }}
             />
           </div>
 
@@ -376,7 +412,10 @@ export function VercelDeployCard({
 
       {selected ? (
         <div className="mt-5 flex flex-col gap-3">
-          <Prose text={selected.detail} className="text-muted-foreground px-1 text-xs" />
+          <Prose
+            text={selected.detail}
+            className="text-muted-foreground px-1 text-xs"
+          />
           {mine ? (
             <Transcript
               title={selected.title}
@@ -402,7 +441,12 @@ export function VercelDeployCard({
       ) : null}
 
       {mine?.status === "succeeded" && mine.deployment ? (
-        <DeployResult result={mine.deployment} stage={stage} target={target} run={mine} />
+        <DeployResult
+          result={mine.deployment}
+          stage={stage}
+          target={target}
+          run={mine}
+        />
       ) : null}
     </Card>
   );
@@ -425,7 +469,9 @@ function DeployResult({
 }) {
   const total = run.finishedAt ? run.finishedAt - run.startedAt : 0;
   const deployment = result.deployment;
-  const written = result.variables.filter((variable) => variable.action !== "unchanged").length;
+  const written = result.variables.filter(
+    (variable) => variable.action !== "unchanged",
+  ).length;
 
   return (
     <div className="border-ok/25 bg-ok/6 mt-5 rounded-3xl border p-5">
@@ -435,17 +481,24 @@ function DeployResult({
             <CheckIcon className="size-3.5" strokeWidth={3} />
           </span>
           <h3 className="text-base font-semibold tracking-tight">
-            {deployment ? `${stage} is on ${target}` : `${stage}'s values are written`}
+            {deployment
+              ? `${stage} is on ${target}`
+              : `${stage}'s values are written`}
           </h3>
         </div>
         <span className="text-muted-foreground text-xs">
-          {written} variable{written === 1 ? "" : "s"} written · {duration(total)}
+          {written} variable{written === 1 ? "" : "s"} written ·{" "}
+          {duration(total)}
         </span>
       </div>
 
       <div className="mt-4 flex flex-col gap-2">
         {deployment?.url ? (
-          <CopyRow label="Deployment" value={deployment.url} labelClassName="w-32" />
+          <CopyRow
+            label="Deployment"
+            value={deployment.url}
+            labelClassName="w-32"
+          />
         ) : null}
         {result.domain ? (
           <CopyRow
@@ -474,9 +527,14 @@ function DeployResult({
             .filter((variable) => variable.action !== "unchanged")
             .map((variable) => (
               <p key={variable.key} className="py-0.5 font-mono text-xs">
-                <span className="text-muted-foreground">{variable.action} </span>
+                <span className="text-muted-foreground">
+                  {variable.action}{" "}
+                </span>
                 {variable.key}
-                <span className="text-muted-foreground"> = {variable.value}</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  = {variable.value}
+                </span>
               </p>
             ))}
         </div>
@@ -498,7 +556,11 @@ function DeployResult({
  * possible without a second Vercel project.
  */
 function defaultTarget(stage: string): VercelTarget {
-  return stage === "dev" ? "production" : "preview";
+  if (stage === "staging") {
+    return "preview";
+  }
+
+  return stage === "production" ? "production" : "development";
 }
 
 function runStatusText(status: RunStatus): string {

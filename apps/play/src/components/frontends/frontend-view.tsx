@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
 import { Chip, Dot } from "@/components/ui/chip";
 import { EnvTable } from "@/components/ui/env-table";
-import { Tabs } from "@/components/ui/tabs";
+import { Tabs, useTabParam } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import { apiHost, relative } from "@/lib/format";
 import { STATUS, frontendOf, isLive } from "@/lib/frontends";
@@ -34,17 +34,17 @@ import type {
 /**
  * One frontend: what it reads, where it runs, and what it is saying.
  *
- * The three tabs are the three questions anybody has about a running app. What
- * is *not* a tab is the control that decides whether it runs at all: the
- * environment and the start button sit above the strip, because starting the app
- * is the page's subject rather than one of its views, and a button that lives
- * inside the Logs tab is a button you have to know to look for.
+ * The three tabs are the three questions anybody has about a running app, and
+ * which one is showing is `?tab=` — the same parameter, and the same hook, as an
+ * environment's four tabs, so a reload and a link both land on the view somebody
+ * was looking at. What is *not* a tab is the control that decides whether it runs
+ * at all: the environment and the start button sit above the strip, because
+ * starting the app is the page's subject rather than one of its views, and a
+ * button that lives inside the Logs tab is a button you have to know to look for.
  *
  * The frontend itself is not a dropdown here either — it is a URL. The list on
  * `/frontends` is what picks one, and this page is about the one you picked.
  */
-
-type TabId = "env" | "deployments" | "logs";
 
 const TABS = [
   {
@@ -71,7 +71,9 @@ export function FrontendView({ app }: { app: AppKey }) {
   // hook opens an `EventSource` per use, and a card and a tab each asking for
   // the same three services would be two connections to say one thing.
   const { services, lines, occupied, pending, error, start, stop } = useServices();
-  const [tab, setTab] = useState<TabId>("env");
+  // The tab is in the URL: `?tab=logs` survives a reload, and it is a link
+  // somebody can be sent. Same hook, same parameter as an environment's tabs.
+  const { tab, select } = useTabParam(TABS);
 
   const service = services.find((candidate) => candidate.app === app);
   const status = service?.status ?? "stopped";
@@ -196,7 +198,7 @@ export function FrontendView({ app }: { app: AppKey }) {
         {error ? <p className="text-destructive mt-4 text-xs">{error}</p> : null}
       </Card>
 
-      <Tabs tabs={TABS} value={tab} onChange={setTab} />
+      <Tabs tabs={TABS} value={tab} onChange={select} />
 
       {tab === "env" ? <EnvTab app={app} stage={stage} /> : null}
       {tab === "deployments" ? <DeploymentsTab app={app} service={service} stage={stage} /> : null}
