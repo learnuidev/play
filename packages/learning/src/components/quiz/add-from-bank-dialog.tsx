@@ -19,7 +19,7 @@ import { Skeleton } from '@ui/components/ui/skeleton';
 import { useBankQuestions, useAddQuizQuestions } from '@api/modules/question/question.queries';
 import { BankPicker } from './bank-picker';
 import { QuestionBody, StatusChip } from './question-parts';
-import { QUESTION_TYPE_LABELS, type QuizQuestion } from '@play/types';
+import { QUESTION_DIFFICULTY_LABELS, QUESTION_TYPE_LABELS, type QuizQuestion } from '@play/types';
 
 /**
  * Picking questions out of a bank for a quiz to ask.
@@ -192,6 +192,9 @@ export function AddFromBankDialog({
                         </div>
                         <p className="mt-2 pl-7 text-xs text-muted-foreground">
                           {QUESTION_TYPE_LABELS[question.type]}
+                          {question.difficulty
+                            ? ` · ${QUESTION_DIFFICULTY_LABELS[question.difficulty]}`
+                            : ''}
                         </p>
                       </button>
                     </li>

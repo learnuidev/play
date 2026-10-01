@@ -15,7 +15,7 @@ import type { QuizQuestion } from '@play/types';
  */
 
 /** The headings the importer reads, in the order a person reads them. */
-const CSV_HEADER = ['Type', 'Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Option E', 'Option F', 'Answer', 'Explanation'];
+const CSV_HEADER = ['Type', 'Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Option E', 'Option F', 'Answer', 'Explanation', 'Difficulty'];
 
 /** Quote a cell if it holds anything that would otherwise break the row. */
 function csvCell(value: string): string {
@@ -43,6 +43,9 @@ export function questionsToCsv(questions: QuizQuestion[]): string {
       // spreadsheet column shows.
       answer.toUpperCase(),
       question.explanation ?? '',
+      // The level as it is stored, like the type beside it — and blank for a
+      // question nobody graded, which the importer reads back as no level.
+      question.difficulty ?? '',
     ];
   });
 
@@ -67,6 +70,7 @@ export function questionsToJson(questions: QuizQuestion[]): string {
           options: question.options.map((option) => option.text),
           answer: (question.correctOptionIds[0] ?? '').toUpperCase(),
           ...(question.explanation ? { explanation: question.explanation } : {}),
+          ...(question.difficulty ? { difficulty: question.difficulty } : {}),
         })),
       },
       null,

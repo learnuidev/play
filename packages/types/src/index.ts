@@ -993,6 +993,73 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
 };
 
 /**
+ * How hard a question is meant to be.
+ *
+ * A **target rather than a measurement**: nothing here scores a question, and
+ * nothing counts what a class got right — an author says how hard they meant it
+ * to be, the same way they say which option is right, and the level is a band of
+ * *expected* correct rate that the question is written to. What it is for is
+ * that "hard" means the same thing to two authors, and that a run asking a model
+ * for questions can say what it wants in terms a model can act on.
+ *
+ * - `EASY`   — recall and recognition. The question points straight at it.
+ * - `MEDIUM` — processing or synthesis, or two steps, with some context removed.
+ * - `HARD`   — exact wording or a niche corner, with distractors that have to be
+ *              judged rather than spotted.
+ * - `EXPERT` — an elite or competition standard, answerable only with real depth
+ *              in the subject.
+ */
+export type QuestionDifficulty = 'EASY' | 'MEDIUM' | 'HARD' | 'EXPERT';
+
+export const QUESTION_DIFFICULTIES: QuestionDifficulty[] = ['EASY', 'MEDIUM', 'HARD', 'EXPERT'];
+
+/**
+ * What a question is graded at when nobody chooses.
+ *
+ * `EASY` rather than the middle, and for the reason a generated set is safest at
+ * the bottom of the scale: a question that turns out too easy is one the author
+ * moves up a level, and one that turns out too hard is one their learners cannot
+ * answer at all. The default is the mistake that costs a click.
+ */
+export const DEFAULT_QUESTION_DIFFICULTY: QuestionDifficulty = 'EASY';
+
+export const QUESTION_DIFFICULTY_LABELS: Record<QuestionDifficulty, string> = {
+  EASY: 'Easy',
+  MEDIUM: 'Medium',
+  HARD: 'Hard',
+  EXPERT: 'Expert',
+};
+
+/**
+ * The correct rate each level is written to, as a band.
+ *
+ * The whole reason the four levels are named rather than numbered: an author who
+ * is told "easy" and nothing else has been told nothing they can check their
+ * question against, and "aim for most learners to get this" is a sentence a
+ * person — or a model writing one — can actually work to.
+ */
+export const QUESTION_DIFFICULTY_TARGETS: Record<QuestionDifficulty, string> = {
+  EASY: '76–100% correct',
+  MEDIUM: '40–75% correct',
+  HARD: '11–39% correct',
+  EXPERT: '10% or fewer correct',
+};
+
+/**
+ * What each level asks of a learner — the other half of the band.
+ *
+ * Read by an author choosing one, and handed to the model when a run is asked for
+ * a level, which is why it is written as a description of the question to write
+ * rather than as a grade to hand out.
+ */
+export const QUESTION_DIFFICULTY_DESCRIPTIONS: Record<QuestionDifficulty, string> = {
+  EASY: 'Literal recall, recognition or naming — the question gives maximum context and points at the answer.',
+  MEDIUM: 'Processing or synthesis, or a two-step answer — some context is removed, so the options have to be narrowed down.',
+  HARD: 'Exact timelines, nuanced wording or a specialised corner — plausible options that have to be judged rather than spotted.',
+  EXPERT: 'An elite or competition standard — context heavily removed, answerable only with years in the subject.',
+};
+
+/**
  * How far a question has got towards being usable.
  *
  * A question written by a machine is a *draft*: an AI can write ten plausible
@@ -1116,6 +1183,18 @@ export interface QuizQuestion {
   explanation?: string;
   status: QuestionStatus;
   source: QuestionSource;
+  /**
+   * How hard it is meant to be, when its author said.
+   *
+   * Optional because it is a judgement rather than a fact about the question: a
+   * question written before this existed, or imported from a file with no
+   * difficulty column, has none — and nothing reads one, so an absent level
+   * breaks no screen. It is deliberately *not* required, for the reason a
+   * question's lesson is: a lesson is enforced because a question without one
+   * cannot be checked, and a question without a level is simply one nobody
+   * graded.
+   */
+  difficulty?: QuestionDifficulty;
   /** 1-based order inside the bank. Sparse: gaps are legal. */
   position: number;
   createdBy: string;
@@ -1323,6 +1402,15 @@ export interface QuizGeneration {
   count: number;
   types: QuestionType[];
   /**
+   * How hard the run was asked to write them, which is also what every question
+   * it wrote was stamped with.
+   *
+   * Optional because a run recorded before difficulty existed carries none — and
+   * the page reads this record, so a missing field has to be a level nobody
+   * asked for rather than a crash.
+   */
+  difficulty?: QuestionDifficulty;
+  /**
    * The quiz to add them to once they are written, when a run was started from
    * a quiz. Absent for a run started in the bank, which is the ordinary case.
    */
@@ -1495,6 +1583,11 @@ export interface QuestionInput {
    */
   answer?: number | string | boolean;
   explanation?: string;
+  /**
+   * How hard the question is meant to be. Optional: an import without a
+   * difficulty column, and an author who left it alone, both send nothing.
+   */
+  difficulty?: QuestionDifficulty;
 }
 
 /**
@@ -1545,6 +1638,14 @@ export interface UpdateQuestionPayload {
   explanation?: string | null;
   /** Point the question at a different lesson. */
   lessonContentId?: string;
+  /**
+   * Re-grade it, or `null` to leave it ungraded.
+   *
+   * Unlike the prompt, the options and the lesson, changing this does **not**
+   * take the verification away: it says how hard the question is, not what it
+   * asks, and a person who read the question read the same question either way.
+   */
+  difficulty?: QuestionDifficulty | null;
 }
 
 /**
@@ -1562,6 +1663,15 @@ export interface GenerateQuestionsPayload {
   count?: number;
   /** Which kinds to write. Defaults to both. */
   types?: QuestionType[];
+  /**
+   * How hard to write them. Defaults to `EASY`.
+   *
+   * One level for a whole run rather than one per question, because the level is
+   * what the instruction to the model *is*: a run asked for a mix is a run asking
+   * for four different things at once, which is what asking twice is for. Every
+   * question the run writes carries this level, whatever the model says about it.
+   */
+  difficulty?: QuestionDifficulty;
   /** A quiz to add them to once they are written. Same course as the lesson. */
   addToContentId?: string;
 }

@@ -23,10 +23,13 @@ import {
   useUpdateQuestion,
 } from '@api/modules/question/question.queries';
 import { BankPicker } from './bank-picker';
+import { DifficultyPicker } from './difficulty-picker';
 import { LessonPicker } from './lesson-picker';
 import {
+  DEFAULT_QUESTION_DIFFICULTY,
   QUESTION_TYPE_LABELS,
   QUESTION_TYPES,
+  type QuestionDifficulty,
   type QuestionType,
   type QuizQuestion,
 } from '@play/types';
@@ -57,12 +60,17 @@ const blankOptions = () => ['', ''];
  * can tell is still true, and it is the lesson that decides which course's quiz
  * may ask it.
  *
- * Four other decisions worth naming:
+ * Five other decisions worth naming:
  *
  * - **The type is a pair of buttons, not a select.** There are two kinds and
  *   they are the whole of what the form does differently — a select would hide
  *   the choice behind a click and make the common case (leaving it alone) the
  *   only one that is easy.
+ * - **The difficulty is a level, and the level's band is spelled out under it.**
+ *   Easy, Medium, Hard and Expert mean a rate of correct answers and a way of
+ *   writing; see `DifficultyPicker`. A new question starts at the default level,
+ *   and a question that has none is left alone rather than silently graded the
+ *   first time somebody fixes a typo in it.
  * - **The correct option is a radio per row**, which is how a question is
  *   written down on paper, and it is what makes "which one is right" one
  *   decision rather than a text field somebody can get wrong.
@@ -112,6 +120,19 @@ export function QuestionDialog({
   /** The right answer: an index into `options`, or 0 for True and 1 for False. */
   const [answer, setAnswer] = useState(0);
   const [explanation, setExplanation] = useState('');
+  /**
+   * How hard the question is meant to be.
+   *
+   * `undefined` for a question that has none — one written before levels
+   * existed, or imported from a file without the column — and a *new* question
+   * starts at the default rather than ungraded, so the common case needs no
+   * decision. Leaving an old one alone is not a decision either: an ungraded
+   * question stays ungraded unless the author picks a level, which is why the
+   * patch below sends nothing when the two agree.
+   */
+  const [difficulty, setDifficulty] = useState<QuestionDifficulty | undefined>(
+    DEFAULT_QUESTION_DIFFICULTY,
+  );
 
   const create = useCreateQuestion(bankId ?? pickedBankId);
   const update = useUpdateQuestion(question?.bankId);
@@ -150,6 +171,9 @@ export function QuestionDialog({
         : 0,
     );
     setExplanation(question?.explanation ?? '');
+    // A new question starts at the default level; an existing one keeps whatever
+    // it has, which for a question older than levels is nothing at all.
+    setDifficulty(question ? question.difficulty : DEFAULT_QUESTION_DIFFICULTY);
   }, [open, questionId, lessonContentId]);
 
   const trimmedPrompt = prompt.trim();
@@ -193,17 +217,23 @@ export function QuestionDialog({
         ? { options: kept.map((option) => option.text), answer: answerAt === -1 ? 0 : answerAt }
         : { answer: answer === 1 ? false : true }),
       explanation: explanation.trim(),
+      ...(difficulty ? { difficulty } : {}),
     };
 
     try {
       if (question) {
         // The lesson is only sent when it has actually moved: an unchanged one
-        // would be a write that takes the verification away for nothing.
+        // would be a write that takes the verification away for nothing. The
+        // difficulty follows the same rule for a smaller reason: a level the
+        // question already carries is not a change, and writing it again would
+        // move `updatedAt` for nothing. Grading one does not take its
+        // verification away — the question still asks what somebody read.
         await update.mutateAsync({
           questionId: question.questionId,
           patch: {
             ...answers,
             ...(lesson !== question.lessonContentId ? { lessonContentId: lesson } : {}),
+            ...(difficulty !== question.difficulty ? { difficulty: difficulty ?? null } : {}),
           },
         });
         toast.success('Question saved', {
@@ -271,6 +301,12 @@ export function QuestionDialog({
               ))}
             </div>
           </div>
+
+          <DifficultyPicker
+            value={difficulty}
+            onChange={setDifficulty}
+            disabled={pending}
+          />
 
           <div className="grid gap-2">
             <Label htmlFor="question-prompt">

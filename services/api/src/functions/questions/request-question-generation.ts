@@ -9,6 +9,7 @@ import {
   isGenerationActive,
   publishGeneration,
   resolveQuestionCount,
+  resolveQuestionDifficulty,
   resolveQuestionTypes,
   type GenerationJobDetail,
 } from '../../lib/quiz-generation';
@@ -19,6 +20,8 @@ interface GenerateQuestionsBody {
   lessonContentId?: unknown;
   count?: unknown;
   types?: unknown;
+  /** How hard to write them. Absent means the default level. */
+  difficulty?: unknown;
   /** A quiz to add them to once they are written. */
   addToContentId?: unknown;
 }
@@ -95,6 +98,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   const count = resolveQuestionCount(body.count);
   const types = resolveQuestionTypes(body.types);
+  const difficulty = resolveQuestionDifficulty(body.difficulty);
   const requestedAt = Date.now();
 
   const addToContentId =
@@ -107,6 +111,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     lessonContentId: lesson.contentId,
     count,
     types,
+    difficulty,
     ...(addToContentId ? { addToContentId } : {}),
     requestedBy: userId,
     requestedAt,
@@ -118,6 +123,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     lessonContentId: lesson.contentId,
     count,
     types,
+    difficulty,
     ...(addToContentId ? { addToContentId } : {}),
     requestedBy: userId,
     requestedAt,

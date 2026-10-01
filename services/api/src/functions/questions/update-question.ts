@@ -7,6 +7,7 @@ import {
   assertLesson,
   getQuestion,
   parseQuestionInput,
+  readQuestionDifficulty,
   updateQuestion,
   type UpdateQuestionPatch,
 } from '../../lib/questions';
@@ -21,6 +22,8 @@ interface UpdateQuestionBody {
   explanation?: unknown;
   /** Point the question at a different lesson. */
   lessonContentId?: unknown;
+  /** A level, or `null`/empty to leave the question ungraded. */
+  difficulty?: unknown;
 }
 
 /** The marker `resolveAnswer` prefixes a refusal with, so it can be thrown as a 400. */
@@ -66,8 +69,8 @@ function resolveAnswer(body: UpdateQuestionBody, existing: QuizQuestion): unknow
 }
 
 /**
- * Changes a question: its words, its options, which one is right, or the lesson
- * it is about.
+ * Changes a question: its words, its options, which one is right, the lesson it
+ * is about, or how hard it is meant to be.
  *
  * Two things make this more than a patch. The first is that anything touching
  * the type, the options or the answer is re-validated as a whole question rather
@@ -77,6 +80,10 @@ function resolveAnswer(body: UpdateQuestionBody, existing: QuizQuestion): unknow
  * lesson it is about, takes its verification away: somebody said "this is right",
  * about a sentence and a lesson, and one that has changed since is one nobody has
  * said anything about. See `UpdateQuestionPatch`.
+ *
+ * A difficulty is neither: it is a judgement about the question rather than a
+ * change to it, so setting one — or taking one away — leaves the verification
+ * where it was. See the note on `UpdateQuestionPatch.difficulty`.
  *
  * An edit here is visible everywhere the question is asked, because a quiz does
  * not own it. That is the point of a bank, and the page says so before somebody
@@ -159,6 +166,23 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
       patch.explanation = body.explanation.trim();
     } else {
       throw new HttpError(400, 'explanation must be a string or null');
+    }
+  }
+
+  // How hard the question is, which is a judgement about it rather than a change
+  // to it: `changesTheQuestion` is deliberately not touched here, because a
+  // question somebody verified is the same question at any level. A level the
+  // question already carries is not written again — an edit that changes nothing
+  // should not move `updatedAt`.
+  if (body.difficulty !== undefined) {
+    if (body.difficulty === null || body.difficulty === '') {
+      if (existing.difficulty) patch.difficulty = null;
+    } else {
+      const read = readQuestionDifficulty(body.difficulty);
+      if ('error' in read) throw new HttpError(400, read.error);
+      if (read.difficulty && read.difficulty !== existing.difficulty) {
+        patch.difficulty = read.difficulty;
+      }
     }
   }
 

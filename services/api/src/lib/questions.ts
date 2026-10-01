@@ -1,12 +1,13 @@
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type {
+  QuestionDifficulty,
   QuestionOption,
   QuestionSource,
   QuestionStatus,
   QuestionType,
   QuizQuestion,
 } from '../types';
-import { QUESTION_STATUSES, QUESTION_TYPES } from '../types';
+import { QUESTION_DIFFICULTIES, QUESTION_STATUSES, QUESTION_TYPES } from '../types';
 import { env } from './config';
 import { documentClient as client } from './dynamodb';
 import { HttpError } from './http';
@@ -81,6 +82,15 @@ export interface ParsedQuestion {
   options: QuestionOption[];
   correctOptionIds: string[];
   explanation?: string;
+  /**
+   * How hard the question is meant to be, when the caller said.
+   *
+   * Optional on the way in as well as on the row, because the three doors in
+   * disagree about whether they know: a form and a generation run both set one,
+   * and a spreadsheet without the column does not — and a question nobody graded
+   * is a question, not a bad row.
+   */
+  difficulty?: QuestionDifficulty;
 }
 
 /** What a caller sent for one question. Everything is `unknown` until checked. */
@@ -90,6 +100,7 @@ export interface RawQuestionInput {
   options?: unknown;
   answer?: unknown;
   explanation?: unknown;
+  difficulty?: unknown;
 }
 
 /**
@@ -110,7 +121,10 @@ export interface RawQuestionInput {
  *   the same as another;
  * - the answer is one option, addressed by letter (`A`), by its own text, or by
  *   a zero-based index — the three things a spreadsheet column, a person and a
- *   model respectively produce.
+ *   model respectively produce;
+ * - the difficulty is **optional**, and read leniently when it is there: a row
+ *   that says "moderate" or "Difficult" is graded, and one whose column is empty
+ *   is a question nobody graded rather than a bad row.
  */
 export function parseQuestionInput(
   raw: RawQuestionInput,
@@ -144,6 +158,9 @@ export function parseQuestionInput(
     if (!explanation) explanation = undefined;
   }
 
+  const difficulty = readQuestionDifficulty(raw.difficulty);
+  if ('error' in difficulty) return difficulty;
+
   return {
     question: {
       type,
@@ -151,6 +168,7 @@ export function parseQuestionInput(
       options,
       correctOptionIds: [answer.id],
       ...(explanation ? { explanation } : {}),
+      ...(difficulty.difficulty ? { difficulty: difficulty.difficulty } : {}),
     },
   };
 }
@@ -179,6 +197,74 @@ function readQuestionType(raw: unknown): QuestionType | { error: string } {
   }
 
   return { error: `type must be one of ${QUESTION_TYPES.join(', ')} (got "${raw.trim()}")` };
+}
+
+/**
+ * The spellings a person writes for each level, keyed by their letters alone.
+ *
+ * A difficulty column is filled in by hand as often as not, and the words around
+ * the four are the words somebody would actually use — "moderate", "novice",
+ * "brutal". Keys are lower-cased with everything but letters removed, so `Very
+ * hard`, `very-hard` and `veryhard` are one spelling. Anything else is refused
+ * rather than guessed at: a level nobody can tell is a level that quietly
+ * mislabels a question, which is worse than a row that says which words it takes.
+ */
+const DIFFICULTY_ALIASES: Record<string, QuestionDifficulty> = {
+  easy: 'EASY',
+  novice: 'EASY',
+  simple: 'EASY',
+  basic: 'EASY',
+  beginner: 'EASY',
+  entry: 'EASY',
+  medium: 'MEDIUM',
+  moderate: 'MEDIUM',
+  intermediate: 'MEDIUM',
+  normal: 'MEDIUM',
+  standard: 'MEDIUM',
+  mid: 'MEDIUM',
+  hard: 'HARD',
+  difficult: 'HARD',
+  advanced: 'HARD',
+  tough: 'HARD',
+  challenging: 'HARD',
+  expert: 'EXPERT',
+  brutal: 'EXPERT',
+  elite: 'EXPERT',
+  national: 'EXPERT',
+  extreme: 'EXPERT',
+  veryhard: 'EXPERT',
+  master: 'EXPERT',
+};
+
+/**
+ * How hard a question is meant to be, or the sentence saying which words work.
+ *
+ * An absent, empty or `null` value is *no level* rather than a refusal — the
+ * field is optional, and a spreadsheet with a difficulty column nobody filled in
+ * is a file of ungraded questions, not a file of bad rows.
+ *
+ * Exported because the edit route reads a difficulty too, and a level typed into
+ * a form has to mean what the same word in a spreadsheet means: two readers would
+ * be two vocabularies.
+ */
+export function readQuestionDifficulty(
+  raw: unknown,
+): { difficulty?: QuestionDifficulty } | { error: string } {
+  if (raw === undefined || raw === null) return {};
+
+  if (typeof raw !== 'string') {
+    return { error: `difficulty must be one of ${QUESTION_DIFFICULTIES.join(', ')}` };
+  }
+
+  const value = raw.trim();
+  if (!value) return {};
+
+  const alias = DIFFICULTY_ALIASES[value.toLowerCase().replace(/[^a-z]/g, '')];
+  if (alias) return { difficulty: alias };
+
+  return {
+    error: `difficulty must be one of ${QUESTION_DIFFICULTIES.join(', ')} (got "${value}")`,
+  };
 }
 
 /** The option texts of a multiple-choice question, or the reason there are none. */
@@ -464,6 +550,16 @@ export interface UpdateQuestionPatch {
   correctOptionIds?: string[];
   /** Pass `null` to clear the explanation. */
   explanation?: string | null;
+  /**
+   * How hard the question is meant to be. Pass `null` to leave it ungraded.
+   *
+   * Changing this does **not** invalidate a verification, which is why it is not
+   * part of `invalidateVerification`: the level says how hard the question is,
+   * not what it asks, and somebody who read it read the same question at either
+   * level. Re-opening a verified question over a label would train an author to
+   * ignore the state.
+   */
+  difficulty?: QuestionDifficulty | null;
   /** Move it to another lesson — which is also a change to what it is about. */
   lessonContentId?: string;
   lessonSpaceId?: string;
@@ -516,6 +612,15 @@ export async function updateQuestion(
       remove = ', #explanation';
     } else {
       assign('explanation', patch.explanation);
+    }
+  }
+
+  if (patch.difficulty !== undefined) {
+    if (patch.difficulty === null) {
+      names['#difficulty'] = 'difficulty';
+      remove += ', #difficulty';
+    } else {
+      assign('difficulty', patch.difficulty);
     }
   }
 
@@ -574,6 +679,7 @@ export function toQuestionRow(input: NewQuestion, questionId: string, now: numbe
     options: input.parsed.options,
     correctOptionIds: input.parsed.correctOptionIds,
     ...(input.parsed.explanation ? { explanation: input.parsed.explanation } : {}),
+    ...(input.parsed.difficulty ? { difficulty: input.parsed.difficulty } : {}),
     status: 'NEEDS_VERIFICATION',
     source: input.source,
     position: input.position,

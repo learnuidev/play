@@ -17,8 +17,15 @@ import {
 import { Label } from '@ui/components/ui/label';
 import { useGenerateQuestions } from '@api/modules/question/question.queries';
 import { BankPicker } from './bank-picker';
+import { DifficultyPicker } from './difficulty-picker';
 import { LessonPicker } from './lesson-picker';
-import { QUESTION_TYPE_LABELS, QUESTION_TYPES, type QuestionType } from '@play/types';
+import {
+  DEFAULT_QUESTION_DIFFICULTY,
+  QUESTION_TYPE_LABELS,
+  QUESTION_TYPES,
+  type QuestionDifficulty,
+  type QuestionType,
+} from '@play/types';
 
 /**
  * How many questions are written in one run.
@@ -34,10 +41,13 @@ const MAX_COUNT = 20;
 /**
  * Asking a model to write questions from a lesson.
  *
- * Three things are chosen, and each is required by the model rather than by the
+ * Four things are chosen, and each is required by the model rather than by the
  * form: **the bank** the questions are written into (where questions live),
  * **the lesson** they are about (which is also what they are written from, and
- * what decides which courses' quizzes may ask them), and how many of which kind.
+ * what decides which courses' quizzes may ask them), how many of which kind, and
+ * **how hard** — one level for the whole run, because the level is the
+ * instruction rather than a label applied afterwards. An author who wants a set
+ * at two levels asks twice.
  *
  * It does not wait for the questions. The run is queued, the dialog closes, and
  * the page shows the run's progress where the questions will appear — which is
@@ -72,6 +82,7 @@ export function GenerateQuestionsDialog({
   const [lesson, setLesson] = useState('');
   const [count, setCount] = useState(DEFAULT_COUNT);
   const [types, setTypes] = useState<QuestionType[]>([...QUESTION_TYPES]);
+  const [difficulty, setDifficulty] = useState<QuestionDifficulty>(DEFAULT_QUESTION_DIFFICULTY);
 
   const generate = useGenerateQuestions();
   const destinationBankId = bankId ?? pickedBankId;
@@ -82,6 +93,7 @@ export function GenerateQuestionsDialog({
     setLesson(lessonContentId ?? '');
     setCount(DEFAULT_COUNT);
     setTypes([...QUESTION_TYPES]);
+    setDifficulty(DEFAULT_QUESTION_DIFFICULTY);
   }, [open, lessonContentId]);
 
   function toggleType(type: QuestionType) {
@@ -102,6 +114,7 @@ export function GenerateQuestionsDialog({
         lessonContentId: lesson,
         count,
         types,
+        difficulty,
         ...(addToContentId ? { addToContentId } : {}),
       });
       onStarted?.(destinationBankId);
@@ -176,6 +189,8 @@ export function GenerateQuestionsDialog({
               ))}
             </div>
           </div>
+
+          <DifficultyPicker value={difficulty} onChange={setDifficulty} disabled={generate.isPending} />
         </div>
 
         <DialogFooter>

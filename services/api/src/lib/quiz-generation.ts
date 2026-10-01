@@ -1,7 +1,14 @@
 import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
 import { ulid } from 'ulid';
-import type { Content, QuestionType, QuizGeneration, QuizQuestion } from '../types';
+import type { Content, QuestionDifficulty, QuestionType, QuizGeneration, QuizQuestion } from '../types';
+import {
+  DEFAULT_QUESTION_DIFFICULTY,
+  QUESTION_DIFFICULTIES,
+  QUESTION_DIFFICULTY_DESCRIPTIONS,
+  QUESTION_DIFFICULTY_LABELS,
+  QUESTION_DIFFICULTY_TARGETS,
+} from '../types';
 import { getContent } from './contents';
 import { addBankQuestionCount, getBank, updateBank } from './question-banks';
 import { addQuestionsToQuiz } from './quiz-questions';
@@ -160,20 +167,42 @@ export function vttToText(vtt: string): string {
  * The JSON contract is stated twice — as instructions, and as an example — for
  * the reason it is stated at all: a model that returns prose around its JSON,
  * or an option list for a true/false question, costs a whole run and a retry.
+ *
+ * The **difficulty** is the one thing in here that is asked for by the caller
+ * rather than assumed, and it is stated as both halves of the level: the band of
+ * correct rate it is aiming at, and what writing to that band means. A model told
+ * only "hard" writes a hard-looking question — long words, obscure facts — while
+ * told the band as well it writes one that is hard in the way the level is meant.
  */
-function buildPrompt(source: LessonSource, count: number, types: QuestionType[]): string {
+function buildPrompt(
+  source: LessonSource,
+  count: number,
+  types: QuestionType[],
+  difficulty: QuestionDifficulty,
+): string {
   const kinds = types.includes('TRUE_FALSE') && types.includes('MULTIPLE_CHOICE')
     ? 'a mix of true/false and multiple-choice questions'
     : types.includes('TRUE_FALSE')
       ? 'true/false questions'
       : 'multiple-choice questions';
 
+  const level = [
+    `Difficulty: ${QUESTION_DIFFICULTY_LABELS[difficulty]} — ${QUESTION_DIFFICULTY_TARGETS[difficulty]}.`,
+    QUESTION_DIFFICULTY_DESCRIPTIONS[difficulty],
+    'Every question must be written to that level: the set is one difficulty, not a spread.',
+  ].join('\n');
+
   return [
     `Write ${count} ${kinds} about the lesson below, for a learner who has just`,
     'watched it. Each question must be answerable from the lesson alone.',
     '',
+    level,
+    '',
     'Rules:',
-    '- Test understanding of what the lesson teaches, not trivia about the wording.',
+    // "How it was phrased" rather than "the wording": a hard question is allowed
+    // to turn on a distinction in the subject, and the rule is only that the
+    // question must not be about the lesson's choice of words.
+    '- Test understanding of what the lesson teaches, not trivia about how it was phrased.',
     '- A true/false question must be unambiguously true or false, and not a trick.',
     '- A multiple-choice question has 3 or 4 options, exactly one of which is right,',
     '  and the wrong ones must be plausible rather than obviously silly.',
@@ -266,6 +295,7 @@ export async function generateQuestions(
   source: LessonSource,
   count: number,
   types: QuestionType[],
+  difficulty: QuestionDifficulty,
 ): Promise<GenerationResult> {
   const model = env.bedrockModelId;
 
@@ -279,7 +309,7 @@ export async function generateQuestions(
             'JSON and nothing else.',
         },
       ],
-      messages: [{ role: 'user', content: [{ text: buildPrompt(source, count, types) }] }],
+      messages: [{ role: 'user', content: [{ text: buildPrompt(source, count, types, difficulty) }] }],
       // Temperature low enough that the same lesson produces a similar set of
       // questions twice: an author who regenerates is usually looking for the
       // run that failed, not for a different quiz.
@@ -361,6 +391,24 @@ export function resolveQuestionTypes(raw: unknown): QuestionType[] {
 }
 
 /**
+ * How hard a run should write its questions, given what was asked for.
+ *
+ * A run that names a level it was not offered is a run at the default rather than
+ * a refused request: an unknown level is a client that has moved on from this
+ * service's four, and failing a whole generation over a word in a dropdown is a
+ * worse answer than writing the set it would have written anyway. The level is
+ * *named* by the caller rather than chosen by the model, so this is also what
+ * every question in the run is stamped with — see `runGeneration`.
+ */
+export function resolveQuestionDifficulty(raw: unknown): QuestionDifficulty {
+  if (typeof raw !== 'string') return DEFAULT_QUESTION_DIFFICULTY;
+
+  const value = raw.trim().toUpperCase();
+  const known = QUESTION_DIFFICULTIES.find((difficulty) => difficulty === value);
+  return known ?? DEFAULT_QUESTION_DIFFICULTY;
+}
+
+/**
  * The event that starts a run, and the two strings that route it.
  *
  * A custom source on the default bus rather than a direct Lambda invocation,
@@ -381,6 +429,14 @@ export interface GenerationJobDetail {
   lessonContentId: string;
   count: number;
   types: QuestionType[];
+  /**
+   * How hard to write them.
+   *
+   * Optional in the type but always sent, and read with the same default as the
+   * request that queued it — so a delivery of an event published before this
+   * existed writes questions rather than failing on a missing field.
+   */
+  difficulty?: QuestionDifficulty;
   /** A quiz to add them to when they arrive, when the run started from one. */
   addToContentId?: string;
   requestedBy: string;
@@ -491,7 +547,13 @@ export async function runGeneration(detail: GenerationJobDetail): Promise<void> 
       );
     }
 
-    const result = await generateQuestions(source, detail.count, detail.types);
+    // The level is the run's, not the model's: it was chosen by the author who
+    // asked, the prompt states it, and a model that returned a `difficulty` of
+    // its own would be grading its own homework. So every question the run writes
+    // carries what was asked for, and nothing in the answer can change that.
+    const difficulty = resolveQuestionDifficulty(detail.difficulty);
+
+    const result = await generateQuestions(source, detail.count, detail.types, difficulty);
     if (result.questions.length === 0) {
       throw new Error(
         result.rejected.length > 0
@@ -514,7 +576,7 @@ export async function runGeneration(detail: GenerationJobDetail): Promise<void> 
           // was written *from*.
           lessonContentId: lesson.contentId,
           lessonSpaceId: lesson.spaceId,
-          parsed,
+          parsed: { ...parsed, difficulty },
           source: 'AI',
           position,
           createdBy: detail.requestedBy,

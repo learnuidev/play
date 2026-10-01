@@ -388,6 +388,59 @@ export type QuestionType = 'TRUE_FALSE' | 'MULTIPLE_CHOICE';
 export const QUESTION_TYPES: QuestionType[] = ['TRUE_FALSE', 'MULTIPLE_CHOICE'];
 
 /**
+ * How hard a question is meant to be.
+ *
+ * A target rather than a measurement: nobody scores a question and nothing here
+ * counts what a class got right. An author says how hard they meant it to be,
+ * and the level is a band of *expected* correct rate the question is written to
+ * — which is what lets a model be asked for "hard" questions and be told what
+ * that means. See `QUESTION_DIFFICULTY_DESCRIPTIONS`, which is the whole of what
+ * the generation prompt is given about it.
+ */
+export type QuestionDifficulty = 'EASY' | 'MEDIUM' | 'HARD' | 'EXPERT';
+
+export const QUESTION_DIFFICULTIES: QuestionDifficulty[] = ['EASY', 'MEDIUM', 'HARD', 'EXPERT'];
+
+/**
+ * What a question is graded at when nobody chooses.
+ *
+ * `EASY` rather than the middle: a question that turns out too easy is one the
+ * author moves up a level, and one that turns out too hard is one their learners
+ * cannot answer at all. The default is the mistake that costs a click.
+ */
+export const DEFAULT_QUESTION_DIFFICULTY: QuestionDifficulty = 'EASY';
+
+export const QUESTION_DIFFICULTY_LABELS: Record<QuestionDifficulty, string> = {
+  EASY: 'Easy',
+  MEDIUM: 'Medium',
+  HARD: 'Hard',
+  EXPERT: 'Expert',
+};
+
+/** The correct rate each level is written to, as a band. */
+export const QUESTION_DIFFICULTY_TARGETS: Record<QuestionDifficulty, string> = {
+  EASY: '76–100% correct',
+  MEDIUM: '40–75% correct',
+  HARD: '11–39% correct',
+  EXPERT: '10% or fewer correct',
+};
+
+/**
+ * What each level asks of a learner.
+ *
+ * Written as a description of the question to write, because that is the other
+ * half of the band and the half a model has to be told: "11–39% correct" on its
+ * own is a statistic, and "plausible options that have to be judged" is an
+ * instruction.
+ */
+export const QUESTION_DIFFICULTY_DESCRIPTIONS: Record<QuestionDifficulty, string> = {
+  EASY: 'Literal recall, recognition or naming — the question gives maximum context and points at the answer.',
+  MEDIUM: 'Processing or synthesis, or a two-step answer — some context is removed, so the options have to be narrowed down.',
+  HARD: 'Exact timelines, nuanced wording or a specialised corner — plausible options that have to be judged rather than spotted.',
+  EXPERT: 'An elite or competition standard — context heavily removed, answerable only with years in the subject.',
+};
+
+/**
  * How far a question has got towards being usable.
  *
  * Everything a machine wrote — generated from a transcript, or read out of a
@@ -472,6 +525,16 @@ export interface QuizQuestion {
   explanation?: string;
   status: QuestionStatus;
   source: QuestionSource;
+  /**
+   * How hard it is meant to be, when its author said.
+   *
+   * Absent for every question written before this existed, for an imported file
+   * with no difficulty column, and for an author who left it alone. Nothing
+   * queries by it — there is no index on it and no route filters on it — so an
+   * absent level is a question nobody graded rather than a question that cannot
+   * be read.
+   */
+  difficulty?: QuestionDifficulty;
   /** 1-based order inside the bank. Sparse: gaps are legal. */
   position: number;
   createdBy: string;
@@ -619,6 +682,14 @@ export interface QuizGeneration {
   lessonContentId: string;
   count: number;
   types: QuestionType[];
+  /**
+   * How hard the run was asked to write them.
+   *
+   * Recorded on the run as well as stamped on every question it wrote, because
+   * the record is what the page reads while the run is going: "writing ten
+   * questions" and "writing ten hard questions" are different waits.
+   */
+  difficulty?: QuestionDifficulty;
   /** A quiz to add them to when they arrive, when the run was started from one. */
   addToContentId?: string;
   requestedBy: string;

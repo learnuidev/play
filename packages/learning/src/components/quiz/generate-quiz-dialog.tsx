@@ -21,7 +21,14 @@ import { useCreateContent, usePlaceContent } from '@api/modules/content/content.
 import { useCreateQuestionBank, useGenerateQuestions } from '@api/modules/question/question.queries';
 import { useLearningRoutes } from '@learning/lib/learning-routes';
 import { BankPicker } from './bank-picker';
-import { QUESTION_TYPE_LABELS, QUESTION_TYPES, type QuestionType } from '@play/types';
+import { DifficultyPicker } from './difficulty-picker';
+import {
+  DEFAULT_QUESTION_DIFFICULTY,
+  QUESTION_TYPE_LABELS,
+  QUESTION_TYPES,
+  type QuestionDifficulty,
+  type QuestionType,
+} from '@play/types';
 
 const DEFAULT_COUNT = 10;
 const MAX_COUNT = 20;
@@ -76,6 +83,7 @@ export function GenerateQuizDialog({
   const [newBankName, setNewBankName] = useState('');
   const [count, setCount] = useState(DEFAULT_COUNT);
   const [types, setTypes] = useState<QuestionType[]>([...QUESTION_TYPES]);
+  const [difficulty, setDifficulty] = useState<QuestionDifficulty>(DEFAULT_QUESTION_DIFFICULTY);
 
   const createBank = useCreateQuestionBank(orgId);
   const createQuiz = useCreateContent(sectionId, spaceId);
@@ -90,6 +98,7 @@ export function GenerateQuizDialog({
     setNewBankName('');
     setCount(DEFAULT_COUNT);
     setTypes([...QUESTION_TYPES]);
+    setDifficulty(DEFAULT_QUESTION_DIFFICULTY);
   }, [open]);
 
   const canSubmit = Boolean(bankId || newBankName.trim()) && !pending;
@@ -119,6 +128,7 @@ export function GenerateQuizDialog({
         lessonContentId,
         count,
         types,
+        difficulty,
         addToContentId: quiz.contentId,
       });
 
@@ -207,6 +217,8 @@ export function GenerateQuizDialog({
               ))}
             </div>
           </div>
+
+          <DifficultyPicker value={difficulty} onChange={setDifficulty} disabled={pending} />
         </div>
 
         <DialogFooter>

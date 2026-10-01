@@ -172,13 +172,19 @@ export function ImportQuestionsDialog({
               <p className="mt-2">
                 One question per row, with a heading row:{' '}
                 <span className="text-foreground">
-                  Type, Question, Option A, Option B, Option C, Option D, Answer, Explanation
+                  Type, Question, Option A, Option B, Option C, Option D, Answer, Explanation,
+                  Difficulty
                 </span>
                 . The answer is a letter (<span className="text-foreground">A</span>), or{' '}
                 <span className="text-foreground">True</span>/
                 <span className="text-foreground">False</span> for a true/false question. The type
                 can be left out: a row with options is multiple choice, and one without them is
-                true/false.
+                true/false. The difficulty is{' '}
+                <span className="text-foreground">Easy</span>,{' '}
+                <span className="text-foreground">Medium</span>,{' '}
+                <span className="text-foreground">Hard</span> or{' '}
+                <span className="text-foreground">Expert</span>, and a row that leaves it blank
+                simply has no level.
               </p>
               <Button
                 type="button"

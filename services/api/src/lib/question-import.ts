@@ -86,6 +86,7 @@ interface QuestionRecord {
   options: string[];
   answer?: unknown;
   explanation?: unknown;
+  difficulty?: unknown;
 }
 
 /** Column headings that mean each canonical field, lower-cased and stripped. */
@@ -104,6 +105,15 @@ const ANSWER_HEADERS = [
   'key',
 ];
 const EXPLANATION_HEADERS = ['explanation', 'rationale', 'why', 'feedback', 'note', 'notes'];
+/**
+ * The column naming how hard a row is.
+ *
+ * Read leniently and *refused* when it says something no level does — the same
+ * treatment the type column gets, and for the same reason: the words in this
+ * column are a small vocabulary, and a row calling itself "quite hard" is a row
+ * whose level the importer would otherwise invent.
+ */
+const DIFFICULTY_HEADERS = ['difficulty', 'difficulty level', 'level', 'hardness', 'tier'];
 
 /** Option columns, by the letter they carry: `option a`, `a`, `choice a`, `answer a`. */
 const OPTION_HEADER_PATTERN =
@@ -197,6 +207,7 @@ function recordFromCells(headers: string[], cells: unknown[]): QuestionRecord {
     options: filled.length > 0 ? compactOptions(options) : [],
     answer: at(findColumn(headers, ANSWER_HEADERS)),
     explanation: at(findColumn(headers, EXPLANATION_HEADERS)),
+    difficulty: at(findColumn(headers, DIFFICULTY_HEADERS)),
   };
 }
 
@@ -250,6 +261,7 @@ function recordFromJsonObject(entry: Record<string, unknown>): QuestionRecord {
     options: compactOptions(options),
     answer: pick(ANSWER_HEADERS),
     explanation: pick(EXPLANATION_HEADERS),
+    difficulty: pick(DIFFICULTY_HEADERS),
   };
 }
 
@@ -261,6 +273,7 @@ function toRow(row: number, record: QuestionRecord): ImportedRow {
     options: record.options.length > 0 ? record.options : undefined,
     answer: record.answer,
     explanation: record.explanation,
+    difficulty: record.difficulty,
   });
 
   if ('error' in parsed) return { row, error: parsed.error };
@@ -496,7 +509,7 @@ function fromJson(text: string): ImportOutcome {
  * `answer` is a letter, which is the one spelling of it that cannot be misread.
  */
 export function importTemplateCsv(): string {
-  const header = 'Type,Question,Option A,Option B,Option C,Option D,Answer,Explanation';
+  const header = 'Type,Question,Option A,Option B,Option C,Option D,Answer,Explanation,Difficulty';
   const rows = [
     [
       'MULTIPLE_CHOICE',
@@ -507,6 +520,7 @@ export function importTemplateCsv(): string {
       '',
       'A',
       'A wider shutter angle lets light in for longer, so a moving subject blurs further across each frame.',
+      'Easy',
     ],
     [
       'TRUE_FALSE',
@@ -517,6 +531,7 @@ export function importTemplateCsv(): string {
       '',
       'True',
       'It reproduces the motion blur a projector shows at 24 frames per second.',
+      'Medium',
     ],
   ];
 

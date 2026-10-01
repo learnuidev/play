@@ -41,6 +41,7 @@ import {
   quizFileName,
 } from '@learning/lib/question-export';
 import type { QuizQuestion } from '@play/types';
+import { QUESTION_DIFFICULTY_LABELS } from '@play/types';
 
 /**
  * One bank: its questions, grouped by the lesson each is about.
@@ -211,7 +212,11 @@ export default function QuestionBankPage() {
         <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/40 px-4 py-3">
           <Loader2Icon className="size-4 shrink-0 animate-spin text-muted-foreground" />
           <p className="text-sm">
-            Writing {generation.count} question{generation.count === 1 ? '' : 's'}
+            Writing {generation.count}{' '}
+            {generation.difficulty
+              ? `${QUESTION_DIFFICULTY_LABELS[generation.difficulty].toLowerCase()} `
+              : ''}
+            question{generation.count === 1 ? '' : 's'}
             <span className="text-muted-foreground"> — they will appear here.</span>
           </p>
         </div>

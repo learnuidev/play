@@ -65,6 +65,7 @@ import { QuestionBody, QuestionFacts } from './question-parts';
 import { QuizTaking } from './quiz-taking';
 import { downloadTextFile, questionsToCsv, questionsToJson, quizFileName } from '@learning/lib/question-export';
 import type { QuizGeneration, QuizQuestion } from '@play/types';
+import { QUESTION_DIFFICULTY_LABELS } from '@play/types';
 
 /**
  * A quiz, as its author sees it, or as the learner sitting it does.
@@ -230,7 +231,11 @@ function GenerationBanner({
       <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/40 px-4 py-3">
         <Loader2Icon className="size-4 shrink-0 animate-spin text-muted-foreground" />
         <p className="text-sm">
-          Writing {generation.count} question{generation.count === 1 ? '' : 's'} from {from}
+          Writing {generation.count}{' '}
+          {generation.difficulty
+            ? `${QUESTION_DIFFICULTY_LABELS[generation.difficulty].toLowerCase()} `
+            : ''}
+          question{generation.count === 1 ? '' : 's'} from {from}
           <span className="text-muted-foreground">
             {' '}
             into their bank — they are added here when they arrive.

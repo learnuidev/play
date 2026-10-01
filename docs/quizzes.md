@@ -134,7 +134,8 @@ string, which is what this service already knows how to take.
 
 Columns are read by their headings, forgivingly: `Type`/`Kind`,
 `Question`/`Prompt`/`Text`, `Option A`…`Option F` (or `A`…`F`, `Choice A`,
-`answer_a`), `Answer`/`Correct`/`Correct Answer`, `Explanation`/`Rationale`/`Why`.
+`answer_a`), `Answer`/`Correct`/`Correct Answer`, `Explanation`/`Rationale`/`Why`,
+`Difficulty`/`Level`/`Tier`.
 
 - **The lesson is chosen in the dialog, once, for the whole file.** A lesson
   *column* would be a column the importer had to guess at, because a lesson title
@@ -159,6 +160,75 @@ The template is generated rather than shipped as a file, because the headings ar
 the parser's contract and a template that drifted from the parser would be a
 template whose imports fail. A bank's page can also export its questions as CSV
 or JSON, which is how the format gets used by the people who have to live with it.
+
+## Difficulty: a target, not a measurement
+
+```ts
+type QuestionDifficulty = 'EASY' | 'MEDIUM' | 'HARD' | 'EXPERT';
+```
+
+A question may carry a level, and a level is a **band of expected correct rate**
+rather than a score of anything:
+
+| Level | Correct rate it is written to | What writing to it means |
+| --- | --- | --- |
+| Easy | 76–100% | Literal recall, recognition or naming. Maximum context, and the question points at the answer. |
+| Medium | 40–75% | Processing or synthesis, or a two-step answer. Some context removed, so the options have to be narrowed down. |
+| Hard | 11–39% | Exact timelines, nuanced wording or a specialised corner. Plausible distractors that have to be judged rather than spotted. |
+| Expert | 10% or fewer | An elite or competition standard. Context heavily removed — answerable only with years in the subject. |
+
+The four are named rather than numbered because an author who is told "easy" and
+nothing else has been told nothing they can hold a question against. Each level is
+two facts in one: a band, which is what a set is aiming at, and a way of writing,
+which is what the prompt of a generation run is actually given. Both live in
+`QUESTION_DIFFICULTY_TARGETS` and `QUESTION_DIFFICULTY_DESCRIPTIONS`, and the
+picker that an author chooses from states them under the four buttons.
+
+Five things about it are decisions rather than consequences.
+
+- **It is optional, and a level is not a status.** A question with none is
+  *ungraded* — not a draft, not unusable, and not hidden from a quiz. Nothing
+  reads a level, so an absent one breaks no screen; every question written before
+  this existed has none, and there is no backfill, because there is nothing to
+  backfill it *from*. The difference from a question's lesson, which is required,
+  is what the field is for: a question without a lesson cannot be checked, and a
+  question without a level is one nobody graded.
+- **`EASY` is the default, and not the middle.** `DEFAULT_QUESTION_DIFFICULTY` is
+  what a form starts a new question at and what a run writes at when it is not
+  told. The asymmetry is the point: a question that turns out too easy is one an
+  author promotes a level, and one that turns out too hard is one their learners
+  cannot answer at all. The default is the mistake that costs a click.
+- **It is set at all three doors in.** The form (`QuestionDialog`), a generation
+  run, and a file — the last through a `Difficulty` column, read leniently
+  (`moderate`, `Difficult`, `very hard` all work, in `readQuestionDifficulty`) and
+  **refused** when it says something no level does, because an invented level is
+  a question quietly mislabelled and a row that says which words are allowed is
+  not. A run takes **one level for the whole set**: the level is the instruction
+  to the model rather than a label applied afterwards, so an author wanting a
+  spread asks twice. Every question a run writes is stamped with what was asked
+  for and nothing the model returns can change it — a model grading its own
+  homework is not a difficulty. See `resolveQuestionDifficulty` and
+  `buildPrompt`.
+- **Grading a question does not take its verification away.** This is the one
+  place difficulty meets the status model, and it goes the other way: the prompt,
+  the options, the answer and the lesson are what somebody read and agreed to,
+  while a level says how hard the question is and not what it asks. It is
+  therefore *not* part of `UpdateQuestionPatch.invalidateVerification` — a rule
+  the edit route states where it reads the body, beside the note that an
+  explanation is in the same position.
+- **A learner is never shown it.** The paper is a `prompt` and its `options` and
+  nothing else, and the level has no field there to travel in. A quiz that told
+  a learner which questions were the hard ones has told them something about the
+  answers, and telling them *after* they have answered is a different feature
+  with a different argument to make.
+
+**No route changed for this.** The level rides in bodies that already exist —
+`POST /banks/{bankId}/questions`, `PATCH /questions/{questionId}`, the import and
+`POST …/questions/generation` — and it is a plain attribute on the row, so
+`QuestionsTable` keeps the three indexes it has. Nothing indexes it and no route
+filters on it: a bank is read whole and a course's questions are read whole, and
+"everything of mine that is hard" is a question nothing asks yet. When something
+does, that is an index and a parameter rather than a reshape.
 
 ## What a quiz asks
 
@@ -419,8 +489,10 @@ pointed at nothing. So the order is: run the script, then deploy.
   score is not a gate, and retakes are unlimited. Each of those is a rule that
   would have to live somewhere a learner can read it before they start, so none
   of them is guessed at now.
-- **No tags or difficulty.** A question is about a lesson, and that is the only
-  handle on it. Tags would be a filter on top of a filter, and nothing yet asks.
+- **No tags.** The two handles on a question are its lesson and its difficulty,
+  and neither is a tag: the lesson is what the question can be checked against
+  and the level is a rule about how it is written. A tag would be a filter on top
+  of a filter that nothing yet asks for.
 
 ## Where the code is
 

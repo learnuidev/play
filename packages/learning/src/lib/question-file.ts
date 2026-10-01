@@ -54,7 +54,7 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
  * and this is the copy a person reads.
  */
 export function downloadImportTemplate(): void {
-  const header = 'Type,Question,Option A,Option B,Option C,Option D,Answer,Explanation';
+  const header = 'Type,Question,Option A,Option B,Option C,Option D,Answer,Explanation,Difficulty';
 
   const rows = [
     [
@@ -66,6 +66,7 @@ export function downloadImportTemplate(): void {
       '',
       'A',
       'A wider shutter angle lets light in for longer, so a moving subject blurs further across each frame.',
+      'Easy',
     ],
     [
       'TRUE_FALSE',
@@ -76,6 +77,7 @@ export function downloadImportTemplate(): void {
       '',
       'True',
       'It reproduces the motion blur a projector shows at 24 frames per second.',
+      'Medium',
     ],
   ];
 
