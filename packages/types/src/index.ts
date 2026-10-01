@@ -384,6 +384,26 @@ export interface Space {
    * otherwise.
    */
   listed?: boolean;
+  /**
+   * What the course costs, in the smallest unit of `currency` — cents.
+   *
+   * **Absent means free**, which is the same as `0` on purpose: a course that has
+   * never been priced and a course that costs nothing are both registrable
+   * without a payment, and a UI that had to tell three states apart would
+   * eventually charge somebody for a free course.
+   */
+  priceCents?: number;
+  /** ISO 4217, lower case as Stripe spells it: `usd`. Absent means `usd`. */
+  currency?: string;
+  /**
+   * The Stripe price object this course is sold at.
+   *
+   * **Written by the server**, not by an author: it is a cache of the price
+   * Stripe holds for this course's amount, so the dashboard shows one line per
+   * course rather than one per attempted purchase. Never send it — the amount
+   * above is what a person sets.
+   */
+  stripePriceId?: string;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -441,6 +461,38 @@ export interface UpdateSpacePayload {
   dripIntervalDays?: number;
   /** Whether the course appears in the marketplace catalog. */
   listed?: boolean;
+  /**
+   * What the course costs, in the smallest unit of `currency`.
+   *
+   * `null` — or an empty string — makes it free again. A whole number of cents:
+   * a price typed as a decimal and sent as a number is off by a hundred the
+   * moment somebody forgets which end of it they are on, so the form does the
+   * conversion and this field is always the small unit.
+   */
+  priceCents?: number | null;
+  /** ISO 4217, lower case: `usd`. `null` falls back to `usd`. */
+  currency?: string | null;
+  /**
+   * Deliberately absent: the Stripe price object is the server's to cache, and a
+   * client choosing one would be picking a number from somewhere other than the
+   * price on the course.
+   */
+}
+
+/**
+ * What asking to pay for a course answers with.
+ *
+ * A URL rather than a payment: this is a redirect to Stripe's own hosted page,
+ * and nothing about the purchase is decided until the webhook hears the money
+ * arrive. The id is the checkout session, which is also the id of the pending
+ * payment row — the same string, so a support question about a URL and a row in
+ * the table are the same lookup.
+ */
+export interface CheckoutSessionResponse {
+  url: string;
+  paymentId: string;
+  amountCents: number;
+  currency: string;
 }
 
 /** What the overview's four cards read. */
@@ -1991,6 +2043,17 @@ export interface CourseSummary {
   startAt?: number;
   dripIntervalDays?: number;
   thumbnailKey?: string;
+  /**
+   * What the course costs, in the smallest unit of `currency`. Absent or zero
+   * means free.
+   *
+   * Carried on the summary because the two places a price is drawn are lists —
+   * a catalog card and a course page's own header — and neither should have to
+   * fetch the full course to know whether to say "Free".
+   */
+  priceCents?: number;
+  /** ISO 4217, lower case as Stripe spells it: `usd`. Absent means `usd`. */
+  currency?: string;
 }
 
 export interface CatalogCourse extends CourseSummary {

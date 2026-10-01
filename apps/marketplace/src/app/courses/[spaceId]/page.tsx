@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   BookOpenIcon,
@@ -14,16 +14,25 @@ import {
   HelpCircleIcon,
   Loader2Icon,
   LockIcon,
+  SparklesIcon,
   UsersIcon,
 } from 'lucide-react';
-import { useEnrollInCourse, useLeaveCourse, useMyRewards, useSpaceProgress } from '@play/api';
+import {
+  spaceMemberKeys,
+  useEnrollInCourse,
+  useLeaveCourse,
+  useMyRewards,
+  useSpaceProgress,
+  useStartCheckout,
+} from '@play/api';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStatus } from '@play/auth';
 import { SpaceAvatar, spaceAccentColor } from '@learning/components/space/space-avatar';
 import { SpaceTypeBadge } from '@learning/components/space/space-type-badge';
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { PersonAvatar } from '@play/ui';
-import { formatDate } from '@ui/lib/utils';
+import { formatDate, formatPrice, isPaid } from '@ui/lib/utils';
 import { useEnrollment } from '@/components/use-enrolled';
 import { useCourseView } from '@/components/use-course-view';
 import { CourseProgress } from '@/components/course-progress';
@@ -42,8 +51,31 @@ import type {
  * weighs a course by — while the lessons themselves open only once they are
  * registered. That is the whole shape of a marketplace: read enough to decide,
  * sign in and register to take it.
+ *
+ * **Or buy it.** A course with a price is not registered for: the button says
+ * what it costs and sends the reader to Stripe, and the membership appears when
+ * the webhook hears the payment land. `?paid=1` is how Stripe sends them back,
+ * which is why this page reads the query string at all — and why it is wrapped
+ * in a boundary, since `useSearchParams` needs one in the App Router.
  */
 export default function CoursePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-12">
+          <Skeleton className="aspect-[3/1] w-full rounded-3xl" />
+          <Skeleton className="h-8 w-72" />
+          <Skeleton className="h-40 rounded-2xl" />
+        </div>
+      }
+    >
+      <CourseScreen />
+    </Suspense>
+  );
+}
+
+/** The course page itself, below the boundary the query string needs. */
+function CourseScreen() {
   const { spaceId } = useParams<{ spaceId: string }>();
   const { course, sections, instructors, isLoading, notFound, error } = useCourseView(spaceId);
 
@@ -116,6 +148,8 @@ export default function CoursePage() {
           spaceId={spaceId}
           courseTitle={course.title}
           lessonCount={course.lessonCount}
+          priceCents={course.priceCents}
+          currency={course.currency}
           firstLessonId={firstLessonId}
           progress={progress}
         >
@@ -342,6 +376,8 @@ function RegisterPanel({
   spaceId,
   courseTitle,
   lessonCount,
+  priceCents,
+  currency,
   firstLessonId,
   progress,
   children,
@@ -349,6 +385,9 @@ function RegisterPanel({
   spaceId: string;
   courseTitle: string;
   lessonCount: number;
+  /** Absent, zero or negative all mean free — see `isPaid`. */
+  priceCents?: number;
+  currency?: string;
   firstLessonId?: string;
   /** How far the reader has got, once they are in the course and it is known. */
   progress?: CourseProgressData;
@@ -358,12 +397,57 @@ function RegisterPanel({
   const status = useAuthStatus();
   const enroll = useEnrollInCourse(spaceId);
   const leave = useLeaveCourse(spaceId);
+  const checkout = useStartCheckout(spaceId);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
 
   const { enrolled, isLoading } = useEnrollment(spaceId);
   const coursePath = `/courses/${spaceId}`;
 
   const signedIn = status === 'authenticated';
+
+  /**
+   * Whether this course is bought rather than joined.
+   *
+   * The price is the whole of the answer — a course with a price cannot be
+   * registered for, which is what the API enforces with a 402 — so the button
+   * here and the rule there are the same rule read from the same field.
+   */
+  const paid = isPaid({ priceCents });
+  const price = paid ? formatPrice(priceCents ?? 0, currency) : '';
+
+  /**
+   * The half of a purchase that happens before the webhook.
+   *
+   * Stripe sends the browser back to this page with `?paid=1`, and at that
+   * moment the money is taken but the membership does not exist yet: the
+   * enrolment is written by the webhook, seconds later, and the page cannot know
+   * from the URL alone that it has happened. So while that flag is set the panel
+   * *waits* rather than offering to charge again — a pay button under a success
+   * redirect is a button somebody presses twice.
+   */
+  const search = useSearchParams();
+  const returning = search.get('paid') === '1';
+  const queryClient = useQueryClient();
+
+  const refreshMembership = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: spaceMemberKeys.mine() });
+  }, [queryClient]);
+
+  // Polled rather than waited on: the webhook has no channel to this browser, so
+  // the only way to learn that it landed is to ask again. Four attempts over
+  // about ten seconds covers the delivery, and a payment that is slower than that
+  // is one the panel stops guessing about and tells the reader to reload.
+  const [waited, setWaited] = useState(0);
+  useEffect(() => {
+    if (!returning || enrolled || waited >= 4) return;
+    const timer = setTimeout(() => {
+      setWaited((n) => n + 1);
+      refreshMembership();
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [returning, enrolled, waited, refreshMembership]);
+
+  const confirming = returning && !enrolled;
 
   /**
    * Whether the panel knows what this reader's relationship to the course is.
@@ -387,6 +471,31 @@ function RegisterPanel({
       });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not register for this course');
+    }
+  }
+
+  /**
+   * Sending the reader to Stripe.
+   *
+   * A full navigation rather than a popup: Stripe's hosted page is a page, and a
+   * redirect survives the bank's own verification step — which is a different
+   * origin again — where a popup is blocked or stranded.
+   */
+  async function pay() {
+    // The same door as registering: paying needs an account, because the buyer is
+    // who the enrolment is for. Signing in returns here, to this page, where the
+    // button is waiting — a checkout session opened before the account existed
+    // would be a payment with nobody to enrol.
+    if (!signedIn) {
+      router.push(`/sign-in?next=${encodeURIComponent(coursePath)}`);
+      return;
+    }
+
+    try {
+      const session = await checkout.mutateAsync();
+      window.location.assign(session.url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not start the payment');
     }
   }
 
@@ -431,19 +540,48 @@ function RegisterPanel({
             </p>
           )}
         </>
+      ) : confirming ? (
+        <>
+          {/* The money is taken and the enrolment is not written yet. Saying so
+              is the difference between a page that looks broken and one that is
+              waiting for something it cannot see. */}
+          <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+            <Loader2Icon className="animate-spin size-4" />
+            Confirming your payment
+          </p>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {waited >= 4
+              ? 'Stripe has taken the payment. Your access appears as soon as the confirmation reaches us — reload this page in a moment, and it will be here.'
+              : 'Stripe has taken the payment and the confirmation is on its way. This page is checking for it.'}
+          </p>
+        </>
       ) : (
         <>
           <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-            <LockIcon className="size-3.5" />
-            Register to open the {lessonCount} lesson{lessonCount === 1 ? '' : 's'}
+            {paid ? <SparklesIcon className="size-3.5" /> : <LockIcon className="size-3.5" />}
+            {paid
+              ? `One payment of ${price} opens all ${lessonCount} lesson${
+                  lessonCount === 1 ? '' : 's'
+                } — kept for good`
+              : `Register to open the ${lessonCount} lesson${lessonCount === 1 ? '' : 's'}`}
           </p>
-          <Button className="w-full gap-1.5" onClick={() => void register()} disabled={enroll.isPending}>
-            {enroll.isPending && <Loader2Icon className="animate-spin" />}
-            {enroll.isPending
-              ? 'Registering…'
-              : signedIn
-                ? 'Register for this course'
-                : 'Sign in to register'}
+          <Button
+            className="w-full gap-1.5"
+            onClick={() => void (paid ? pay() : register())}
+            disabled={enroll.isPending || checkout.isPending}
+          >
+            {(enroll.isPending || checkout.isPending) && <Loader2Icon className="animate-spin" />}
+            {paid
+              ? checkout.isPending
+                ? 'Opening Stripe…'
+                : signedIn
+                  ? `Pay ${price}`
+                  : 'Sign in to pay'
+              : enroll.isPending
+                ? 'Registering…'
+                : signedIn
+                  ? 'Register for this course'
+                  : 'Sign in to register'}
           </Button>
         </>
       )}

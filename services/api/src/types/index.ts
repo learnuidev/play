@@ -265,14 +265,14 @@ export interface Space {
   /** ISO 4217, lower case as Stripe spells it: `usd`. Absent means `usd`. */
   currency?: string;
   /**
-   * The Stripe **price** this course is sold at, when there is one.
+   * The Stripe **price** object this course is sold at, when one has been made.
    *
-   * Kept beside the amount rather than instead of it because Stripe needs a
-   * price object to build a checkout session, and the marketplace needs a number
-   * to draw on a card without a round trip to Stripe for every course in a
-   * catalog. The two can disagree for as long as it takes an author to change one
-   * and not the other, which is why the amount is what the card shows and the id
-   * is what the checkout uses.
+   * A cache, written by the checkout route and never by a person: it is what
+   * keeps the Stripe dashboard showing one line per course rather than one per
+   * attempted purchase. The amount above is the source of truth and this is
+   * checked against it — a price that no longer matches the amount is a price the
+   * next checkout replaces, which is why the id can be stale without anything
+   * being wrong.
    */
   stripePriceId?: string;
   /** Cognito `sub` of the user who created it. */
@@ -1396,6 +1396,18 @@ export interface CourseSummary {
   startAt?: number;
   dripIntervalDays?: number;
   thumbnailKey?: string;
+  /**
+   * What the course costs, in the smallest unit of `currency`. Absent — or zero
+   * — means free.
+   *
+   * Part of the summary rather than only of the full `Space`, because the two
+   * places a price is drawn are lists: a catalog card that said "Free" for a
+   * course that costs $49 would be worse than one that said nothing, and asking
+   * the full space behind every card is a read per card.
+   */
+  priceCents?: number;
+  /** ISO 4217, lower case as Stripe spells it: `usd`. Absent means `usd`. */
+  currency?: string;
 }
 
 /**

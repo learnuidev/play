@@ -1517,6 +1517,27 @@ export const FUNCTIONS: FunctionSpec[] = [
     s3: [],
     eventBridge: [],
   },
+  /**
+   *  Paying for one, which is the other way into the same membership. Its own
+   *  route rather than a branch inside `enroll-in-space`, because it is not the
+   *  same act: enrolling writes a row, and this asks Stripe for a checkout page
+   *  and writes an *attempt* down. What turns one into the other is the webhook,
+   *  which is the only thing that hears the money arrive.
+   *
+   *  Authorized like any other course route: a listed course is one its author
+   *  offered to anyone, and the only thing this needs from the caller is who to
+   *  record as the buyer.
+   */
+  {
+    key: 'create-checkout',
+    entry: 'src/functions/spaces/create-checkout.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"spaces/{spaceId}/checkout","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
   {
     key: 'leave-space',
     entry: 'src/functions/spaces/leave.ts',

@@ -5,6 +5,7 @@ import type {
   AudioResponse,
   BatchVerificationResponse,
   CatalogCourseResponse,
+  CheckoutSessionResponse,
   CohortResponse,
   Comment,
   CompletionResponse,
@@ -479,6 +480,21 @@ export const api = {
    */
   enrollInCourse: (spaceId: string) =>
     request<SpaceMemberResponse>(`/spaces/${spaceId}/enrollment`, { method: 'POST' }),
+
+  /**
+   * Asks to buy a course, and answers with where to pay.
+   *
+   * A **URL**, not a membership: the backend opens a Stripe checkout session and
+   * this is Stripe's own hosted page, so the caller redirects rather than
+   * rendering anything. Nothing here grants access — that is the webhook's job,
+   * when Stripe confirms the payment — which is why the page a buyer returns to
+   * is a page that says "confirming", not one that claims they are in.
+   *
+   * A course that is free, or one the caller is already in, is refused with the
+   * sentence saying which: 400 and 409 respectively.
+   */
+  startCourseCheckout: (spaceId: string) =>
+    request<CheckoutSessionResponse>(`/spaces/${spaceId}/checkout`, { method: 'POST' }),
 
   /** Drops the caller out of a course. The course itself is untouched. */
   leaveCourse: (spaceId: string) =>

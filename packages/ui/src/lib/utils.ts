@@ -59,3 +59,33 @@ export function formatDate(timestamp: number): string {
     timeZone: 'UTC',
   }).format(new Date(timestamp));
 }
+
+/**
+ * A price, from the smallest unit of its currency.
+ *
+ * Cents in, `$49.00` out. The product stores money the way Stripe's API takes
+ * it — an integer count of the smallest unit — because a price in a float is a
+ * rounding error waiting for the one course it matters on, and every screen that
+ * shows one converts here rather than re-deriving the rule.
+ *
+ * The locale is the viewer's and the currency is the course's, which is the
+ * combination Stripe charges in: a euro-priced course reads `€49.00` to somebody
+ * in Germany and `€49.00` to somebody in Ohio, and neither is `$49.00`.
+ */
+export function formatPrice(cents: number, currency = 'usd'): string {
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+  }).format(cents / 100);
+}
+
+/**
+ * Whether a course costs anything.
+ *
+ * Absent, `0` and a negative all mean free, because they are the same to the
+ * enrollment check that decides whether a payment is needed — a card and a pay
+ * button that disagreed with it would be a button that does nothing.
+ */
+export function isPaid(course: { priceCents?: number }): boolean {
+  return (course.priceCents ?? 0) > 0;
+}

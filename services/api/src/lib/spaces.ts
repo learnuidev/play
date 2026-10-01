@@ -1,7 +1,7 @@
 import { GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { Space, SpaceType } from '../types';
 import { env } from './config';
-import { documentClient as client } from './dynamodb';
+import { documentClient as client, isConditionalCheckFailed } from './dynamodb';
 
 export const SPACES_TABLE = env.spacesTableName;
 
@@ -76,8 +76,54 @@ export interface UpdateSpacePatch {
   priceCents?: number | null;
   /** `usd`, lower case as Stripe spells it. `null` falls back to `usd`. */
   currency?: string | null;
-  /** The Stripe price object this course is sold at. `null` clears it. */
-  stripePriceId?: string | null;
+}
+
+/**
+ * Points a course at the Stripe price it is sold at now.
+ *
+ * **Written by the checkout route, not by an author**, which is why it is not
+ * part of `UpdateSpacePatch`: this id is a cache of what Stripe has for this
+ * course's amount, and a person pasting one in would be choosing a number from
+ * somewhere other than the price on the course.
+ *
+ * The condition is the point. It allows the write only while the course still
+ * costs what the price was created for, so two checkouts racing after an author
+ * edits the amount cannot leave the course pointing at the loser's price —
+ * whoever gets there second simply does not write, and the next checkout finds a
+ * price that does not match and makes the right one.
+ */
+export async function setSpaceStripePrice(
+  spaceId: string,
+  stripePriceId: string,
+  forPrice: { priceCents: number; currency: string },
+): Promise<boolean> {
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: SPACES_TABLE,
+        Key: { spaceId },
+        UpdateExpression: 'SET #stripePriceId = :stripePriceId',
+        ConditionExpression: '#priceCents = :priceCents AND #currency = :currency',
+        ExpressionAttributeNames: {
+          '#stripePriceId': 'stripePriceId',
+          '#priceCents': 'priceCents',
+          '#currency': 'currency',
+        },
+        ExpressionAttributeValues: {
+          ':stripePriceId': stripePriceId,
+          ':priceCents': forPrice.priceCents,
+          ':currency': forPrice.currency,
+        },
+      }),
+    );
+    return true;
+  } catch (err) {
+    // The price changed under this checkout. Not an error: the session it just
+    // created is still right — it was created for the amount that was read at
+    // the start of the request — and the cache will be rebuilt next time.
+    if (isConditionalCheckFailed(err)) return false;
+    throw err;
+  }
 }
 
 /**
@@ -142,7 +188,6 @@ export async function updateSpace(spaceId: string, patch: UpdateSpacePatch): Pro
     // them reads as "this course is free" in the table.
     ['priceCents', patch.priceCents],
     ['currency', patch.currency],
-    ['stripePriceId', patch.stripePriceId],
   ] as const) {
     if (value === undefined) continue;
     names[`#${field}`] = field;

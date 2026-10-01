@@ -88,6 +88,26 @@ export function useEnrollInCourse(spaceId: string) {
   });
 }
 
+/**
+ * Asking to buy a course.
+ *
+ * The mirror image of registering, and the difference is *when* anything
+ * changes: this answers with a Stripe URL and the caller leaves the app, so
+ * there is nothing to invalidate — the membership does not exist yet and will
+ * not until Stripe says the payment arrived. A cache refreshed here would be a
+ * cache refreshed on a promise, and the page a buyer comes back to is the one
+ * that finds out.
+ *
+ * That is also why this is not an `onSuccess` that enrols: the two facts — "a
+ * checkout was opened" and "somebody paid" — are different facts, and only the
+ * webhook knows the second one.
+ */
+export function useStartCheckout(spaceId: string) {
+  return useMutation({
+    mutationFn: () => api.startCourseCheckout(spaceId),
+  });
+}
+
 /** Dropping out of a course. The mirror of registering. */
 export function useLeaveCourse(spaceId: string) {
   const qc = useQueryClient();

@@ -63,6 +63,11 @@ async function buildCatalogCourse(
       ? { dripIntervalDays: space.dripIntervalDays }
       : {}),
     ...(space.thumbnailKey ? { thumbnailKey: space.thumbnailKey } : {}),
+    // The price, which a catalog card draws and a course page decides a button
+    // by. Absent stays absent rather than becoming a zero: a free course and a
+    // course nobody has priced are the same to a buyer, and both are "Free".
+    ...(space.priceCents !== undefined ? { priceCents: space.priceCents } : {}),
+    ...(space.currency !== undefined ? { currency: space.currency } : {}),
     // A signed URL, built here: the cover is behind CloudFront's signature at
     // the storage layer, and the catalog is where a stranger is allowed to see
     // it. Signing per response is what keeps a listed course's cover public

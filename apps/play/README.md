@@ -678,13 +678,28 @@ can be recorded. It is on the checklist anyway, because a marketplace that canno
 take money is exactly what this tab exists to catch, and the moment to say it is
 before somebody publishes a course with a price.
 
-What a buyer's payment *does* is on the backend side of the line:
-`services/api/src/functions/payments/stripe-webhook.ts` verifies the signature
-against the endpoint's secret, records the payment keyed by the checkout session,
-and enrols the buyer through the same `enrollInSpace` the register button calls.
-`functions/spaces/enroll.ts` refuses a course with a price, so the webhook is the
-only way in — and the membership is the record of payment, which is why there is
-no second lookup that could disagree with it.
+What a buyer's payment *does* is on the backend side of the line, in two halves
+that are deliberately in different stacks — one on the product's own surface, one
+a public endpoint:
+
+| | Where | What it does |
+| --- | --- | --- |
+| Opening a checkout | `POST /spaces/{spaceId}/checkout` in `PlayApiStack` | Resolves the course's price in Stripe, opens a hosted session, writes the attempt down as `PENDING` |
+| Recording the payment | the webhook in `PlayPaymentStack` | Verifies the signature, marks the payment paid, and **enrols the buyer** |
+
+Nothing in the first half grants access: a session being created is not money
+arriving. The enrolment is `enrollInSpace` — the same call the register button
+makes — and `functions/spaces/enroll.ts` refuses a course with a price, so the
+webhook is the only way in. The membership *is* the record of payment, which is
+why there is no second lookup that could disagree with it.
+
+**The price is a number an author sets in the studio** (`Space.priceCents`, with
+`priceCents`/`currency` on `PATCH /spaces/{spaceId}`), and the Stripe price object
+is a cache the backend makes on the first checkout and stores back as
+`stripePriceId`. That is why changing what a course costs is changing a number
+rather than chasing an id through a dashboard, and why the marketplace's tile and
+the studio's price field read the same field the API checks. The console's Stripe
+card above is what makes all of it work: no credentials, no checkout.
 
 ## Where things are
 

@@ -26,8 +26,6 @@ interface UpdateSpaceBody {
   priceCents?: unknown;
   /** ISO 4217, lower case: `usd`. */
   currency?: unknown;
-  /** The Stripe price object this course is sold at, or `null` to forget it. */
-  stripePriceId?: unknown;
 }
 
 /**
@@ -170,16 +168,6 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     }
   }
 
-  if (body.stripePriceId !== undefined) {
-    const id = typeof body.stripePriceId === 'string' ? body.stripePriceId.trim() : '';
-    if (!id) patch.stripePriceId = null;
-    else {
-      if (!id.startsWith('price_')) {
-        throw new HttpError(400, 'stripePriceId must be a Stripe price id, like price_1AbC…');
-      }
-      patch.stripePriceId = id;
-    }
-  }
 
   await updateSpace(spaceId, patch);
 

@@ -10,20 +10,169 @@ import { env } from './config';
 /**
  * Stripe, as far as this service needs to understand it.
  *
- * **Not the `stripe` SDK**, and deliberately: the one thing a webhook has to do
- * before it may trust a byte of its request is check a signature, and that is a
- * documented HMAC over two strings — `"{timestamp}.{raw body}"`, keyed by the
- * endpoint's signing secret. The SDK would bring a client, a type surface and a
- * version to keep in step for the whole service, in exchange for about thirty
- * lines that are written out below and can be read against Stripe's own
- * documentation.
+ * **Not the `stripe` SDK**, and deliberately. The two things this service does
+ * with Stripe are a signature check — a documented HMAC over two strings — and a
+ * couple of form-encoded calls to `api.stripe.com`, which is what `stripeRequest`
+ * below is. The SDK would bring a client, a type surface and a version to keep in
+ * step for the whole service, in exchange for code that can be read against
+ * Stripe's own documentation.
  *
  * The credentials themselves are never in this file, in the repository, or in a
- * function's environment: `lib/config` holds the *name* of the secret, and
- * `stripeCredentials` is the one place it is read.
+ * function's environment: `lib/config` holds the *names* of the secrets, and
+ * `stripeCredentials` is the one place they are read.
  */
 
 const secrets = new SecretsManagerClient({});
+
+/**
+ * The Stripe API, as one function.
+ *
+ * **Form-encoded, not JSON.** Stripe's REST API takes
+ * `application/x-www-form-urlencoded` bodies and describes nested parameters with
+ * brackets — `line_items[0][price]`, `metadata[spaceId]` — which is why the
+ * parameter type here is a flat map of already-bracketed keys rather than
+ * something recursive. Building those keys at the call site keeps the shape of
+ * each request in the file that makes it, where it can be compared with Stripe's
+ * documentation for that endpoint.
+ *
+ * There is no retry and no idempotency key. A retry here would be a *second*
+ * checkout session or a second price, and Stripe's own advice for a request that
+ * matters is an idempotency key chosen by the caller — which for a checkout is
+ * better handled by the person pressing the button again.
+ */
+async function stripeRequest<T>(
+  method: 'GET' | 'POST',
+  path: string,
+  params: Record<string, string> = {},
+): Promise<T> {
+  const { secretKey } = await stripeCredentials();
+
+  const response = await fetch(`https://api.stripe.com/v1/${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      ...(method === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+    },
+    ...(method === 'POST' ? { body: new URLSearchParams(params).toString() } : {}),
+  });
+
+  const body = (await response.json().catch(() => null)) as
+    | (T & { error?: { message?: string; type?: string } })
+    | null;
+
+  if (!response.ok) {
+    // Stripe's own sentence is the useful one — "Invalid API Key provided", "No
+    // such price" — and it names the field, which a generic failure would not.
+    const message = body?.error?.message ?? `Stripe answered ${response.status}`;
+    throw new Error(`Stripe refused ${path}: ${message}`);
+  }
+
+  return body as T;
+}
+
+/** One Stripe price, as much of it as this service reads. */
+export interface StripePrice {
+  id: string;
+  active: boolean;
+  currency: string;
+  unit_amount: number | null;
+}
+
+/**
+ * The Stripe price a course is sold at, created once and then reused.
+ *
+ * **Cached on the course** rather than created per checkout, and that is not an
+ * optimisation: Stripe's dashboard is where somebody looks at what the product
+ * sells, and a price created per session is one anonymous line there per
+ * attempted purchase. `space.stripePriceId` is that cache, and it is why changing
+ * a course's price is a write of a *number*: the next checkout finds a price that
+ * no longer matches and makes a new one, and the old one is left inactive in
+ * Stripe rather than deleted, because a payment already made points at it.
+ *
+ * No price of our own is reused by another course: a Stripe price belongs to one
+ * product id, and sharing one between two courses would make Stripe's own reports
+ * unable to tell them apart.
+ */
+export async function findPrice(priceId: string): Promise<StripePrice | null> {
+  try {
+    return await stripeRequest<StripePrice>('GET', `prices/${encodeURIComponent(priceId)}`);
+  } catch {
+    // A price that has been deleted in the dashboard, or an id that belongs to
+    // another Stripe account — the caller's answer is the same either way: make
+    // a new one.
+    return null;
+  }
+}
+
+/**
+ * A new Stripe price for a course.
+ *
+ * `product_data` inline rather than a product created first: Stripe creates the
+ * product as part of the price, and a course is one product — its name is the
+ * title, which is what a receipt should say. A recurring course would set
+ * `recurring[interval]` here, which is the one thing that would need a decision
+ * about subscription rather than one-off payment.
+ */
+export async function createPrice(input: {
+  title: string;
+  amountCents: number;
+  currency: string;
+}): Promise<StripePrice> {
+  return stripeRequest<StripePrice>('POST', 'prices', {
+    currency: input.currency,
+    unit_amount: String(input.amountCents),
+    'product_data[name]': input.title,
+  });
+}
+
+/** A Stripe checkout session, as much of it as this service reads. */
+export interface StripeCheckoutSession {
+  id: string;
+  url: string | null;
+  payment_intent: string | null;
+  amount_total: number | null;
+  currency: string | null;
+}
+
+/**
+ * A hosted checkout page, which is where a learner actually pays.
+ *
+ * **Redirect rather than embedded**: Stripe's hosted page handles the card
+ * fields, the tax line, the receipt and every payment method the account has
+ * enabled, and none of that is code this repository should own. The marketplace
+ * sends the browser to `url` and Stripe sends it back to `successUrl`.
+ *
+ * The metadata is what makes a payment mean something on the way back: the
+ * webhook is told the session id, and without these three it would have a payment
+ * with no course and no buyer attached to it. `client_reference_id` carries the
+ * same person for Stripe's own dashboard, where a support question starts.
+ */
+export async function createCheckoutSession(input: {
+  priceId: string;
+  quantity?: number;
+  successUrl: string;
+  cancelUrl: string;
+  /** The buyer, for the receipt and for the webhook. */
+  customerEmail?: string;
+  clientReferenceId: string;
+  metadata: Record<string, string>;
+}): Promise<StripeCheckoutSession> {
+  const params: Record<string, string> = {
+    mode: 'payment',
+    'line_items[0][price]': input.priceId,
+    'line_items[0][quantity]': String(input.quantity ?? 1),
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+    client_reference_id: input.clientReferenceId,
+  };
+
+  if (input.customerEmail) params.customer_email = input.customerEmail;
+  for (const [key, value] of Object.entries(input.metadata)) {
+    params[`metadata[${key}]`] = value;
+  }
+
+  return stripeRequest<StripeCheckoutSession>('POST', 'checkout/sessions', params);
+}
 
 /**
  * One environment's Stripe credentials.

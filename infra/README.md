@@ -135,10 +135,29 @@ five events the handler acts on (`STRIPE_EVENTS` in `apps/play/src/server/settin
 is the list; the handler's own `switch` is the authority), and paste the signing
 secret Stripe shows you back into the console.
 
-**The stack creates no secret and no parameter.** A stack that created one would
-own a value it did not know, and the console's write would then be a fight with
-the next deploy rather than the way the value is set — the same division the
-Google client secret has, and `config/README.md` has the names.
+### The two halves of a purchase
+
+They are deliberately in different stacks, because they are different kinds of
+thing — one is on the product's own surface and one is a public endpoint:
+
+| | Where | What it does |
+| --- | --- | --- |
+| **Opening a checkout** | `PlayApiStack` — `POST /spaces/{spaceId}/checkout` (`src/functions/spaces/create-checkout.ts`) | Resolves the course's price in Stripe, opens a hosted session, writes the attempt down as a `PENDING` payment, and answers with the URL |
+| **Recording the payment** | `PlayPaymentStack` — the webhook | Verifies Stripe's signature, marks the payment paid, and **enrols the buyer** through the same `enrollInSpace` the register button calls |
+
+Nothing in the first half grants access, and that is the whole design: a session
+being created is not money arriving, so the only thing that enrols anybody is
+Stripe telling this deployment that it did.
+
+**The price is a number on the course, and a Stripe price is a cache of it.**
+`Space.priceCents` is what an author sets in the studio; the checkout route finds
+or creates the Stripe price that matches it and stores the id back on the course
+as `stripePriceId`, which is what keeps the dashboard showing one line per course
+rather than one per attempted purchase. A price that no longer matches the amount
+is replaced on the next checkout — the old one is left in Stripe, because a
+payment already taken points at it. Nothing but the amount is ever an author's
+input: the id is written by the server, and a wrong one would be a checkout for
+somebody else's price.
 
 Two consequences worth knowing before a deploy:
 
@@ -148,8 +167,8 @@ Two consequences worth knowing before a deploy:
   a 400. What the function may then *do* is bounded by a role of its own: two
   tables and two secrets, and nothing else in the account.
 - **Credentials are read once per container.** Saving a rotated key writes it to
-  Secrets Manager, and a warm webhook keeps the old one until it is recycled — so
-  the second half of a rotation is a deploy (or waiting). A payment taken in
+  Secrets Manager, and a warm container keeps the old one until it is recycled —
+  so the second half of a rotation is a deploy (or waiting). A payment taken in
   between fails verification rather than being accepted, which is the right way
   round.
 

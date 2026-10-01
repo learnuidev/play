@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { CheckCircle2Icon, PlayCircleIcon } from 'lucide-react';
 import { spaceAccentColor } from '@learning/components/space/space-avatar';
+import { formatPrice, isPaid } from '@ui/lib/utils';
 import type { CatalogCourse } from '@play/types';
 
 /**
@@ -75,8 +76,22 @@ export function CourseTile({
               Enrolled
             </span>
           ) : (
-            <span className="tabular-nums">
-              {course.studentCount} learning
+            <span className="flex items-baseline gap-3">
+              <span className="tabular-nums">
+                {course.studentCount} learning
+              </span>
+              {/* The price is the last thing on the tile rather than a badge over
+                  the cover: what a course is called and what it covers is the
+                  pitch, and what it costs is the answer to the question the pitch
+                  creates. A free course says so — a blank where a price goes reads
+                  as a price nobody has set. */}
+              {isPaid(course) ? (
+                <span className="font-semibold text-foreground">
+                  {formatPrice(course.priceCents ?? 0, course.currency)}
+                </span>
+              ) : (
+                <span className="font-medium text-emerald-600 dark:text-emerald-400">Free</span>
+              )}
             </span>
           )}
         </div>
