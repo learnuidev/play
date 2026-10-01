@@ -64,6 +64,20 @@ export interface UpdateSpacePatch {
   dripIntervalDays?: number | null;
   /** Whether the course appears in the marketplace catalog. */
   listed?: boolean;
+  /**
+   * What the course costs, in the smallest unit of `currency`.
+   *
+   * `null` makes it free again, which is the same representation as never having
+   * priced it — see `Space.priceCents`. A whole number of cents, checked by the
+   * handler that reads the request: a price arrived at by rounding a decimal is a
+   * price that will eventually be wrong by a cent, and Stripe's own API takes the
+   * smallest unit for that reason.
+   */
+  priceCents?: number | null;
+  /** `usd`, lower case as Stripe spells it. `null` falls back to `usd`. */
+  currency?: string | null;
+  /** The Stripe price object this course is sold at. `null` clears it. */
+  stripePriceId?: string | null;
 }
 
 /**
@@ -121,6 +135,14 @@ export async function updateSpace(spaceId: string, patch: UpdateSpacePatch): Pro
     ['color', patch.color],
     ['startAt', patch.startAt],
     ['dripIntervalDays', patch.dripIntervalDays],
+    // The price falls in the same group as the colour, and for the same reason:
+    // clearing it is a *removal* rather than a zero, so a course that goes from
+    // paid to free stops carrying a price instead of carrying `0`. The two are
+    // the same to the enrollment check — see `Space.priceCents` — but only one of
+    // them reads as "this course is free" in the table.
+    ['priceCents', patch.priceCents],
+    ['currency', patch.currency],
+    ['stripePriceId', patch.stripePriceId],
   ] as const) {
     if (value === undefined) continue;
     names[`#${field}`] = field;

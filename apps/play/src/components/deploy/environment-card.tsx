@@ -5,7 +5,7 @@ import { RocketIcon, ShieldAlertIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip, Dot, Spinner, type Tone } from "@/components/ui/chip";
-import { backendState } from "@/lib/backends";
+import { backendState, STACK_WORDS } from "@/lib/backends";
 import { cn } from "@/lib/cn";
 import { apiHost, stackInitials, stackWord } from "@/lib/format";
 import type { ConsoleState, EnvironmentView, RunAction, StackSummary } from "@/lib/types";
@@ -14,7 +14,7 @@ import type { ConsoleState, EnvironmentView, RunAction, StackSummary } from "@/l
  * The environment, and the one button.
  *
  * Everything the deploy is about, on one card: which stage, which account it
- * will land in, the four stacks and where each of them is, and what a deploy
+ * will land in, the root stacks and where each of them is, and what a deploy
  * here can and cannot touch. That last part is a paragraph rather than a
  * footnote on purpose — the surprising thing about this backend is that a new
  * environment shares the data with every existing one, and a console that hid
@@ -137,7 +137,7 @@ export function EnvironmentCard({
                 are <span className="text-foreground/80">imported</span> — CloudFormation will not
                 change or delete one. A deploy here creates the{" "}
                 <span className="text-foreground/80">
-                  {healthy === 0 ? "four" : "environment's own"}
+                  {healthy === 0 ? "five" : "environment's own"}
                 </span>{" "}
                 API, media roles and sign-up trigger, and it{" "}
                 <span className="text-foreground/80">points at the same data</span> as every other
@@ -185,7 +185,7 @@ export function EnvironmentCard({
 }
 
 /* ------------------------------------------------------------------ *
- * The four stacks
+ * The root stacks
  * ------------------------------------------------------------------ */
 
 interface Tile {
@@ -197,8 +197,11 @@ interface Tile {
 }
 
 function stackTiles(environment: EnvironmentView | null, reading: boolean): Tile[] {
-  const words = ["Data", "Media", "Auth", "Api"];
-  return words.map((word) => {
+  // `STACK_WORDS` rather than a list of words here: it is the same list the
+  // plan's own post-condition and the destroy plan are built from, and a tile
+  // drawn for a stack the run does not wait for — or the other way round — is
+  // how a page ends up disagreeing with the run drawn beside it.
+  return STACK_WORDS.map((word) => {
     const found: StackSummary | undefined = environment?.stacks.find(
       (stack) => stackWord(stack.name) === word,
     );

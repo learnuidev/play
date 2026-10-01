@@ -23,13 +23,20 @@ export interface PlayDataStackProps extends StackProps {
  * what deploying a stage that has never existed does, and it is the default the
  * deploy console writes.
  *
- * **`false` — `dev`, and only `dev`.** Every table is imported with
- * `Table.fromTableName`. An imported table is *unmanaged*: CloudFormation does
- * not put it in this stack's template, will not change its properties, and will
- * not delete it. The tables are the product — courses, memberships, comments,
- * credentials — and they already exist, so creating one with an existing name to
- * "adopt" it would fail the deploy with `already exists` or, worse, replace it,
- * and a replaced table is an empty table.
+ * **`false` — `dev`, and only `dev`.** Every table *the config names* is
+ * imported with `Table.fromTableName`. An imported table is *unmanaged*:
+ * CloudFormation does not put it in this stack's template, will not change its
+ * properties, and will not delete it. The tables are the product — courses,
+ * memberships, comments, credentials — and they already exist, so creating one
+ * with an existing name to "adopt" it would fail the deploy with `already
+ * exists` or, worse, replace it, and a replaced table is an empty table.
+ *
+ * The exception is a table the config does **not** name, and it is the newer
+ * half of this app rather than an oversight: a table the legacy backend never
+ * had cannot be imported, because it does not exist until something creates it.
+ * So a stage that imports is not asked for a physical name it could not know —
+ * that table is created, named `play-<stage>-<table>` like any other stage's,
+ * and `dev` ends up with one for a feature `dev` is the environment for.
  *
  * That is why `cdk deploy PlayDataStack-dev` on a fresh checkout is a no-op that
  * proves the account, the region and the names all line up — a useful thing to
@@ -53,15 +60,22 @@ export class PlayDataStack extends Stack {
     this.tables = {};
 
     for (const spec of TABLES) {
-      if (!config.ownership.tables) {
-        const name = importedResources(config).tables[spec.id];
-        if (!name) {
-          throw new Error(
-            `No physical name for ${spec.id} in infra/config/play-${config.stage}.json. ` +
-              'Run `npm run import-state --workspace play-infra` to discover it.',
-          );
-        }
-        this.tables[spec.id] = dynamodb.Table.fromTableName(this, spec.id, name);
+      // **Import is per table, not per stage.** A stage that imports its tables
+      // owns none of the 27 the legacy backend created — but this app also
+      // declares tables the legacy backend never had, and a table that is not in
+      // the config is not one there is anything to import: naming it would be
+      // pointing IAM and every handler at a table that does not exist, and the
+      // failure would be a `ResourceNotFoundException` at the first request
+      // rather than anything a synth would catch. So the config decides *per
+      // table*, by naming it, and `play-dev.json` names the 27 that are really
+      // there. `dev` therefore gains this app's newer tables as its own, created
+      // empty and retained like every other table here.
+      const imported = config.ownership.tables
+        ? undefined
+        : importedResources(config).tables[spec.id];
+
+      if (imported) {
+        this.tables[spec.id] = dynamodb.Table.fromTableName(this, spec.id, imported);
         continue;
       }
 

@@ -247,6 +247,34 @@ export interface Space {
    * to hide it.
    */
   listed?: boolean;
+  /**
+   * What the course costs, in the smallest unit of `currency` — cents, as Stripe
+   * counts them.
+   *
+   * **Absent means free**, and it is the same representation as `0` on purpose:
+   * a course that has never been priced is not a course that costs nothing, but
+   * both are registrable without a payment, and a screen that had to tell three
+   * states apart (no price, a price of zero, a price) would get it wrong once and
+   * charge somebody for a free course.
+   *
+   * An integer, not a decimal: money in a float is a rounding error waiting for
+   * the one price it matters on, and Stripe's own API takes the smallest unit for
+   * exactly that reason.
+   */
+  priceCents?: number;
+  /** ISO 4217, lower case as Stripe spells it: `usd`. Absent means `usd`. */
+  currency?: string;
+  /**
+   * The Stripe **price** this course is sold at, when there is one.
+   *
+   * Kept beside the amount rather than instead of it because Stripe needs a
+   * price object to build a checkout session, and the marketplace needs a number
+   * to draw on a card without a round trip to Stripe for every course in a
+   * catalog. The two can disagree for as long as it takes an author to change one
+   * and not the other, which is why the amount is what the card shows and the id
+   * is what the checkout uses.
+   */
+  stripePriceId?: string;
   /** Cognito `sub` of the user who created it. */
   createdBy: string;
   createdAt: number;
@@ -993,6 +1021,59 @@ export interface SpaceMember {
   invitedBy?: string;
   /** When the membership began, or when the invitation was sent. */
   joinedAt: number;
+}
+
+/**
+ * What became of one attempt to buy a course.
+ *
+ * The states are the checkout session's own life, because that is what a payment
+ * row *is* here — one attempt, keyed by the session Stripe created for it. A
+ * person who abandons a checkout leaves an `EXPIRED` row rather than nothing,
+ * which is the difference between "they never tried" and "they tried and it did
+ * not go through", and that difference is the whole of what an author asking
+ * about a missing sale needs to know.
+ */
+export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'REFUNDED';
+
+/**
+ * One purchase, as the payments table holds it.
+ *
+ * Keyed by the **Stripe checkout session id**, which is the one identifier both
+ * ends of a purchase know: the backend knows it because it is what it asked
+ * Stripe for, and the webhook knows it because Stripe sends the session back
+ * with the event. Nothing else is unique to one purchase — a person may buy the
+ * same course twice, and a payment intent can outlive the attempt that made it —
+ * so this is the key that makes a re-delivered event an update to one row rather
+ * than a second sale.
+ */
+export interface Payment {
+  /** Partition key: the checkout session id, `cs_…`. */
+  paymentId: string;
+  spaceId: string;
+  /** Denormalized from the space, so an author's sales query needs no join. */
+  organizationId: string;
+  /** Cognito `sub` of the buyer. */
+  userId: string;
+  status: PaymentStatus;
+  /** What was charged, in the smallest unit of `currency`. */
+  amountCents: number;
+  /** ISO 4217, lower case as Stripe spells it: `usd`. */
+  currency: string;
+  /**
+   * The buyer's address, as Stripe collected it. Kept because a receipt and a
+   * support question both need it and neither should have to ask Stripe for a
+   * session from last year.
+   */
+  email?: string;
+  /** Stripe's own ids, kept so a dashboard row can be found from a log line. */
+  stripeCustomerId?: string;
+  stripePaymentIntentId?: string;
+  stripePriceId?: string;
+  createdAt: number;
+  updatedAt: number;
+  paidAt?: number;
+  /** When the money went back. The enrolment is deliberately left alone. */
+  refundedAt?: number;
 }
 
 /**

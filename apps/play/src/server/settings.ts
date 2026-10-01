@@ -4,9 +4,11 @@ import type {
   EnvironmentSettingsInput,
   GoogleOAuthValues,
   SettingsWriteView,
+  StripeSettingsView,
+  StripeWriteView,
 } from "@/lib/types";
 import { applyAuthUrls } from "./auth-urls";
-import { awsJson, getIdentity } from "./aws";
+import { awsJson, describeStack, getIdentity } from "./aws";
 import {
   configFile,
   consoleDefaults,
@@ -27,7 +29,9 @@ import { ensureSigningKey } from "./signing-key";
  * describe *this deployment of the product* and cannot be looked up:
  *
  * - the Google OAuth client id, its secret, and the URLs Cognito will accept;
- * - the address invitations come from and the two app base URLs.
+ * - the address invitations come from and the two app base URLs;
+ * - the Stripe credentials a course is sold with — the API key, the endpoint's
+ *   signing secret, and the publishable key a browser loads Stripe.js with.
  *
  * They are the values a new environment needs before it can deploy, because its
  * user pool is created from them. On `dev` they describe a pool that already
@@ -35,20 +39,165 @@ import { ensureSigningKey } from "./signing-key";
  * pool instead of waiting for a deploy that will never come: this module runs
  * `set-auth-urls.mjs`, and `auth-urls.ts` is where that is explained.
  *
- * ## The secret never touches the config file
+ * ## The secrets never touch the config file
  *
- * The config file is committed. `googleClientSecret` is write-only: it is sent
- * to Secrets Manager and never read back, never echoed, and never written to
- * disk in the repository. `readSettings` reports only whether one is stored.
+ * The config file is committed. The Google client secret and the two Stripe
+ * credentials are write-only: sent to Secrets Manager and never read back, never
+ * echoed, and never written to disk in the repository. `readSettings` reports
+ * only whether each one is stored.
  *
  * Secrets Manager rather than SSM because CloudFormation refuses an SSM Secure
  * reference in `AWS::Cognito::UserPoolIdentityProvider` — see
- * `infra/src/stacks/auth-stack.ts`.
+ * `infra/src/stacks/auth-stack.ts`. The one Stripe value that is not there is the
+ * publishable key, which is not a secret at all: it goes to Parameter Store, and
+ * the form shows it, because hiding the value a browser is going to receive would
+ * be hiding nothing.
  */
 
 /** The secret name for a stage. Mirrors `googleClientSecretName` in `infra/src/config.ts`. */
 export function googleClientSecretName(stage: string): string {
   return `play/${stage}/google-client-secret`;
+}
+
+/**
+ * Where a stage's Stripe credentials live. Mirrors `infra/src/config.ts`.
+ *
+ * **Per stage**, like the Google client secret: these are the keys a deployment
+ * charges with, and two environments holding the same one are two environments
+ * spending one account's money.
+ *
+ * Two secrets rather than one, because the two values are rotated for different
+ * reasons — the API key on somebody's schedule, the endpoint's signing secret
+ * when the endpoint is recreated — and the console never reads a credential back,
+ * so one document for both would make every rotation a write of the value
+ * nobody asked to change.
+ */
+export function stripeSecretName(stage: string): string {
+  return `play/${stage}/stripe-secret-key`;
+}
+
+export function stripeWebhookSecretName(stage: string): string {
+  return `play/${stage}/stripe-webhook-secret`;
+}
+
+/** The publishable key — not a secret, so it lives in SSM with the other settings. */
+export function stripePublishableKeyParam(stage: string): string {
+  return `/play/${stage}/stripe/publishable-key`;
+}
+
+/**
+ * The Stripe events the deployed webhook does something about.
+ *
+ * Shown so nobody has to read the handler to know what to subscribe an endpoint
+ * to — and it is a *copy* of that handler's `switch`, which is the authority:
+ * `services/api/src/functions/payments/stripe-webhook.ts`. The drift is harmless
+ * in one direction only, and this is it: subscribing to an event the handler does
+ * not know is answered with a 200 saying so, while subscribing to none of these
+ * is a payment that never becomes an enrolment.
+ */
+export const STRIPE_EVENTS = [
+  "checkout.session.completed",
+  "checkout.session.async_payment_succeeded",
+  "checkout.session.expired",
+  "payment_intent.payment_failed",
+  "charge.refunded",
+];
+
+/**
+ * The Stripe half of an environment's settings: what is stored, and where Stripe
+ * has to be pointed.
+ *
+ * Four reads rather than one, and they are the four different things a person
+ * needs before a course can be sold: two secrets that must exist, a publishable
+ * key that must be readable, and a webhook URL that only exists once the payment
+ * stack has been deployed. None of them is cached — the checklist is drawn on
+ * every page load and a stale "not set" is exactly the state this page exists to
+ * end.
+ */
+export async function stripeState(
+  stage: string,
+  ctx: { profile?: string; region?: string } = {},
+): Promise<StripeSettingsView> {
+  const secretName = stripeSecretName(stage);
+  const webhookSecretName = stripeWebhookSecretName(stage);
+  const publishableKeyParam = stripePublishableKeyParam(stage);
+
+  const [secretKeySet, webhookSigningSecretSet, publishableKey, webhookUrl] = await Promise.all([
+    secretStored(secretName, ctx),
+    secretStored(webhookSecretName, ctx),
+    publishableKeyValue(publishableKeyParam, ctx),
+    stripeWebhookUrl(stage, ctx),
+  ]);
+
+  return {
+    secretName,
+    secretKeySet,
+    webhookSecretName,
+    webhookSigningSecretSet,
+    publishableKeyParam,
+    publishableKey,
+    webhookUrl,
+    events: STRIPE_EVENTS,
+  };
+}
+
+/**
+ * The endpoint Stripe is pointed at, which the payment stack publishes.
+ *
+ * Read from the stack rather than derived from anything: a Lambda function URL
+ * carries a random subdomain that no rule here could reconstruct, and it is
+ * assigned when the function is created — so the only place the URL is
+ * authoritative is the stack that made it.
+ */
+async function stripeWebhookUrl(
+  stage: string,
+  ctx: { profile?: string; region?: string },
+): Promise<string | null> {
+  const stack = await describeStack(`PlayPaymentStack-${stage}`, ctx).catch(() => null);
+  return stack?.outputs.StripeWebhookUrl ?? null;
+}
+
+/** The publishable key's value, or null when the parameter is not there yet. */
+async function publishableKeyValue(
+  name: string,
+  ctx: { profile?: string; region?: string },
+): Promise<string | null> {
+  const found = await awsJson<{ Parameter?: { Value?: string } }>(
+    ["ssm", "get-parameter", "--name", name],
+    { ...ctx, optional: true },
+  ).catch(() => null);
+  return found?.Parameter?.Value ?? null;
+}
+
+/**
+ * `pk_`, `sk_` and `whsec_`: the prefixes Stripe gives its three kinds of value.
+ *
+ * Checked because all three look alike in a dashboard — three long strings with
+ * underscores — and pasting the secret key into the publishable field is a
+ * mistake that would reach a browser, while pasting the publishable key into the
+ * webhook field is a webhook that verifies nothing. Each sentence says which
+ * value belongs there rather than naming a format.
+ */
+function stripeProblems(input: NonNullable<EnvironmentSettingsInput["stripe"]>): string[] {
+  const problems: string[] = [];
+
+  if (input.secretKey && !input.secretKey.startsWith("sk_")) {
+    problems.push(
+      'The Stripe secret key starts with "sk_" — it is the API key ("Secret key") in the Stripe dashboard, not the publishable one.',
+    );
+  }
+  if (input.webhookSigningSecret && !input.webhookSigningSecret.startsWith("whsec_")) {
+    problems.push(
+      'The webhook signing secret starts with "whsec_" — it is shown by the endpoint you create in Stripe, under "Signing secret".',
+    );
+  }
+  if (input.publishableKey && !input.publishableKey.startsWith("pk_")) {
+    problems.push(
+      'The publishable key starts with "pk_" — it is the "Publishable key" in the Stripe dashboard, and it is the one safe to hand to a browser.',
+    );
+  }
+
+  return problems;
 }
 
 const EMPTY = { fromAddress: "", appBaseUrl: "", marketplaceBaseUrl: "" };
@@ -108,6 +257,18 @@ export function readSettings(stage: string): EnvironmentSettings | null {
     },
     // Filled in by the route, which is where the auth stack gets read.
     oauth: { cognitoDomain: null, javaScriptOrigin: null, redirectUri: null },
+    // Also filled in by the route: three of these four are AWS reads, and the
+    // form is drawn whether or not they answer.
+    stripe: {
+      secretName: stripeSecretName(stage),
+      secretKeySet: false,
+      webhookSecretName: stripeWebhookSecretName(stage),
+      webhookSigningSecretSet: false,
+      publishableKeyParam: stripePublishableKeyParam(stage),
+      publishableKey: null,
+      webhookUrl: null,
+      events: STRIPE_EVENTS,
+    },
   };
 }
 
@@ -116,7 +277,20 @@ export async function googleSecretStatus(
   stage: string,
   ctx: { profile?: string; region?: string } = {},
 ): Promise<boolean> {
-  const name = googleClientSecretName(stage);
+  return secretStored(googleClientSecretName(stage), ctx);
+}
+
+/**
+ * Whether a secret exists and was given a value.
+ *
+ * `describe-secret` answers with the ARN but not the value, which is exactly what
+ * is wanted: this is about whether a credential is *there*, and the console has
+ * no reason to read one.
+ */
+async function secretStored(
+  name: string,
+  ctx: { profile?: string; region?: string } = {},
+): Promise<boolean> {
   const found = await awsJson<{ ARN: string }>(
     ["secretsmanager", "describe-secret", "--secret-id", name],
     { ...ctx, optional: true },
@@ -232,6 +406,8 @@ export async function saveSettings(
   };
 
   const problems = validate({ auth, mail, secret: input.googleClientSecret });
+  const stripe = input.stripe ?? null;
+  if (stripe) problems.push(...stripeProblems(stripe));
   if (problems.length > 0) throw new Error(problems.join("\n"));
 
   const created = before === null;
@@ -259,10 +435,13 @@ export async function saveSettings(
     await writeGoogleSecret(stage, input.googleClientSecret, ctx);
   }
 
+  const stripeWrite = stripe ? await writeStripe(stage, stripe, ctx) : null;
+
   const settings = readSettings(stage);
   if (!settings) throw new Error(`Wrote ${file}, but it could not be read back.`);
   settings.googleClientSecretSet = await googleSecretStatus(stage, ctx);
   settings.oauth = await googleOAuthValues(stage, ctx, settings.account);
+  settings.stripe = await stripeState(stage, ctx);
 
   return {
     settings,
@@ -271,9 +450,91 @@ export async function saveSettings(
       created,
       secretWritten: Boolean(input.googleClientSecret),
       authUrls: await authUrlsNote(stage, auth, ctx),
+      stripe: stripeWrite,
       ...(await keyNote(stage, settings, ctx)),
     },
   };
+}
+
+/**
+ * The Stripe credentials, as part of a save.
+ *
+ * Each of the three is written on its own terms, and they are not the same terms:
+ *
+ * - the **API key** and the **signing secret** are secrets, so an empty field
+ *   means "leave it alone" — the console has no way to show the stored value for
+ *   somebody to keep, which is the whole point of never reading one back;
+ * - the **publishable key** is not a secret and is shown in the form, so an empty
+ *   field means what it looks like: the parameter is removed, and a deployment
+ *   with no publishable key cannot take a payment.
+ *
+ * A failure here fails the save, unlike the signing key and the app client beside
+ * it. The difference is what the write *is*: those two are side effects of saving
+ * settings that are already on disk, while a credential is the thing that was
+ * asked for — a save that reported success over a Secrets Manager refusal would
+ * be a deployment that looks ready to charge and is not.
+ */
+async function writeStripe(
+  stage: string,
+  input: NonNullable<EnvironmentSettingsInput["stripe"]>,
+  ctx: { profile?: string; region?: string },
+): Promise<StripeWriteView> {
+  const write: StripeWriteView = {
+    secretKeyWritten: false,
+    webhookSigningSecretWritten: false,
+    publishableKeyWritten: false,
+  };
+
+  if (input.secretKey) {
+    await writeSecret(
+      stripeSecretName(stage),
+      input.secretKey,
+      `Stripe API key for the ${stage} environment`,
+      ctx,
+    );
+    write.secretKeyWritten = true;
+  }
+
+  if (input.webhookSigningSecret) {
+    await writeSecret(
+      stripeWebhookSecretName(stage),
+      input.webhookSigningSecret,
+      `Stripe webhook signing secret for the ${stage} environment`,
+      ctx,
+    );
+    write.webhookSigningSecretWritten = true;
+  }
+
+  if (input.publishableKey !== undefined) {
+    const name = stripePublishableKeyParam(stage);
+    const value = input.publishableKey.trim();
+    if (value) {
+      await awsJson(
+        [
+          "ssm",
+          "put-parameter",
+          "--name",
+          name,
+          "--value",
+          value,
+          // A plain String: this value is served to browsers, and a SecureString
+          // here would make every frontend read a decryption to show a page.
+          "--type",
+          "String",
+          "--overwrite",
+        ],
+        ctx,
+      );
+      write.publishableKeyWritten = true;
+    } else {
+      // SSM refuses an empty value, so "cleared" is the parameter not being
+      // there — which is also the state a deployment that has never been
+      // configured is in, and the one the checklist reports as missing.
+      await awsJson(["ssm", "delete-parameter", "--name", name], { ...ctx, optional: true });
+    }
+  }
+
+  return write;
 }
 
 /**
@@ -332,22 +593,46 @@ async function keyNote(
 }
 
 /**
- * Create the secret, or replace its value.
+ * The Google client secret, written on the same terms as the Stripe ones.
  *
- * `create-secret` and `put-secret-value` rather than `put-secret-value` alone,
- * because the first save for an environment has nothing to put to. Not
- * `update-secret`, which is for metadata and would leave a fresh secret with no
- * value at all — and a secret with no value is one CloudFormation resolves to
- * an empty string, which Google then rejects at the first sign-in rather than at
- * the deploy.
+ * The user pool's identity provider is built from it at deploy, so it has to be
+ * in Secrets Manager before the pool that reads it exists — which is why this is
+ * named rather than being one more call in `saveSettings`.
  */
 async function writeGoogleSecret(
   stage: string,
   value: string,
   ctx: { profile?: string; region?: string },
 ): Promise<void> {
-  const name = googleClientSecretName(stage);
-  const exists = await googleSecretStatus(stage, ctx);
+  await writeSecret(
+    googleClientSecretName(stage),
+    value,
+    `Google OAuth client secret for the ${stage} environment`,
+    ctx,
+  );
+}
+
+/**
+ * Create a secret, or replace its value.
+ *
+ * `create-secret` and `put-secret-value` rather than `put-secret-value` alone,
+ * because the first save for an environment has nothing to put to. Not
+ * `update-secret`, which is for metadata and would leave a fresh secret with no
+ * value at all — and a secret with no value is one CloudFormation resolves to an
+ * empty string, which the provider then rejects at the first sign-in rather than
+ * at the deploy.
+ *
+ * One function for all three credentials here — the Google client secret and the
+ * two Stripe ones — because the operation is the same and the differences between
+ * them are in the *names* and their descriptions, which the callers supply.
+ */
+async function writeSecret(
+  name: string,
+  value: string,
+  description: string,
+  ctx: { profile?: string; region?: string },
+): Promise<void> {
+  const exists = await secretStored(name, ctx);
 
   const argv = exists
     ? ["secretsmanager", "put-secret-value", "--secret-id", name, "--secret-string", value]
@@ -357,7 +642,7 @@ async function writeGoogleSecret(
         "--name",
         name,
         "--description",
-        `Google OAuth client secret for the ${stage} environment`,
+        description,
         "--secret-string",
         value,
       ];

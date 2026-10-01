@@ -628,7 +628,7 @@ The script stores the key material in SSM Parameter Store:
 - `/play/cloudfront/private-key` (SecureString) — base64 PKCS#8 private key
 - `/play/cloudfront/public-key` (String) — PEM public key (`BEGIN/END PUBLIC KEY`)
 
-Then deploy — four stacks, and `cdk` takes the profile from the environment
+Then deploy — five stacks, and `cdk` takes the profile from the environment
 rather than from a flag (see [AWS profile](#aws-profile)):
 
 ```bash
@@ -636,9 +636,11 @@ npm run diff     # what would change, before it does
 npm run deploy   # = cdk deploy --all, against $AWS_PROFILE
 ```
 
-Three of the four stacks create almost nothing: the tables, the bucket, the
+Three of the five stacks create almost nothing: the tables, the bucket, the
 distribution and the user pool already exist and are **imported**, so a deploy
-will not change or delete them. Read
+will not change or delete them. The other two create what they hold — and the
+payment stack's tables are the exception to the import above, because a table the
+legacy backend never had is a table nothing can import. Read
 [infra/README.md](infra/README.md) for the map, and
 [docs/migration.md](docs/migration.md) for what that means in practice — in
 short, a few operations (the pool's callback URLs, its pre sign-up trigger, the

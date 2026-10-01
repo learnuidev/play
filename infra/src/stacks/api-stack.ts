@@ -24,6 +24,7 @@ import { INFRA_ROOT } from '../paths';
 import type { FunctionSpec } from '../types';
 import { offlineFunctions, planGroups } from './api-groups';
 import { ApiRoutesStack } from './api-routes-stack';
+import { serviceEnvironment } from './environment';
 
 /**
  * What the API needs from the media stack, and nothing else.
@@ -200,7 +201,7 @@ export class PlayApiStack extends Stack {
       },
     });
 
-    const environment = this.sharedEnvironment(config, tables, videosBucket, media);
+    const environment = serviceEnvironment(config, tables, media);
 
     // The functions with no HTTP route: one S3 notification and two EventBridge
     // rules. They live here rather than in a group because they are not routes,
@@ -433,49 +434,11 @@ export class PlayApiStack extends Stack {
   }
 
   /**
-   * The environment every function shares.
+   * One route's function, or one event-driven function.
    *
-   * It is a **budget**, not a convenience: Lambda caps a function's environment
-   * at 4 KB, and because every function gets the same map, one addition spends it
-   * collectively. That is why the CloudFront private key — 2.3 KB of a 4 KB limit
-   * — is a *parameter name* here rather than the key itself, and why a large or
-   * secret value belongs in Parameter Store with only its name in this map.
-   *
-   * The table names are read from the table objects rather than from the config
-   * file, so an imported table and a created one are the same code path.
+   * The environment it is handed comes from `serviceEnvironment`, which is a
+   * budget as much as a map — see that function for what may go in it.
    */
-  private sharedEnvironment(
-    config: PlayConfig,
-    tables: Record<string, dynamodb.ITable>,
-    videosBucket: s3.IBucket,
-    media: MediaRefs,
-  ): Record<string, string> {
-    const tableEnvironment: Record<string, string> = {};
-    for (const spec of TABLES) {
-      tableEnvironment[spec.envVar] = tables[spec.id].tableName;
-    }
-
-    return {
-      ...tableEnvironment,
-      VIDEOS_BUCKET: videosBucket.bucketName,
-      CLOUDFRONT_DOMAIN: media.distributionDomain,
-      // The *name* of the parameter holding the key id rather than the id: the
-      // id is CloudFront-assigned and changes when the key is rotated, and a
-      // value that changes is a value that cannot cross stacks without dragging a
-      // CloudFormation export behind it. See `MediaRefs`.
-      CLOUDFRONT_KEY_PAIR_ID_PARAM: config.cloudFrontPublicKeyIdParam,
-      CLOUDFRONT_PRIVATE_KEY_PARAM: config.cloudFrontPrivateKeyParam,
-      MEDIACONVERT_ROLE_ARN: media.mediaConvertRoleArn,
-      TRANSCRIBE_ROLE_ARN: media.transcribeRoleArn,
-      SUBTITLE_LANGUAGE: 'en-US',
-      STREAM_URL_TTL_SECONDS: '900',
-      MAIL_FROM_ADDRESS: config.mail.fromAddress,
-      APP_BASE_URL: config.mail.appBaseUrl,
-      MARKETPLACE_BASE_URL: config.mail.marketplaceBaseUrl,
-      AWS_SDK_JS_NODE_VERSION_SUPPORT_WARNING_DISABLED: 'true',
-    };
-  }
-
   private createFunction(
     config: PlayConfig,
     spec: FunctionSpec,

@@ -6,7 +6,7 @@ import type { EnvironmentView, RunAction, RunSummary } from "@/lib/types";
  *
  * There is **one** backend: the CDK app in `infra/`. So "a backend" is only ever
  * *that* app in a stage, and a row in the list is a stage rather than a program.
- * Everything a row says is therefore a fact about four CloudFormation stacks —
+ * Everything a row says is therefore a fact about five CloudFormation stacks —
  * what they are called, which of them is complete, and whether this stage creates
  * its own data or imports somebody else's.
  *
@@ -15,6 +15,20 @@ import type { EnvironmentView, RunAction, RunSummary } from "@/lib/types";
  * in. Both are imported from a server component and a client one, so both are
  * JSON and words, with nothing that touches `fs` or a process.
  */
+
+/**
+ * The root stacks, in the order a deploy creates them.
+ *
+ * **The words only.** What each one *holds* is `ROOT_STACKS` in `server/aws.ts`,
+ * which takes its suffixes from this list rather than repeating them: the
+ * environment card draws a tile per word from a client component, and a stack
+ * added to the CDK app has to appear both there and in the plan's own
+ * post-condition — which is exactly the kind of thing that gets done twice and
+ * once.
+ */
+export const STACK_WORDS = ["Data", "Media", "Auth", "Payment", "Api"] as const;
+
+export type StackWord = (typeof STACK_WORDS)[number];
 
 /** Where one environment's backend lives. The list, the picker and every link agree. */
 export function backendPath(stage: string): string {

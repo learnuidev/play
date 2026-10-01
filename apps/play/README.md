@@ -65,7 +65,7 @@ Deployments tab is still where the checklist is read before a first deploy.
 
 There is one backend: the CDK app in `infra/`. The plural is about *where it has
 been deployed*, so a row is a stage, and everything a row says is a fact about
-four CloudFormation stacks — which are complete, whether this environment creates
+five CloudFormation stacks — which are complete, whether this environment creates
 its own tables, bucket and pool or imports another stage's, and where its API is.
 Every environment exists whether or not anything has been deployed to it, so the
 rows come from the repository's own list and the stacks only fill each one in: a
@@ -123,7 +123,7 @@ race between two tabs, is printed in the row rather than swallowed.
 ### Checklist — what a person has to supply
 
 The tab a new environment starts on, and the only one that is a *question* rather
-than a report. Four rows, each a requirement with a tick or a sentence about what
+than a report. Five rows, each a requirement with a tick or a sentence about what
 is missing:
 
 | Row | Met when |
@@ -131,6 +131,7 @@ is missing:
 | The config file | `infra/config/play-<stage>.json` exists — saving the credentials below is what writes a new environment's |
 | Google sign-in | there is a client id, a secret in Secrets Manager, and callback and logout URLs |
 | Mail and origins | the invitation sender and the two app base URLs |
+| Payments | there is a Stripe API key and a webhook signing secret in Secrets Manager, a publishable key in SSM, and an endpoint to point Stripe at. **The one row that does not hold up a deploy** — see below |
 | The CloudFront signing key | both halves of *this environment's* pair are in SSM, at `/play/<stage>/cloudfront/*` — the one row with a button, because it is generated rather than typed |
 
 The form below the rows is the credentials form, and it is open by default
@@ -234,7 +235,7 @@ keeps the buffer.
 
 `cdk deploy` is one command, and the checklist around it is the point. A stage
 that has never been deployed needs a config file, a bootstrapped account, a
-bundled `dist/`, a handed-over S3 notification and four stacks — in that order,
+bundled `dist/`, a handed-over S3 notification and five stacks — in that order,
 some of which fail in ways that name nothing anybody can act on. Two of them are
 idempotent scripts it is easy to run twice and hard to know you needed to run
 once.
@@ -258,8 +259,8 @@ first discipline: *Deleting an environment*, below, is that plan.
 | 7 | The templates synthesize | never — this one validates |
 | 8 | The videos bucket has one owner | the bucket is this environment's, **or** the S3 handover finds nothing overlapping |
 | 9 | The Google client secret can be read at deploy | the pool is imported, **or** the secret is already in Secrets Manager |
-| 10 | The four stacks deploy | never — `cdk deploy` is run, and reports "nothing to change" |
-| 11 | Every stack is complete, with its outputs | all four root stacks are settled and carry `ApiUrl`, the pool and its client |
+| 10 | The five stacks deploy | never — `cdk deploy` is run, and reports "nothing to change" |
+| 11 | Every stack is complete, with its outputs | every root stack is settled and carries `ApiUrl`, the pool and its client — the list is `ROOT_STACKS` in `src/server/aws.ts`, so a stack added to the CDK app and not to it is a stack the console would report an environment complete without |
 | 12 | The three apps point at it | every `.env.local` already reads this stage's `ApiUrl` |
 | 13 | The API answers | `GET /catalog/courses` returns 200 |
 | 14 | The pool's pre sign-up trigger points here | the pool is this environment's, **or** it already calls `play-<stage>-link-federated-user` |
@@ -455,7 +456,7 @@ already exists:
 
 That second path is the point of the whole thing:
 
-> **A new environment creates everything.** Its own 27 tables, its own videos
+> **A new environment creates everything.** Its own 28 tables, its own videos
 > bucket and CloudFront distribution, its own Cognito user pool — all empty, all
 > retained if the stack is deleted. It imports
 > nothing, so it cannot read or write another environment's data.
@@ -642,6 +643,49 @@ The deploy page raises the same thing earlier: an environment that needs
 credentials and has none gets a callout above the checklist pointing here, so the
 first thing you read is a sentence rather than a failed step.
 
+### Taking money: the Stripe card
+
+A course can be free or paid, and a **paid** one is a Stripe checkout. The
+conversation that sets that up has the same shape as Google's, and the console
+gives it the same treatment: a "What Stripe has to be told" card, above the
+credentials form, holding the two things Stripe needs and one list.
+
+| What | Where it comes from |
+| --- | --- |
+| The **endpoint URL** | `PlayPaymentStack-<stage>`'s function URL, published as `StripeWebhookUrl`. Read from the stack, never derived — a function URL carries a random subdomain assigned when the function is created |
+| The **events to subscribe** | The five the handler acts on. Anything else is answered with a 200 saying it was ignored, so an extra subscription is harmless; subscribing to none of these is a payment that never becomes an enrolment |
+| The **signing secret** to paste back | Shown by Stripe once, when the endpoint is created — which is why the card is *above* the form rather than beside it |
+
+**Three credentials, and only two of them are secrets.** The API key (`sk_…`) and
+the endpoint's signing secret (`whsec_…`) go to Secrets Manager, one secret each,
+and are write-only in both directions — the form reports whether each is stored,
+never what it is. The publishable key (`pk_…`) is not a secret at all: it is what
+a browser loads Stripe.js with, so it goes to SSM as a plain `String` and the form
+shows it. All three are prefixed-checked before anything is written, because the
+three look alike in a dashboard and pasting the secret key into the publishable
+field is a mistake that would reach a browser.
+
+**Rotation is two steps, and the card says so.** Saving a new key writes it to
+Secrets Manager, and a webhook container that is already warm keeps the old one
+until it is recycled — so the second step is a deploy of the payment stack, or
+waiting. A payment taken in between fails verification rather than being accepted,
+which is the right way round.
+
+**This row does not hold up a deploy**, and its note says so. The payment stack
+creates a webhook and nothing else, no deploy reads a credential, and a stage with
+no Stripe values deploys perfectly well — what a credential buys is a payment that
+can be recorded. It is on the checklist anyway, because a marketplace that cannot
+take money is exactly what this tab exists to catch, and the moment to say it is
+before somebody publishes a course with a price.
+
+What a buyer's payment *does* is on the backend side of the line:
+`services/api/src/functions/payments/stripe-webhook.ts` verifies the signature
+against the endpoint's secret, records the payment keyed by the checkout session,
+and enrols the buyer through the same `enrollInSpace` the register button calls.
+`functions/spaces/enroll.ts` refuses a course with a price, so the webhook is the
+only way in — and the membership is the record of payment, which is why there is
+no second lookup that could disagree with it.
+
 ## Where things are
 
 ```
@@ -650,7 +694,8 @@ src/server/
   exec.ts          running a process and turning its output into lines
   aws.ts           the AWS CLI as a function or two — every call is a read
   environments.ts  infra/config/play-<stage>.json, and the stack outputs an app needs
-  settings.ts      what a person supplies: the config file, and the secret
+  settings.ts      what a person supplies: the config file, and the credentials —
+                   the Google client secret and the stage's Stripe values
   plan.ts          THE BACKEND PLANS, one per direction: the fourteen steps a
                    deploy walks, and the six a delete walks
   signing-key.ts   the CloudFront key pair: is it in SSM, and putting it there
@@ -716,20 +761,21 @@ src/components/
                    the card an environment is deleted from, and the hook both
                    kinds of run are read through
   apps/            the service hook the frontend pages are built on
-  settings/        the credentials form, and the hook that loads it
+  settings/        the credentials form, the two cards the integrations have to
+                   be told about (Google and Stripe), and the hook that loads it
   ui/              button, card, chip, field, tabs, picker — the design system
 ```
 
 ## Deleting an environment
 
 The Deployments tab is also where an environment is deleted from, at the bottom,
-below everything that is about the run you came for. It destroys the four
+below everything that is about the run you came for. It destroys the five
 CloudFormation stacks **and** removes `infra/config/play-<stage>.json`, which is
 the file that makes the stage an environment in this console at all — so the row
 goes with it. The deletion is a tracked file, so it is yours to commit.
 
 **The data is a tick.** Every stateful resource here is `RemovalPolicy.RETAIN`, so
-`cdk destroy` on its own stops at the stacks and leaves 27 tables, both buckets,
+`cdk destroy` on its own stops at the stacks and leaves 28 tables, both buckets,
 the distribution, the user pool and every log group in AWS with nobody managing
 them. Those orphans are not inert: they are what stops a redeploy of the same name
 at early validation, and they are what an environment nobody can deploy to is
@@ -755,7 +801,7 @@ deleted-environment card says which of the two happened.
 | Its key group and public key | read off the distribution that trusted them |
 | The user pool, with every account in it | `existing.userPoolId`, the auth stack's output, or the Hosted UI domain `play-<stage>-<account>` |
 | Every `/aws/lambda/play-<stage>-*` log group | the account, by name rule |
-| The signing key pair, the key's id, and the Google client secret | `signingKeyParams`, the config's parameter names, Secrets Manager |
+| The signing key pair, the key's id, and the credentials the Checklist writes | `signingKeyParams`, the config's parameter names, and Secrets Manager — the Google client secret plus the stage's Stripe API key and webhook signing secret |
 
 Two things are **reported rather than deleted** when the tick is set, and both are
 in the run's own last step: a **shared** signing key pair — what a stage that
@@ -774,13 +820,13 @@ same reason. The steps are:
 | 1 | This machine can act on the account | both | The deploy plan's own first step, shared — a delete in the wrong account deletes somebody else's environment |
 | 2 | Nothing else stands on what this environment stands on | ticked | **Refuses**, before anything is destroyed, when another stage's config names the same table, bucket, distribution or pool: that resource is not this environment's to delete, and taking it would be another stage's data or sign-up silently disappearing |
 | 2 | No shared pool is calling into this environment | unticked | **Refuses** when a shared pool's pre sign-up trigger calls this stage's `link-federated-user`: the stacks go and the pool stays, so Cognito would go on invoking a function that no longer exists and people could not sign up. With the tick this question disappears — the pool goes too — which is why the two plans guard differently |
-| 3 | The four stacks are destroyed | both | `cdk destroy --all --force` — `--force` because every process here has stdin on `ignore`, so CDK's confirmation would read an end-of-file. Skipped, with the reason, when there is nothing deployed. This is also where the names only a stack knows are read: `VideosBucketName`, `CloudFrontDomain` and the pool id, out of the outputs, before the stacks that publish them go |
+| 3 | The five stacks are destroyed | both | `cdk destroy --all --force` — `--force` because every process here has stdin on `ignore`, so CDK's confirmation would read an end-of-file. Skipped, with the reason, when there is nothing deployed. This is also where the names only a stack knows are read: `VideosBucketName`, `CloudFrontDomain` and the pool id, out of the outputs, before the stacks that publish them go |
 | 4 | No stack of this environment is left | both | The post-condition. A stack in `DELETE_FAILED` stops the run **before** the config file goes, because that is the case where the file is still worth having |
 | 5 | The tables are gone | ticked | Every table of this environment, deleted and waited for — the CLI's own waiter, so the step ends when the table is gone rather than when the request was accepted |
 | 6 | The media is gone | ticked | The distribution disabled, waited for and deleted; then its key group and public key; then both buckets, emptied and deleted. The order is forced: CloudFront will not delete an enabled distribution, and will not delete a key a key group still trusts |
 | 7 | The user pool is gone, with every account in it | ticked | Its own step because it is the one deletion that is about people: a redeploy of the same name makes a **new**, empty pool and everybody signs up again |
-| 8 | The log groups are gone | ticked | One per function, a hundred and fifty-odd of them, and the first thing that stops a redeploy of the same name |
-| 9 | This environment's signing key and secrets are gone | ticked | The SSM key pair, the key-id parameter and the Google client secret — the leftovers the Checklist would otherwise have to create again |
+| 8 | The log groups are gone | ticked | One per function, a hundred and fifty-odd of them — the webhook's included — and the first thing that stops a redeploy of the same name |
+| 9 | This environment's signing key and secrets are gone | ticked | The SSM key pair, the key-id parameter, and the three credentials the Checklist writes — the Google client secret and the stage's Stripe API key and webhook signing secret. The leftovers the Checklist would otherwise have to create again, and the reason a stage that comes back comes back from the Checklist rather than from what the last one left behind |
 | 10 | What is still pointed here | ticked | **Reports instead of applying**: what the delete could not take with it, and the three apps' `.env.local` files compared against the `ApiUrl` captured before the stack publishing it went away |
 | 10 | What is left behind, and what a redeploy of this name will hit | unticked | **Reports instead of applying** too, and reads the account rather than predicting it: how many tables, buckets and log groups are still there by name, the pool with how many accounts are in it, the distribution if the environment imports one — and what each of them does to a redeploy of the same name |
 | 11 | The environment's config file is removed | both | The last thing, and only once the stacks — and, when it was asked for, the data — are gone |
@@ -819,10 +865,10 @@ than from whatever was left of the last one.
   A *different* environment is a different set of stacks and deploys alongside it
   — see *Two environments at once* above for what that leaves shared.
 - **Write to AWS outside the plan.** Every read on the state endpoint is a
-  `describe`, a `list` or a `get-parameters`. The writes are three, all behind a
-  button and none of them a deploy: the credential save (the config file, and the
-  secret into Secrets Manager), the signing key when it is missing, and nothing
-  else. The plan's transcript shows the `cdk` and `aws` invocations it amounts
+  `describe`, a `list` or a `get-parameters`. The writes are four, all behind a
+  button and none of them a deploy: the credential save (the config file, the
+  Google client secret, and the stage's Stripe key, signing secret and publishable
+  key), the signing key when it is missing, and nothing else. The plan's transcript shows the `cdk` and `aws` invocations it amounts
   to.
 - **Survive its own dev server restarting.** The run and the service registry
   live on `globalThis`, so a hot reload keeps them. Restarting the console

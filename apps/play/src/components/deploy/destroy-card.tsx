@@ -12,7 +12,7 @@ import type { EnvironmentView } from "@/lib/types";
  * Deleting an environment, and why it is the one control that asks for typing.
  *
  * Everything else in this console is reversible by pressing another button. This
- * is not: it destroys the four CloudFormation stacks and removes
+ * is not: it destroys the five CloudFormation stacks and removes
  * `infra/config/play-<stage>.json`, which is what takes the environment out of
  * this console — and, if the tick is set, it deletes the data behind them: the
  * tables, both buckets and the video in them, the distribution, the user pool
@@ -102,7 +102,7 @@ export function DestroyCard({
     <Card className="border-destructive/25">
       <CardHeading
         title="Delete this environment"
-        hint={`Destroys the four CloudFormation stacks — PlayDataStack-${stage}, PlayMediaStack-${stage}, PlayAuthStack-${stage} and PlayApiStack-${stage} — and removes infra/config/play-${stage}.json, which is what takes ${stage} out of this console. What happens to the data behind them is the tick below.`}
+        hint={`Destroys the five CloudFormation stacks — PlayDataStack-${stage}, PlayMediaStack-${stage}, PlayAuthStack-${stage}, PlayPaymentStack-${stage} and PlayApiStack-${stage} — and removes infra/config/play-${stage}.json, which is what takes ${stage} out of this console. What happens to the data behind them is the tick below.`}
         action={
           open ? (
             <IconButton onClick={close} title="Cancel" aria-label="Cancel">

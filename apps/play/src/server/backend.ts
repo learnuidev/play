@@ -1,7 +1,7 @@
 import type { BackendEnvView, DeploymentEventView, DeploymentHistoryView, EnvRow } from "@/lib/types";
-import { awsJson } from "./aws";
+import { awsJson, ROOT_STACKS } from "./aws";
 import { readConfig, stageOutputs } from "./environments";
-import { googleSecretStatus, readSettings, settingsContext } from "./settings";
+import { googleSecretStatus, readSettings, settingsContext, stripeState } from "./settings";
 
 /**
  * A backend environment, described the two ways that matter: what you put in,
@@ -35,6 +35,9 @@ export const CONSUMERS: Record<string, string[]> = {
   GoogleAuthEnabled: ["studio", "marketplace", "demo"],
   CloudFrontDomain: ["videos"],
   VideosBucketName: ["process-video"],
+  // Stripe, not a frontend: nothing in this repository reads the URL — the thing
+  // that calls it is Stripe's own service, and a person is what points it there.
+  StripeWebhookUrl: ["Stripe"],
 };
 
 /** The five values `docs/deploy.md` calls "the backend variables". */
@@ -64,13 +67,14 @@ export const OUTPUT_LABEL: Record<string, string> = {
   CloudFrontDomain: "CloudFront distribution",
   VideosBucketName: "Videos bucket",
   LinkFederatedUserFunctionArn: "Pre sign-up trigger",
+  StripeWebhookUrl: "Stripe webhook endpoint",
 };
 
 /**
  * What this environment reads, and what it produces.
  *
- * The inputs come from the config file and Secrets Manager; the outputs from the
- * two stacks that publish them. A missing output is a stage that has not
+ * The inputs come from the config file, Secrets Manager and Parameter Store; the
+ * outputs from the stacks that publish them. A missing output is a stage that has not
  * deployed, which is reported as a row with no value rather than as an absence —
  * the absence is the useful information.
  */
@@ -82,6 +86,19 @@ export async function backendEnv(
   const settings = readSettings(stage);
   const outputs = await stageOutputs(stage, ctx).catch(() => null);
   const secretSet = await googleSecretStatus(stage, ctx).catch(() => false);
+  // The Stripe half of the same question, and the same four reads the Checklist
+  // tab makes: a credential's *state* is what this table reports, never its
+  // value.
+  const stripe = await stripeState(stage, ctx).catch(() => ({
+    secretName: "",
+    secretKeySet: false,
+    webhookSecretName: "",
+    webhookSigningSecretSet: false,
+    publishableKeyParam: "",
+    publishableKey: null,
+    webhookUrl: null,
+    events: [],
+  }));
 
   const ownership = settings?.ownership ?? { tables: false, media: false, auth: false };
   const createsPool = ownership.auth;
@@ -145,6 +162,36 @@ export async function backendEnv(
       source: "infra/config — the *name* of the SSM parameter, never the key",
       usedBy: ["signed video URLs"],
     },
+    {
+      key: "Stripe API key",
+      value: null,
+      source: stripe.secretKeySet
+        ? `Secrets Manager — ${stripe.secretName}`
+        : "not set — see the Checklist tab",
+      secret: true,
+      editable: true,
+      // The two things a payment is: a session created against Stripe, and an
+      // event verified on the way back. Nothing else in this deployment spends
+      // money, which is the point of giving the webhook a role of its own.
+      usedBy: ["checkout", "the payment webhook"],
+    },
+    {
+      key: "Stripe webhook signing secret",
+      value: null,
+      source: stripe.webhookSigningSecretSet
+        ? `Secrets Manager — ${stripe.webhookSecretName}`
+        : "not set — see the Checklist tab",
+      secret: true,
+      editable: true,
+      usedBy: ["the payment webhook"],
+    },
+    {
+      key: "Stripe publishable key",
+      value: stripe.publishableKey,
+      source: `SSM — ${stripe.publishableKeyParam}. Not a secret: it is handed to the browser`,
+      editable: true,
+      usedBy: ["marketplace"],
+    },
   ];
 
   const merged = await stackOutputs(stage, ctx);
@@ -168,6 +215,9 @@ const OUTPUT_ORDER = [
   "CloudFrontDomain",
   "VideosBucketName",
   "LinkFederatedUserFunctionArn",
+  // The one thing the payment stack publishes that a person has to act on: it is
+  // the URL Stripe is pointed at, and it exists only once that stack is deployed.
+  "StripeWebhookUrl",
 ];
 
 interface RawStack {
@@ -175,7 +225,7 @@ interface RawStack {
 }
 
 /**
- * Every output of **this stage's** four root stacks.
+ * Every output of **this stage's** root stacks.
  *
  * Four named reads rather than one unfiltered `describe-stacks`: that call
  * without a `--stack-name` returns every stack in the account, so `ApiUrl` from
@@ -187,7 +237,7 @@ export async function stackOutputs(
   stage: string,
   ctx: { profile?: string; region?: string } = {},
 ): Promise<Record<string, string>> {
-  const names = ["Data", "Media", "Auth", "Api"].map((suffix) => `Play${suffix}Stack-${stage}`);
+  const names = ROOT_STACKS.map(({ suffix }) => `Play${suffix}Stack-${stage}`);
 
   const stacks = await Promise.all(
     names.map((name) =>
@@ -234,7 +284,7 @@ export async function deploymentHistory(
   ctx: { profile?: string; region?: string } = {},
   limit = 40,
 ): Promise<DeploymentHistoryView> {
-  const names = ["Data", "Media", "Auth", "Api"].map((suffix) => `Play${suffix}Stack-${stage}`);
+  const names = ROOT_STACKS.map(({ suffix }) => `Play${suffix}Stack-${stage}`);
 
   const results = await Promise.all(
     names.map((stackName) =>
@@ -279,7 +329,7 @@ export async function deploymentHistory(
     stage,
     events: events.slice(0, limit),
     note: missing
-      ? `${missing} of the four root stacks do not exist in this environment yet.`
+      ? `${missing} of the root stacks do not exist in this environment yet.`
       : null,
   };
 }

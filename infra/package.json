@@ -15,6 +15,7 @@
     "deploy:data": "npm run bundle && cdk deploy PlayDataStack-dev",
     "deploy:media": "npm run bundle && cdk deploy PlayMediaStack-dev",
     "deploy:auth": "npm run bundle && cdk deploy PlayAuthStack-dev",
+    "deploy:payment": "npm run bundle && cdk deploy PlayPaymentStack-dev",
     "deploy:api": "npm run bundle && cdk deploy PlayApiStack-dev",
     "destroy": "cdk destroy --all",
     "bootstrap": "cdk bootstrap",

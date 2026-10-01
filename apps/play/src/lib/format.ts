@@ -52,8 +52,8 @@ export function apiHost(url: string | null | undefined): string {
 /**
  * `PlayApiStack-dev` → `Api`.
  *
- * The four root stacks differ by one word and every chip beside them is short,
- * so the word is what the chip says and the full name is in its title.
+ * The root stacks differ by one word and every chip beside them is short, so the
+ * word is what the chip says and the full name is in its title.
  */
 export function stackWord(name: string): string {
   const match = /^Play(\w+?)Stack-/.exec(name);

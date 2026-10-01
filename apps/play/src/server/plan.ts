@@ -26,7 +26,12 @@ import {
   type StageConfig,
 } from "./environments";
 import { cdkBin, repoPath } from "./repo";
-import { googleClientSecretName, googleSecretStatus } from "./settings";
+import {
+  googleClientSecretName,
+  googleSecretStatus,
+  stripeSecretName,
+  stripeWebhookSecretName,
+} from "./settings";
 import { ensureSigningKey, signingKeyParams, signingKeyState } from "./signing-key";
 import { display, lastMeaningfulLines, run, type PipedChild } from "./exec";
 
@@ -303,8 +308,8 @@ function refusedExportName(output: string): string | undefined {
  *
  * Asked of CloudFormation rather than parsed out of the failure, because that
  * sentence truncates: past a couple of readers it says "(and 2 more)", and
- * `list-imports` answers with every one of them. Filtered to this stage's four
- * root stacks, because the rest of the answer is the nested stacks those roots
+ * `list-imports` answers with every one of them. Filtered to this stage's root
+ * stacks, because the rest of the answer is the nested stacks those roots
  * create — and deploying a root deploys the nested stacks inside it.
  */
 async function exportReaders(exportName: string, ctx: StepContext): Promise<string[]> {
@@ -801,7 +806,7 @@ export function buildPlan(stage: string): PlanStep[] {
     id: "synth",
     title: "The templates synthesize",
     detail:
-      "`cdk synth` builds all four stacks locally, resolves every route's path, and refuses if a path root is unclaimed or claimed twice — each API group builds its own slice of the gateway's resource tree, and two stacks creating `me` is two resources with one path part.",
+      "`cdk synth` builds every stack locally, resolves every route's path, and refuses if a path root is unclaimed or claimed twice — each API group builds its own slice of the gateway's resource tree, and two stacks creating `me` is two resources with one path part.",
     timeoutMs: 15 * 60_000,
     apply: async (ctx) => {
       // No `--all`: `synth` is not one of the commands that takes it (it
@@ -974,8 +979,7 @@ export function buildPlan(stage: string): PlanStep[] {
       const found = await googleSecretStatus(ctx.stage, {
         profile: ctx.profile,
         region: ctx.region,
-      });
-      return found
+      });      return found
         ? { satisfied: true, note: `${name} holds this environment's client secret` }
         : {
             satisfied: false,
@@ -1027,9 +1031,9 @@ export function buildPlan(stage: string): PlanStep[] {
    */
   const deploy: PlanStep = {
     id: "deploy",
-    title: "The four stacks deploy",
+    title: "The five stacks deploy",
     detail:
-      "Data, media, auth and the API, then the four nested stacks the routes are divided into. Nothing here holds data: the tables, the bucket, the distribution and the pool are imported, so a deploy cannot change or delete one.",
+      "Data, media, auth, payments and the API, then the four nested stacks the routes are divided into. Nothing here holds data: the tables, the bucket, the distribution and the pool are imported, so a deploy cannot change or delete one. The payment stack creates a webhook and nothing else — the Stripe credential it verifies with is written on the Checklist tab, not by a deploy.",
     timeoutMs: 60 * 60_000,
     apply: async (ctx) => {
       /** `<stack>: 'changed' | 'unchanged'`, as CDK reports each one. */
@@ -1137,17 +1141,21 @@ export function buildPlan(stage: string): PlanStep[] {
     id: "verify",
     title: "Every stack is complete, with its outputs",
     detail:
-      "The four root stacks settle and carry the outputs an app needs — the API URL from the API stack, the pool, its client and the Hosted UI domain from the auth stack. `UPDATE_ROLLBACK_COMPLETE` also ends in `_COMPLETE`; it means the opposite.",
+      "The root stacks settle and carry the outputs an app needs — the API URL from the API stack, the pool, its client and the Hosted UI domain from the auth stack, and the webhook URL Stripe is pointed at from the payment stack. `UPDATE_ROLLBACK_COMPLETE` also ends in `_COMPLETE`; it means the opposite.",
     satisfiedLabel: "Verified",
     check: async (ctx) => {
-      const details = await describeStacks(rootStackNames(ctx.stage), {
+      // Counted from `ROOT_STACKS` rather than written down here: a stack added
+      // to the CDK app is a stack this step has to wait for, and a number in a
+      // sentence is the one thing that cannot be kept in step with the app.
+      const expected = rootStackNames(ctx.stage);
+      const details = await describeStacks(expected, {
         profile: ctx.profile,
         region: ctx.region,
       });
-      if (details.length < 4) {
+      if (details.length < expected.length) {
         return {
           satisfied: false,
-          note: `${details.length} of 4 root stacks exist — the deploy has not completed`,
+          note: `${details.length} of ${expected.length} root stacks exist — the deploy has not completed`,
         };
       }
       const unhealthy = details.filter((detail) => !detail.healthy);
@@ -1187,7 +1195,10 @@ export function buildPlan(stage: string): PlanStep[] {
         region: ctx.region,
       });
 
-      return { satisfied: true, note: `4 root stacks complete · API ${merged.ApiUrl}` };
+      return {
+        satisfied: true,
+        note: `${details.length} root stacks complete · API ${merged.ApiUrl}`,
+      };
     },
     apply: async (ctx) => {
       const details = await describeStacks(rootStackNames(ctx.stage), {
@@ -1546,13 +1557,14 @@ export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): P
    */
   const destroy: PlanStep = {
     id: "destroy",
-    title: "The four stacks are destroyed",
+    title: "The five stacks are destroyed",
     detail:
-      "`cdk destroy --all --context stage=<stage>`: the API, its 158 functions, the gateway, the roles and the nested stacks that hold the routes. **The data is not part of this**: the 27 tables, both buckets, the user pool and every log group are `RemovalPolicy.RETAIN`, so CloudFormation stops managing them and leaves them where they are — the five steps after this one are what delete them. The distribution is the one resource that splits: a stage that **created** its own has it in this stack, so it goes here (CloudFormation disables it and waits, which is most of this step's time), and a stage that **imported** one has no stack that owns it, so `media` is what deletes that one. What stops working, either way, is everything that talks to this environment's API, and the last step says what that is.",
+      "`cdk destroy --all --context stage=<stage>`: the API, its 158 functions, the gateway, the roles and the nested stacks that hold the routes, plus the payment stack's webhook. **The data is not part of this**: the 28 tables, both buckets, the user pool and every log group are `RemovalPolicy.RETAIN`, so CloudFormation stops managing them and leaves them where they are — the five steps after this one are what delete them. The distribution is the one resource that splits: a stage that **created** its own has it in this stack, so it goes here (CloudFormation disables it and waits, which is most of this step's time), and a stage that **imported** one has no stack that owns it, so `media` is what deletes that one. What stops working, either way, is everything that talks to this environment's API, and the last step says what that is.",
     satisfiedLabel: "Nothing to destroy",
     timeoutMs: 60 * 60_000,
     check: async (ctx) => {
-      const details = await describeStacks(rootStackNames(ctx.stage), {
+      const expected = rootStackNames(ctx.stage);
+      const details = await describeStacks(expected, {
         profile: ctx.profile,
         region: ctx.region,
       });
@@ -1586,7 +1598,7 @@ export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): P
 
       return {
         satisfied: false,
-        note: `${details.length} of 4 root stacks exist${merged.ApiUrl ? ` · API ${merged.ApiUrl}` : ""}`,
+        note: `${details.length} of ${expected.length} root stacks exist${merged.ApiUrl ? ` · API ${merged.ApiUrl}` : ""}`,
       };
     },
     apply: async (ctx) => {
@@ -1635,7 +1647,7 @@ export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): P
     id: "verify",
     title: "No stack of this environment is left",
     detail:
-      "The four root stacks are gone. A stack in `DELETE_FAILED` has mostly been deleted and is waiting for whatever blocked it, which is the state where the config file is still worth having: this step stops there rather than letting the environment be forgotten.",
+      "The root stacks are gone. A stack in `DELETE_FAILED` has mostly been deleted and is waiting for whatever blocked it, which is the state where the config file is still worth having: this step stops there rather than letting the environment be forgotten.",
     satisfiedLabel: "Gone",
     timeoutMs: 5 * 60_000,
     check: async (ctx) => {
@@ -1644,7 +1656,7 @@ export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): P
         region: ctx.region,
       });
       if (details.length === 0) {
-        return { satisfied: true, note: "all four root stacks are gone" };
+        return { satisfied: true, note: "every root stack is gone" };
       }
       return {
         satisfied: false,
@@ -1888,10 +1900,10 @@ export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): P
   };
 
   /**
-   * The key pair, the key's id, and the Google client secret.
+   * The key pair, the key's id, and the credentials the Checklist writes.
    *
    * These are the leftovers the Checklist would otherwise have to create again
-   * before a redeploy of the same name could work, and two of the three are
+   * before a redeploy of the same name could work, and the credentials are
    * *secrets* rather than data — which is why they go last, after everything that
    * holds actual content, and why the whole step is small enough to read.
    */
@@ -1899,7 +1911,7 @@ export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): P
     id: "secrets",
     title: "This environment's signing key and secrets are gone",
     detail:
-      "The CloudFront URL-signing key pair in SSM (`cloudFrontPrivateKeyParam` and `cloudFrontPublicKeyParam`, the private half a `SecureString`), the parameter the media stack publishes the key's id to, and the Google client secret in Secrets Manager. **A stage that imports its distribution is the exception**: its config names the *shared* `/play/cloudfront/*` pair — the one an older distribution was created against — and that pair is not this stage's to delete, so it is reported rather than removed. A new environment creates its own pair from the Checklist, which is what makes deleting these safe.",
+      "The CloudFront URL-signing key pair in SSM (`cloudFrontPrivateKeyParam` and `cloudFrontPublicKeyParam`, the private half a `SecureString`), the parameter the media stack publishes the key's id to, and the credentials in Secrets Manager the Checklist tab writes: the Google client secret, and the Stripe API key and webhook signing secret. **A stage that imports its distribution is the exception**: its config names the *shared* `/play/cloudfront/*` pair — the one an older distribution was created against — and that pair is not this stage's to delete, so it is reported rather than removed. A new environment creates its own pair from the Checklist, which is what makes deleting these safe.",
     satisfiedLabel: "Nothing left",
     timeoutMs: 5 * 60_000,
     check: async (ctx) => {
@@ -1910,8 +1922,8 @@ export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): P
       for (const name of shared) noteLeft(ctx, sharedKeyLine(name));
 
       const present = await parameterNames(ctx, mine);
-      const secret = await googleSecretExists(ctx);
-      const found = [...present, ...(secret ? [googleClientSecretName(ctx.stage)] : [])];
+      const secrets = await secretsPresent(ctx);
+      const found = [...present, ...secrets];
 
       if (found.length === 0) {
         return {
@@ -1941,28 +1953,34 @@ export function buildDestroyPlan(stage: string, options: DestroyOptions = {}): P
         notes.unshift(`${present.length} SSM parameter${present.length === 1 ? "" : "s"} deleted`);
       }
 
-      if (await googleSecretExists(ctx)) {
-        // Without recovery: the secret is configuration the Checklist writes
-        // again, and a delete that left it in a seven-day queue would be a name
-        // that exists and refuses to be created.
+      // Without recovery: each is configuration the Checklist writes again, and a
+      // delete that left it in a seven-day queue would be a name that exists and
+      // refuses to be created.
+      const secrets = await secretsPresent(ctx);
+      for (const name of secrets) {
         await awsRun(
           ctx,
-          [
-            "secretsmanager",
-            "delete-secret",
-            "--secret-id",
-            googleClientSecretName(ctx.stage),
-            "--force-delete-without-recovery",
-          ],
-          "aws secretsmanager delete-secret",
+          ["secretsmanager", "delete-secret", "--secret-id", name, "--force-delete-without-recovery"],
+          `aws secretsmanager delete-secret --secret-id ${name}`,
         );
-        notes.unshift("the Google client secret deleted");
+      }
+      if (secrets.length > 0) {
+        notes.unshift(
+          `${secrets.length} secret${secrets.length === 1 ? "" : "s"} deleted (${secrets.join(", ")})`,
+        );
       }
 
       if (notes.length === 0) return { status: "skipped", note: "there was nothing to delete" };
       return { note: notes.join(" · ") };
     },
   };
+
+  /** Which of this stage's credentials are actually there, in a fixed order. */
+  async function secretsPresent(ctx: StepContext): Promise<string[]> {
+    const names = stageSecrets(ctx.stage);
+    const found = await Promise.all(names.map((name) => secretExists(name, ctx)));
+    return names.filter((_, index) => found[index]);
+  }
 
   /**
    * The last thing either shape of delete does before the config file goes, and
@@ -2796,13 +2814,25 @@ async function parameterNames(ctx: StepContext, names: string[]): Promise<string
   return answer?.Parameters ?? [];
 }
 
-async function googleSecretExists(ctx: StepContext): Promise<boolean> {
+async function secretExists(name: string, ctx: StepContext): Promise<boolean> {
   const answer = await awsJson<{ Name?: string }>(
-    ["secretsmanager", "describe-secret", "--secret-id", googleClientSecretName(ctx.stage)],
+    ["secretsmanager", "describe-secret", "--secret-id", name],
     { profile: ctx.profile, region: ctx.region, optional: true },
   ).catch(() => null);
 
   return Boolean(answer?.Name);
+}
+
+/**
+ * Every credential an environment may have left in Secrets Manager.
+ *
+ * Three, and they are the ones the Checklist tab writes: the Google client
+ * secret, and the two halves of the Stripe credential. Named here rather than
+ * discovered by a listing, because `list-secrets` answers with every secret in
+ * the account and this step is only ever allowed to delete its own stage's.
+ */
+function stageSecrets(stage: string): string[] {
+  return [googleClientSecretName(stage), stripeSecretName(stage), stripeWebhookSecretName(stage)];
 }
 
 /** What a step could not delete, for the last step to report. */

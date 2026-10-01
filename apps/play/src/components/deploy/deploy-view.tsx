@@ -363,8 +363,8 @@ function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["r
             {run.steps.filter((step) => step.status === "skipped").length} were already satisfied, in{" "}
             {duration(total)}.{" "}
             {withData
-              ? "The four stacks are gone, and so is the data they stood on."
-              : "The four stacks are gone. The data behind them was left where it is."}{" "}
+              ? "The five stacks are gone, and so is the data they stood on."
+              : "The five stacks are gone. The data behind them was left where it is."}{" "}
             {removed ? (
               <>
                 <span className="font-mono">infra/config/play-{run.stage}.json</span> was removed too, and

@@ -21,6 +21,17 @@ import { getSpace } from '../../lib/spaces';
  * nothing else to check, because a listed course is one its author has offered
  * to anyone who asks.
  *
+ * **Except when it costs something.** A course with a price is not joined here:
+ * registering would be handing over the course for free, which is the one way
+ * this route could lose an author money. The caller is told the course is paid
+ * and how much, and the way in is the checkout, whose webhook calls the very same
+ * `enrollInSpace` below once Stripe says the money arrived. A course is free
+ * exactly when it has no price — see `Space.priceCents`.
+ *
+ * An invitation still beats a price: somebody the author put in the course by
+ * name is accepted here whatever it costs, because the offer *is* the permission
+ * and asking them to pay for it would be asking them to buy what they were given.
+ *
  * Registering is idempotent, and an invitation already waiting for the caller's
  * address is *the* registration rather than something beside it: the row moves
  * from the invited address to their `sub`, keeping whatever role they were
@@ -65,6 +76,25 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     }
   }
 
+  // The price, checked *after* the invitation above and before anything is
+  // written: a paid course is joined by paying, and this route is not a way round
+  // that. 402 rather than 403 because it is not a permission the caller lacks —
+  // it is a price they have not paid, and the body says what it is.
+  //
+  // Somebody who *has* paid never reaches this: the webhook enrolled them through
+  // the same `enrollInSpace` below, so the check at the top of this handler
+  // already returned their membership. That is why there is no "did they pay?"
+  // lookup here — the membership is the record of payment, and asking Stripe or
+  // the payments table as a second opinion would be a second answer to one
+  // question.
+  const priceCents = space.priceCents ?? 0;
+  if (priceCents > 0) {
+    throw new HttpError(
+      402,
+      `"${space.title}" costs ${formatPrice(priceCents, space.currency)} — check out to join it.`,
+    );
+  }
+
   try {
     const member = await enrollInSpace({
       spaceId,
@@ -85,3 +115,19 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 }
 
 export const handler = handle(main);
+
+/**
+ * `1250` and `usd` → `$12.50`, for the one sentence that names a price.
+ *
+ * Formatted here rather than sent as a number, because the caller's browser is
+ * the only place that knows their locale and this message is rendered *before*
+ * any catalogue page can format anything. `en-US` is the fallback the product
+ * already writes its mail in; a marketplace that localises its prices will want
+ * the number and the currency instead, and that is a change to this sentence.
+ */
+function formatPrice(cents: number, currency?: string): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: (currency ?? 'usd').toUpperCase(),
+  }).format(cents / 100);
+}

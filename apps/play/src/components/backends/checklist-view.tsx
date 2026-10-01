@@ -6,6 +6,7 @@ import { ArrowRightIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 
 import { SettingsForm } from "@/components/settings/settings-form";
 import { GoogleCard } from "@/components/settings/google-card";
+import { StripeCard } from "@/components/settings/stripe-card";
 import { useSettings } from "@/components/settings/use-settings";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
@@ -125,6 +126,11 @@ export function ChecklistView({ stage }: { stage: string }) {
           collapse that hides the fields once nothing is missing. */}
       {settings ? <GoogleCard stage={stage} settings={settings} /> : null}
 
+      {/* The same shape, for the other integration that has to be told
+          something: Stripe needs an endpoint URL and a list of events, and the
+          URL only exists once the payment stack has been deployed. */}
+      {settings ? <StripeCard stage={stage} settings={settings} /> : null}
+
       {/* Always open. It used to be collapsed behind an "Edit" button whenever
           the four rows above were all satisfied, on the reasoning that nobody
           needs the client id field on an environment that has one — except that
@@ -148,7 +154,7 @@ export function ChecklistView({ stage }: { stage: string }) {
       <Card>
         <CardHeading
           title="Then: the deploy"
-          hint="What is above is the inputs. What a deploy does with them — write the config file, bootstrap the account, bundle the handlers, deploy the four stacks — is on the Deployments tab, and every step whose check finds its work already done is a check mark rather than a run."
+          hint="What is above is the inputs. What a deploy does with them — write the config file, bootstrap the account, bundle the handlers, deploy the five stacks — is on the Deployments tab, and every step whose check finds its work already done is a check mark rather than a run."
           action={
             <Link
               href={`${backendPath(stage)}?tab=deployments`}
@@ -169,7 +175,7 @@ export function ChecklistView({ stage }: { stage: string }) {
  * ------------------------------------------------------------------ */
 
 interface Requirement {
-  id: "config" | "google" | "mail" | "signing-key";
+  id: "config" | "google" | "mail" | "stripe" | "signing-key";
   title: string;
   label: string;
   note: string;
@@ -184,6 +190,13 @@ interface Requirement {
  * signing key comes last because it is the only row with a button. Every note
  * names the thing that is absent rather than the state of the row — "no client
  * secret stored" is actionable, "not ready" is not.
+ *
+ * The Stripe row is the one that is **not a deploy requirement**, and its note
+ * says so: the payment stack deploys and the webhook answers without a single
+ * credential, and what a credential buys is a payment that can be recorded.
+ * Leaving it out of the list would be worse than the qualification — a
+ * marketplace that cannot take money is exactly what this tab exists to catch,
+ * and the moment to say it is before somebody publishes a course with a price.
  */
 function requirements(
   stage: string,
@@ -192,6 +205,7 @@ function requirements(
 ): Requirement[] {
   const google = googleGaps(settings);
   const mail = mailGaps(settings);
+  const stripe = stripeGaps(settings);
 
   return [
     {
@@ -241,6 +255,32 @@ function requirements(
         mail.length === 0
           ? `${settings.mail.fromAddress} · ${settings.mail.appBaseUrl} · ${settings.mail.marketplaceBaseUrl}`
           : `The invitation sender and the two app base URLs are baked into every handler's environment, and ${mail.join(", ")}.`,
+    },
+    {
+      id: "stripe",
+      title: "Payments",
+      done: stripe.length === 0,
+      tone: stripe.length === 0 ? "ok" : "warn",
+      label: stripe.length === 0 ? "ready to charge" : "needs you",
+      note:
+        stripe.length === 0
+          ? [
+              `API key at ${settings.stripe.secretName}`,
+              `endpoint secret at ${settings.stripe.webhookSecretName}`,
+              settings.stripe.publishableKey
+                ? `publishable key at ${settings.stripe.publishableKeyParam}`
+                : null,
+              // The endpoint itself: without a deploy there is nothing for
+              // Stripe to call, and the credentials would sit there unused.
+              settings.stripe.webhookUrl
+                ? "webhook endpoint deployed"
+                : `no webhook URL yet — PlayPaymentStack-${stage} has not been deployed`,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : `A course can be listed with a price, and a buyer's payment is recorded by the webhook — so ${
+              stripe.join(", ")
+            }. This does not hold up a deploy: the payment stack deploys and answers without a credential, and what a credential buys is a payment that can be taken.`,
     },
     {
       id: "signing-key",
@@ -306,6 +346,22 @@ function mailGaps(settings: EnvironmentSettings): string[] {
   if (!settings.mail.fromAddress) gaps.push("the from address is empty");
   if (!settings.mail.appBaseUrl) gaps.push("the studio base URL is empty");
   if (!settings.mail.marketplaceBaseUrl) gaps.push("the marketplace base URL is empty");
+  return gaps;
+}
+
+/**
+ * The Stripe values that are missing.
+ *
+ * Three credentials and an endpoint, and the endpoint is not something a person
+ * can supply — it comes from a deploy. It is in this list anyway because the
+ * question the row answers is "could this environment take a payment right now",
+ * and a URL nothing has been pointed at is part of that answer.
+ */
+function stripeGaps(settings: EnvironmentSettings): string[] {
+  const gaps: string[] = [];
+  if (!settings.stripe.secretKeySet) gaps.push("no API key");
+  if (!settings.stripe.webhookSigningSecretSet) gaps.push("no webhook signing secret");
+  if (!settings.stripe.publishableKey) gaps.push("no publishable key");
   return gaps;
 }
 

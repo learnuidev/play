@@ -6,9 +6,10 @@ import { PlayApiStack } from '../src/stacks/api-stack';
 import { PlayAuthStack } from '../src/stacks/auth-stack';
 import { PlayDataStack } from '../src/stacks/data-stack';
 import { PlayMediaStack } from '../src/stacks/media-stack';
+import { PlayPaymentStack } from '../src/stacks/payment-stack';
 
 /**
- * The Play backend, as four stacks.
+ * The Play backend, as five stacks.
  *
  * They are split by **what a change to one of them costs**, not by size:
  *
@@ -17,6 +18,7 @@ import { PlayMediaStack } from '../src/stacks/media-stack';
  * | `PlayDataStack` | The tables | Rarely |
  * | `PlayMediaStack` | The videos bucket and distribution, plus the two media roles | Rarely |
  * | `PlayAuthStack` | The user pool and the pre sign-up trigger | Occasionally |
+ * | `PlayPaymentStack` | The Stripe webhook and the names of the credential it verifies with | Occasionally |
  * | `PlayApiStack` | The functions, their routes, and the IAM | Constantly |
  *
  * That split is the answer to the problem this migration exists to solve.
@@ -45,6 +47,12 @@ import { PlayMediaStack } from '../src/stacks/media-stack';
  * `false` exists for one reason: `dev`'s resources predate this app and hold the
  * product. It is not the default for a new environment, and a stage that copies
  * it inherits dev's data rather than getting its own.
+ *
+ * The two stacks that own no stateful group are the other half of that rule.
+ * `PlayPaymentStack` creates what it holds on every stage, because a webhook is a
+ * function and a function is not data — and the credential it verifies with is
+ * not a resource this app creates at all: the config names *where* a stage's
+ * Stripe values live and the console's Checklist tab is what puts them there.
  *
  * The stage is a context value, so one app describes every deployment:
  *
@@ -84,20 +92,35 @@ const auth = new PlayAuthStack(app, `PlayAuthStack-${stage}`, {
   description: 'Play auth: the Cognito user pool and the pre sign-up trigger',
 });
 
+/**
+ * What the media stack hands the two stacks that deploy a handler — and both
+ * take the same values, for the reason `stacks/environment.ts` gives: this is one
+ * service, and a function of it is handed the service's own environment.
+ */
+const mediaEnvironment = {
+  videosBucketName: media.videosBucket.bucketName,
+  distributionDomain: media.distribution.distributionDomainName,
+  // No key id: it is published to SSM by the media stack and read by the
+  // handlers by name, because a rotated key has a new id and a value that
+  // changes cannot cross stacks without an export that has to be renamed.
+  mediaConvertRoleArn: media.mediaConvertRole.roleArn,
+  transcribeRoleArn: media.transcribeRole.roleArn,
+};
+
+new PlayPaymentStack(app, `PlayPaymentStack-${stage}`, {
+  env,
+  config,
+  description: 'Play payments: the Stripe webhook Stripe calls, and the names of the credential it verifies with',
+  tables: data.tables,
+  media: mediaEnvironment,
+});
+
 new PlayApiStack(app, `PlayApiStack-${stage}`, {
   env,
   config,
   description: 'Play API: the functions, their routes, and the IAM that reaches the data',
   tables: data.tables,
-  media: {
-    videosBucketName: media.videosBucket.bucketName,
-    distributionDomain: media.distribution.distributionDomainName,
-    // No key id: it is published to SSM by the media stack and read by the
-    // handlers by name, because a rotated key has a new id and a value that
-    // changes cannot cross stacks without an export that has to be renamed.
-    mediaConvertRoleArn: media.mediaConvertRole.roleArn,
-    transcribeRoleArn: media.transcribeRole.roleArn,
-  },
+  media: mediaEnvironment,
   auth: { userPool: auth.userPool },
 });
 

@@ -7,6 +7,7 @@ import {
   readSettings,
   saveSettings,
   settingsContext,
+  stripeState,
 } from "@/server/settings";
 import { signingKeyState } from "@/server/signing-key";
 
@@ -16,7 +17,9 @@ import { signingKeyState } from "@/server/signing-key";
  * `GET` never returns the secret's value, only whether one is stored. `PUT`
  * accepts one and sends it to Secrets Manager; it is write-only in both
  * directions, which is why the form has to be told "a secret is set" rather
- * than being handed the secret to prefill.
+ * than being handed the secret to prefill. The *publishable* Stripe key is the
+ * exception and is read back, because it is not a secret: it is the key a
+ * browser loads Stripe.js with.
  *
  * ## `PUT` reaches the live pool, not only the file
  *
@@ -65,6 +68,9 @@ export async function GET(_request: Request, { params }: Params) {
 
   settings.googleClientSecretSet = await googleSecretStatus(params.stage, ctx);
   settings.oauth = await googleOAuthValues(params.stage, ctx, settings.account);
+  // Including the webhook URL, which only exists once the payment stack has been
+  // deployed — so this is also the read that says whether it has been.
+  settings.stripe = await stripeState(params.stage, ctx);
 
   // A signing-key read that fails is not a broken form: the form is about the
   // credentials, and the row that draws this says it could not be read.

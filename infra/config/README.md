@@ -54,6 +54,9 @@ says so before anything is deployed.
 | `mail.*` | The invitation sender and the two app base URLs. **Deploy-time, not runtime** |
 | `auth.googleClientId`, `auth.callbackUrls`, `auth.logoutUrls` | The Google client id, and the origins Cognito accepts. On a migrated stage the live pool's values are read from Cognito by `set-auth-urls.mjs` instead — and saving them in the console runs that script, so the two URL lists reach the live app client rather than waiting for a deploy |
 | `googleClientSecretName` | The Secrets Manager secret a **created** pool reads the client secret from. Defaults to `play/<stage>/google-client-secret`, which is per-stage so two environments cannot overwrite each other |
+| `stripeSecretName` | The Secrets Manager secret holding this environment's **Stripe API key**. Defaults to `play/<stage>/stripe-secret-key`. A name, never a value — see below |
+| `stripeWebhookSecretName` | The Secrets Manager secret holding the **webhook endpoint's signing secret**. Defaults to `play/<stage>/stripe-webhook-secret`. A secret of its own because the two are rotated for different reasons, and the console never reads a credential back — one document for both would make every rotation a write of the value nobody asked to change |
+| `stripePublishableKeyParam` | The **name** of the SSM parameter holding the publishable key — not a secret, and served to browsers. Defaults to `/play/<stage>/stripe/publishable-key`, a plain `String` |
 | `videosBucketName` | What to call the **videos bucket**, on a stage that creates its media. Absent — the default, and what the console writes — lets CloudFormation name it, because an S3 bucket name is unique across every AWS account |
 | `cloudFrontLogsBucketName` | The same, for the distribution's log bucket |
 | `cloudFrontPrivateKeyParam` | The *name* of the signing key parameter. Never the key. Defaults to `/play/<stage>/cloudfront/private-key` |
@@ -100,6 +103,16 @@ credential, this file is committed, and CloudFormation refuses the SSM Secure
 reference that would let it be read in place — it lives in Secrets Manager and
 the console writes it there. `apps/play/README.md` says why.
 
+**Neither are the two Stripe credentials.** The three fields above are *names*,
+and the values behind them are written by the console's Checklist tab — from the
+Stripe dashboard, not from here. They are per stage on purpose: these are the keys
+a deployment charges with, so two environments holding the same one are two
+environments spending one account's money, and a staging deploy that took a real
+payment is a thing that must not be able to happen by copying a config. Nothing in
+a deploy *reads* them, which is why a stage with no Stripe credentials still
+deploys: what the keys buy is a payment that can be recorded, not a stack that can
+be created.
+
 `existing` is validated **field by field, against `ownership`**: a name is
 required exactly when the corresponding group is imported. So a stage that
 imports its tables cannot leave one out, and a stage that creates them is not
@@ -125,7 +138,7 @@ answers:
 | **Migrated stage** | all `false` | Imports them by physical name | Shared with every other migrated stage |
 
 **A new environment is all `true`, and that is what the deploy console writes.**
-Deploying `staging` for the first time gives you staging's own 27 tables, its own
+Deploying `staging` for the first time gives you staging's own 28 tables, its own
 videos bucket and CloudFront distribution, and its own Cognito user pool — all
 empty, and all this stage's own. Nothing is shared, so a deploy there cannot
 change what `dev` reads, and there is no handover step to worry about because
@@ -136,6 +149,15 @@ resources predate this CDK app by years and hold the product. An imported
 resource is *unmanaged*: CloudFormation will not change its properties and will
 not delete it. That is the entire reason the migration did not lose any data, and
 it is why `cdk deploy PlayDataStack-dev` on a fresh checkout is a no-op.
+
+**Import is per table, not per stage**, and the difference shows up the first time
+this app adds a table. `dev` names the 27 the legacy backend created; a table this
+app has declared since — `PaymentsTable` was the first — cannot be among them,
+because it does not exist yet. So `PlayDataStack` imports the tables its config
+*named* and **creates** the ones it did not: `dev` ends up owning
+`play-dev-payments-table`, empty, retained, and named after the stage like any
+other environment's. The alternative is a handler holding the name of a table
+nobody created, which fails at the first request rather than at a synth.
 
 The two are not interchangeable, and the difference is easy to get wrong in the
 direction that matters: seeding a new stage from `play-dev.json` would copy
@@ -151,7 +173,7 @@ setting these to `true` when it was `false` is **additive**: imports create no
 CloudFormation resources, so the stacks simply gain the ones they were missing.
 What that means in practice:
 
-- `tables` creates 27 empty tables. The Data stack currently holds a single
+- `tables` creates 28 empty tables. The Data stack currently holds a single
   `CDKMetadata` resource, so this is a create, not a replacement.
 - `media` creates a bucket and a distribution. A new distribution is a new domain
   name, so stream URLs change for that stage only.

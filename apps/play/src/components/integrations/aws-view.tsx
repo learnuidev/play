@@ -63,7 +63,7 @@ export function AwsView() {
       <Card>
         <CardHeading
           title="What is deployed"
-          hint="The four root stacks, per environment. A nested stack inside PlayApiStack is CDK's own division of the routes and is not shown."
+          hint="The root stacks, per environment. A nested stack inside PlayApiStack is CDK's own division of the routes and is not shown."
         />
 
         <div className="mt-5 flex flex-col gap-6">

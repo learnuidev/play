@@ -156,6 +156,39 @@ export interface PlayConfig {
   cloudFrontKeyVersion: string;
   /** The Secrets Manager secret a created pool reads the Google client secret from. */
   googleClientSecretName: string;
+  /**
+   * The Secrets Manager secret holding this environment's **Stripe API key** —
+   * the `sk_…` that may be spent.
+   *
+   * A credential rather than a resource this app creates, which is why nothing
+   * here declares an `AWS::SecretsManager::Secret`: a stack that created one would
+   * own a value it did not know, and the console's write would then be a fight
+   * with the next deploy rather than the way the value is set. The same division
+   * the Google client secret has, for the same reason.
+   */
+  stripeSecretName: string;
+  /**
+   * The Secrets Manager secret holding the **webhook signing secret** — the
+   * `whsec_…` this environment's endpoint signs with.
+   *
+   * A secret of its own rather than a second field in the one above, because the
+   * two are rotated for different reasons and at different times: an API key is
+   * rotated on somebody's schedule, and an endpoint's signing secret changes when
+   * the endpoint is recreated. One document for both would make every rotation a
+   * write of the *other* value too — and the console never reads a credential
+   * back, so it could not even send the half it was not asked to change.
+   */
+  stripeWebhookSecretName: string;
+  /**
+   * The *name* of the SSM parameter holding the **publishable key**.
+   *
+   * A parameter rather than a secret, and String rather than SecureString,
+   * because it is not secret: it is served to browsers — it is what a marketplace
+   * page loads Stripe.js with — so burying it in Secrets Manager would mean a
+   * `GetSecretValue` on the request path to read something anybody can see in a
+   * page source.
+   */
+  stripePublishableKeyParam: string;
   ownership: Ownership;
 }
 
@@ -256,6 +289,37 @@ export function googleClientSecretName(stage: string): string {
   return `play/${stage}/google-client-secret`;
 }
 
+/**
+ * Where a stage's **Stripe** credentials live.
+ *
+ * **Per stage**, like the Google client secret, and unlike the media the product
+ * shares: these are the keys a deployment charges with, so two environments
+ * holding the same one are two environments spending one account's money — and a
+ * staging deploy that took a real payment is a thing that must not be able to
+ * happen by copying a config.
+ *
+ * The account *id* is deliberately not part of either name: an account has one,
+ * it never changes, and a name that carried it would have to be rewritten the day
+ * somebody's Stripe account is replaced — with the value already stored under the
+ * old name being exactly what nobody would think to look for.
+ */
+export function stripeSecretName(stage: string): string {
+  return `play/${stage}/stripe-secret-key`;
+}
+
+/**
+ * The endpoint's signing secret, which is a different credential with a different
+ * lifetime from the key above — see the field's own note in `PlayConfig`.
+ */
+export function stripeWebhookSecretName(stage: string): string {
+  return `play/${stage}/stripe-webhook-secret`;
+}
+
+/** Where the publishable key — not a secret — is kept for the frontends to read. */
+export function stripePublishableKeyParam(stage: string): string {
+  return `/play/${stage}/stripe/publishable-key`;
+}
+
 /** Where `import-state.mjs` writes, and where this reads. */
 export function configPath(stage: string): string {
   return path.join(CONFIG_DIR, `play-${stage}.json`);
@@ -312,6 +376,11 @@ export function loadConfig(stage: string): PlayConfig {
     cloudFrontKeyVersion: parsed.cloudFrontKeyVersion ?? DEFAULT_CLOUD_FRONT_KEY_VERSION,
     googleClientSecretName:
       parsed.googleClientSecretName ?? googleClientSecretName(parsed.stage),
+    stripeSecretName: parsed.stripeSecretName ?? stripeSecretName(parsed.stage),
+    stripeWebhookSecretName:
+      parsed.stripeWebhookSecretName ?? stripeWebhookSecretName(parsed.stage),
+    stripePublishableKeyParam:
+      parsed.stripePublishableKeyParam ?? stripePublishableKeyParam(parsed.stage),
   };
 
   const problems = validate(config);

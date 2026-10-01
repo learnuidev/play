@@ -22,7 +22,34 @@ interface UpdateSpaceBody {
   dripIntervalDays?: unknown;
   /** Whether the course appears in the marketplace catalog. */
   listed?: unknown;
+  /** Cents, whole numbers only. `null`, `0` or `""` makes the course free. */
+  priceCents?: unknown;
+  /** ISO 4217, lower case: `usd`. */
+  currency?: unknown;
+  /** The Stripe price object this course is sold at, or `null` to forget it. */
+  stripePriceId?: unknown;
 }
+
+/**
+ * The currencies a course may be priced in.
+ *
+ * A short list rather than every code ISO 4217 has, because this value decides
+ * what a learner is charged and a typo in a three-letter code is a Stripe
+ * rejection at the moment somebody is trying to buy something. Widening it is a
+ * line here and a Stripe account that accepts the currency.
+ */
+const CURRENCIES = ['usd', 'eur', 'gbp', 'inr', 'aud', 'cad'];
+
+/**
+ * The most a course may cost: ten thousand of whatever the currency is.
+ *
+ * A ceiling rather than a rule, and it exists because the unit is *cents*: a
+ * price typed into a form as a decimal and sent as a number is off by a hundred
+ * the moment somebody forgets which end they are on, and the mistake that matters
+ * is the one in the expensive direction. Ten thousand is well past any course
+ * here and far below the price that would be a bug.
+ */
+const MAX_PRICE_CENTS = 1_000_000;
 
 /**
  * Edits what a course says about itself.
@@ -108,6 +135,50 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
   if (body.listed !== undefined) {
     if (typeof body.listed !== 'boolean') throw new HttpError(400, 'listed must be a boolean');
     patch.listed = body.listed;
+  }
+
+  // The price. Present-and-empty is how the form says "free": the course stops
+  // carrying a price rather than carrying a zero, and both mean registrable — see
+  // `Space.priceCents`.
+  if (body.priceCents !== undefined) {
+    if (body.priceCents === null || body.priceCents === '') {
+      patch.priceCents = null;
+    } else {
+      const cents = body.priceCents;
+      if (typeof cents !== 'number' || !Number.isInteger(cents)) {
+        throw new HttpError(400, 'priceCents must be a whole number of cents');
+      }
+      if (cents < 0) throw new HttpError(400, 'priceCents cannot be negative');
+      if (cents > MAX_PRICE_CENTS) {
+        throw new HttpError(
+          400,
+          `priceCents must be <= ${MAX_PRICE_CENTS} — this field is cents, not the amount.`,
+        );
+      }
+      patch.priceCents = cents === 0 ? null : cents;
+    }
+  }
+
+  if (body.currency !== undefined) {
+    const currency = typeof body.currency === 'string' ? body.currency.trim().toLowerCase() : '';
+    if (!currency) patch.currency = null;
+    else {
+      if (!CURRENCIES.includes(currency)) {
+        throw new HttpError(400, `currency must be one of ${CURRENCIES.join(', ')}`);
+      }
+      patch.currency = currency;
+    }
+  }
+
+  if (body.stripePriceId !== undefined) {
+    const id = typeof body.stripePriceId === 'string' ? body.stripePriceId.trim() : '';
+    if (!id) patch.stripePriceId = null;
+    else {
+      if (!id.startsWith('price_')) {
+        throw new HttpError(400, 'stripePriceId must be a Stripe price id, like price_1AbC…');
+      }
+      patch.stripePriceId = id;
+    }
   }
 
   await updateSpace(spaceId, patch);

@@ -1031,6 +1031,75 @@ export const TABLES: TableSpec[] = [
     ],
     grantsIndexes: false,
   },
+  /**
+   *  What a paid course cost, and who paid it.
+   *
+   *  **Keyed by the Stripe checkout session**, which is the one identifier both
+   *  ends of a purchase know: the backend knows it because it is what it asked
+   *  Stripe for, and the webhook knows it because Stripe sends the session back
+   *  with the event. Nothing else here is unique to one purchase — a person may
+   *  buy the same course twice, and a Stripe payment intent can outlive the
+   *  attempt that made it — so this is the key that makes a re-delivered event an
+   *  update to one row rather than a second sale.
+   *
+   *  A session is also the unit a refund and an expiry are about: both arrive as
+   *  events naming the session, and both are this row changing status rather than
+   *  a row appearing somewhere else.
+   *
+   *  The three indexes are the three questions asked of it, and none of them can
+   *  be a scan: what one person has bought (`userId`), who has bought one course
+   *  (`spaceId`) — the author's own view of their sales — and what became of one
+   *  payment (`stripePaymentIntentId`), which is the one lookup the key cannot
+   *  answer: a refund and a failed payment arrive as events naming the *intent*,
+   *  and the session that started it is not in them.
+   */
+  {
+    id: 'PaymentsTable',
+    envVar: 'PAYMENTS_TABLE',
+    billingMode: 'PAY_PER_REQUEST',
+    attributeDefinitions: [
+      { name: 'paymentId', type: 'S' },
+      { name: 'userId', type: 'S' },
+      { name: 'spaceId', type: 'S' },
+      { name: 'createdAt', type: 'N' },
+      { name: 'stripePaymentIntentId', type: 'S' },
+    ],
+    keySchema: [
+      { name: 'paymentId', keyType: 'HASH' },
+    ],
+    globalSecondaryIndexes: [
+      {
+        name: 'UserCreatedIndex',
+        keySchema: [
+          { name: 'userId', keyType: 'HASH' },
+          { name: 'createdAt', keyType: 'RANGE' },
+        ],
+        projectAll: true,
+      },
+      {
+        name: 'SpaceCreatedIndex',
+        keySchema: [
+          { name: 'spaceId', keyType: 'HASH' },
+          { name: 'createdAt', keyType: 'RANGE' },
+        ],
+        projectAll: true,
+      },
+      {
+        name: 'PaymentIntentIndex',
+        keySchema: [
+          { name: 'stripePaymentIntentId', keyType: 'HASH' },
+        ],
+        projectAll: true,
+      },
+    ],
+    actions: [
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+      'dynamodb:UpdateItem',
+    ],
+    grantsIndexes: true,
+  },
 ];
 
 export const FUNCTIONS: FunctionSpec[] = [
@@ -2890,6 +2959,30 @@ export const FUNCTIONS: FunctionSpec[] = [
     timeout: 10,
     memorySize: 512,
     description: "Links a federated sign-in to the existing account with the same verified email",
+    ownRole: true,
+    http: [],
+    s3: [],
+    eventBridge: [],
+  },
+  /**
+   *  Stripe calls this, not a browser, so it has **no API Gateway route** — it
+   *  answers on a Lambda function URL published by `PlayPaymentStack`, which is
+   *  the URL pasted into the Stripe dashboard. It therefore carries no authorizer
+   *  and is public by necessity: the request is authenticated by its
+   *  `Stripe-Signature` header, which the handler verifies against this
+   *  environment's webhook signing secret before it reads a byte of the body.
+   *
+   *  Its own role, like the pre sign-up trigger above, because it lives in the
+   *  stack that owns the credential it verifies with — see
+   *  `src/stacks/payment-stack.ts`.
+   */
+  {
+    key: 'stripe-webhook',
+    entry: 'src/functions/payments/stripe-webhook.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    description: "Records what Stripe was paid: verifies the event signature, then writes the payment and enrols the buyer",
     ownRole: true,
     http: [],
     s3: [],

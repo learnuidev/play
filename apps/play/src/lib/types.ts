@@ -64,7 +64,7 @@ export type RunStatus = "running" | "succeeded" | "failed" | "cancelled";
  * What a backend run does to an environment.
  *
  * One engine, two directions: a **deploy** takes a stage from nothing to four
- * complete stacks, and a **destroy** takes it back to none — the four stacks and
+ * complete stacks, and a **destroy** takes it back to none — the five stacks and
  * the config file, and never the data (every stateful resource here is
  * `RemovalPolicy.RETAIN`).
  *
@@ -129,7 +129,7 @@ export interface RunView {
   startedAt: number;
   finishedAt: number | null;
   steps: StepView[];
-  /** A backend run's four stacks, and the outputs an app needs. */
+  /** A backend run's root stacks, and the outputs an app needs. */
   result: RunResult | null;
   /**
    * A destroy run's account of what it left behind, one thing per line.
@@ -222,7 +222,7 @@ export interface EnvironmentView {
   /** True when this environment creates the tables, media and pool itself. */
   ownsEverything: boolean;
   stacks: StackSummary[];
-  /** Every one of the four root stacks is `*_COMPLETE`. */
+  /** Every one of the root stacks is `*_COMPLETE`. */
   deployed: boolean;
   /** Some are there, some are not — the state a failed first deploy leaves. */
   partial: boolean;
@@ -272,6 +272,38 @@ export interface GoogleOAuthValues {
 }
 
 /**
+ * The Stripe credentials a deployment takes money with, as the console can see
+ * them.
+ *
+ * Two of the three values are credentials and are reported as set or not, never
+ * echoed — the same rule the Google client secret has, and for the same reason.
+ * The third is the publishable key, which is *not* a secret: it is served to
+ * browsers, so it is read back and shown like any other setting.
+ */
+export interface StripeSettingsView {
+  /** Secrets Manager secret holding the API key, `sk_…`. Never the value. */
+  secretName: string;
+  secretKeySet: boolean;
+  /** Secrets Manager secret holding the endpoint's signing secret, `whsec_…`. */
+  webhookSecretName: string;
+  webhookSigningSecretSet: boolean;
+  /** SSM parameter holding the publishable key, `pk_…`. */
+  publishableKeyParam: string;
+  /** Not a secret: this is what a marketplace page loads Stripe.js with. */
+  publishableKey: string | null;
+  /**
+   * Where Stripe has to be pointed — `PlayPaymentStack-<stage>`'s function URL.
+   *
+   * Null until the payment stack has been deployed, which is the state a new
+   * environment is in: the URL does not exist until something creates it, and
+   * the row says as much rather than showing an empty box.
+   */
+  webhookUrl: string | null;
+  /** The events the endpoint does something about. See `STRIPE_EVENTS`. */
+  events: string[];
+}
+
+/**
  * What an environment is configured with, rather than what it is discovered to
  * be. The secret's *value* is never part of this — only whether one is stored.
  */
@@ -305,6 +337,8 @@ export interface EnvironmentSettings {
   };
   /** What to paste into the Google Cloud console. */
   oauth: GoogleOAuthValues;
+  /** What to paste into the Stripe dashboard, and what is already stored. */
+  stripe: StripeSettingsView;
 }
 
 /**
@@ -323,6 +357,24 @@ export interface SettingsWriteView {
   signingKeyNote: string | null;
   /** What happened to the live app client, which is the other half of a URL save. */
   authUrls: AuthUrlsWriteView;
+  /**
+   * What this save did about the Stripe credentials.
+   *
+   * Null when it was not given any — a save that only changed the mail sender
+   * has nothing to say about Stripe, and a summary that reported "no Stripe key
+   * written" on every save would be noise on the line beside the button.
+   */
+  stripe: StripeWriteView | null;
+}
+
+/** Which of the three Stripe values a save replaced. */
+export interface StripeWriteView {
+  /** The API key is in Secrets Manager now. */
+  secretKeyWritten: boolean;
+  /** The endpoint's signing secret is in Secrets Manager now. */
+  webhookSigningSecretWritten: boolean;
+  /** The publishable key is in SSM now. */
+  publishableKeyWritten: boolean;
 }
 
 /**
@@ -394,6 +446,17 @@ export interface EnvironmentSettingsInput {
    * form without retyping the secret does not clear it.
    */
   googleClientSecret?: string;
+  /**
+   * The Stripe credentials, each write-only on the same terms: an absent field
+   * leaves what is stored alone. The publishable key is the exception — it is
+   * read back and prefilled, so an empty one *clears* it, because that is what a
+   * person emptying the box meant.
+   */
+  stripe?: {
+    secretKey?: string;
+    webhookSigningSecret?: string;
+    publishableKey?: string;
+  };
 }
 
 /* ------------------------------------------------------------------ *

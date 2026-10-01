@@ -33,7 +33,7 @@ import type { EnvironmentView, RunSummary } from "@/lib/types";
  *
  * There is one backend — the CDK app in `infra/` — and the plural is only ever
  * about *where* it has been deployed. So a row is "the API, in `dev`", and what
- * it says is what the four stacks say: which are complete, whether this
+ * it says is what the root stacks say: which are complete, whether this
  * environment creates its own data or imports another's, and where the API is.
  *
  * ## Why the list is not drawn from a stream

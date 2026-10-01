@@ -45,6 +45,32 @@ export const env = {
   oauthGrantsTableName: required('OAUTH_GRANTS_TABLE', process.env.OAUTH_GRANTS_TABLE),
   oauthTokensTableName: required('OAUTH_TOKENS_TABLE', process.env.OAUTH_TOKENS_TABLE),
   oauthCodesTableName: required('OAUTH_CODES_TABLE', process.env.OAUTH_CODES_TABLE),
+  /**
+   * What was paid for a course, keyed by the Stripe checkout session that paid
+   * for it. Written by the webhook — see `functions/payments/stripe-webhook.ts`
+   * — and read by the marketplace's own screens.
+   */
+  paymentsTableName: required('PAYMENTS_TABLE', process.env.PAYMENTS_TABLE),
+  /**
+   * Where this deployment's Stripe credentials live. **Names, not values**: the
+   * API key and the webhook signing secret are read from Secrets Manager at the
+   * moment they are needed, and the publishable key — which is not a secret, and
+   * is served to browsers — from Parameter Store.
+   *
+   * Two secrets rather than one, because they are rotated for different reasons:
+   * the API key on somebody's schedule, the endpoint's signing secret when the
+   * endpoint is recreated. One document holding both would make each rotation a
+   * write of the other value as well.
+   */
+  stripeSecretName: required('STRIPE_SECRET_NAME', process.env.STRIPE_SECRET_NAME),
+  stripeWebhookSecretName: required(
+    'STRIPE_WEBHOOK_SECRET_NAME',
+    process.env.STRIPE_WEBHOOK_SECRET_NAME,
+  ),
+  stripePublishableKeyParam: required(
+    'STRIPE_PUBLISHABLE_KEY_PARAM',
+    process.env.STRIPE_PUBLISHABLE_KEY_PARAM,
+  ),
   bucket: required('VIDEOS_BUCKET', process.env.VIDEOS_BUCKET),
   cloudfrontDomain: required('CLOUDFRONT_DOMAIN', process.env.CLOUDFRONT_DOMAIN),
   /**

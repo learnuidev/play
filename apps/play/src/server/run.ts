@@ -23,7 +23,7 @@ import { repoRoot } from "./repo";
  *
  * There is a backend run and a frontend run, and they are the same machine: a
  * list of steps, each with a check and an apply, a transcript per step, a
- * cancel, and a result. What differs is what they are about — four
+ * cancel, and a result. What differs is what they are about — an environment's
  * CloudFormation stacks, or one app on Vercel — and that is what `RunSpec` is:
  * the steps, plus the two hooks that turn whatever the steps left behind into
  * the run's own answer. Everything else in this file is shared on purpose. A
@@ -115,7 +115,7 @@ const store: Store = (globalThis.__playConsoleRuns ??= {
  * `cdk` runs detached, in its own process group, so that cancelling a run can
  * reach the `ts-node` and `esbuild` underneath it. The price of a process group
  * of your own is that it is nobody else's to clean up: a console that exited
- * without this would leave a `cdk deploy` mid-flight, writing to four stacks,
+ * without this would leave a `cdk deploy` mid-flight, writing to five stacks,
  * with no transcript and nobody holding the handle.
  *
  * A frontend run owns no process — it is HTTP calls — so it has nothing to
@@ -332,7 +332,7 @@ export interface RunSpec {
   steps: PlanStep[];
   /** A frontend run's app, target and domain. Null for a backend run. */
   vercel?: VercelDeployTarget | null;
-  /** A backend run's four stacks and the outputs an app needs. */
+  /** A backend run's root stacks and the outputs an app needs. */
   result?: (data: Record<string, unknown>) => RunResult | null;
   /** A destroy run's account of what it could not remove, and what is still pointed here. */
   report?: (data: Record<string, unknown>) => string[] | null;

@@ -1,4 +1,5 @@
 import { lastMeaningfulLines, run } from "./exec";
+import { STACK_WORDS, type StackWord } from "@/lib/backends";
 import type { Identity, StackSummary } from "@/lib/types";
 
 /**
@@ -145,19 +146,32 @@ export async function identityError(ctx: Partial<AwsContext> = {}): Promise<stri
  * ------------------------------------------------------------------ */
 
 /**
- * The four root stacks, and what each one is for.
+ * The root stacks, and what each one is for.
  *
  * The purposes are deliberately neutral about importing: which of the first
  * three create their resources and which import them is `ownership` in the
  * environment's config, and it differs between a migrated stage and a new one.
  * The environment card says which this one does.
+ *
+ * This list **is** "an environment" as far as the console is concerned: a
+ * deploy's post-condition, a delete's, and the chip on a row all read it, so a
+ * stack added to the CDK app and not added here is a stack the console will
+ * happily report an environment as complete without. The words come from
+ * `STACK_WORDS` in `lib/backends.ts`, because a client component draws a tile
+ * per stack and cannot import this file to find out what they are.
  */
-export const ROOT_STACKS = [
-  { suffix: "Data", purpose: "the DynamoDB tables" },
-  { suffix: "Media", purpose: "the videos bucket and distribution" },
-  { suffix: "Auth", purpose: "the Cognito user pool" },
-  { suffix: "Api", purpose: "the functions, their routes, and the IAM" },
-] as const;
+const STACK_PURPOSES: Record<StackWord, string> = {
+  Data: "the DynamoDB tables",
+  Media: "the videos bucket and distribution",
+  Auth: "the Cognito user pool",
+  Payment: "the Stripe webhook and the credentials it works with",
+  Api: "the functions, their routes, and the IAM",
+};
+
+export const ROOT_STACKS = STACK_WORDS.map((suffix) => ({
+  suffix,
+  purpose: STACK_PURPOSES[suffix],
+}));
 
 export function rootStackNames(stage: string): string[] {
   return ROOT_STACKS.map(({ suffix }) => `Play${suffix}Stack-${stage}`);
@@ -341,7 +355,7 @@ export async function snapshotPlayStacks(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** The four root stacks of a stage, and whether all of them are settled. */
+/** The root stacks of a stage, and whether all of them are settled. */
 export function summariseStacks(
   stage: string,
   all: CloudStack[],

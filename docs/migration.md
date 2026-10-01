@@ -176,12 +176,16 @@ showing you the diff.
 export AWS_PROFILE="$(. scripts/api-config.env && printf %s "$API_AWS_PROFILE")"
 
 npm run diff   --workspace play-infra    # what would change
-npm run deploy --workspace play-infra    # deploy all four
+npm run deploy --workspace play-infra    # deploy all five
 ```
 
-Three of the four stacks create almost nothing: the tables are imported, so
-`PlayDataStack` is one `AWS::CDK::Metadata` resource. `PlayMediaStack` creates
-the two media roles and the bucket policy, `PlayAuthStack` the trigger function.
+Three of the five stacks create almost nothing: the tables are imported, so
+`PlayDataStack` is nearly empty. `PlayMediaStack` creates
+the two media roles and the bucket policy, `PlayAuthStack` the trigger function,
+and `PlayPaymentStack` a webhook and its role — the one stack here that did not
+exist when this migration ran, and the reason `PlayDataStack` is no longer *only*
+a `CDKMetadata` resource on `dev`: `PaymentsTable` is a table the legacy backend
+never had, so there is nothing to import and the stack creates it.
 Everything that costs anything is in `PlayApiStack`.
 
 **Do not point anything at the new API yet.** The pools, the tables and the
