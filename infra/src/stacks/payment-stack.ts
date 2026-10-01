@@ -1,4 +1,4 @@
-import { Arn, ArnFormat, CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -10,6 +10,7 @@ import type { PlayConfig } from '../config';
 import { ownsEverything } from '../config';
 import { FUNCTIONS, TABLES } from '../generated/service';
 import { serviceEnvironment, type ServiceEnvironmentInput } from './environment';
+import { parameterArn, stripeCredentialsGrant } from './grants';
 
 export interface PlayPaymentStackProps extends StackProps {
   config: PlayConfig;
@@ -170,37 +171,23 @@ export class PlayPaymentStack extends Stack {
       },
     });
 
-    // The three Stripe values, read by name at request time: the API key the
-    // session is created with, the signing secret an event is verified with, and
-    // the publishable key the frontends load Stripe.js with. Named rather than
-    // wildcarded, like the CloudFront pair — a role that can read every secret in
-    // the account can read every secret in the account.
-    //
-    // The `-*` is not sloppiness: Secrets Manager appends a six-character suffix
-    // to the ARN of the secret it creates, and `GetSecretValue` is authorized
-    // against *that* ARN. A grant naming the secret as it was created does not
-    // match it, and the failure is an AccessDenied on a secret that is there.
-    const secretArn = (name: string): string =>
-      Arn.format(
-        {
-          service: 'secretsmanager',
-          resource: 'secret',
-          resourceName: `${name}-*`,
-          arnFormat: ArnFormat.COLON_RESOURCE_NAME,
-        },
-        this,
-      );
+    // The Stripe credentials, read by name at request time: the signing secret an
+    // event is verified with, and the API key `stripeCredentials` reads beside it
+    // in the same call. The statement is built in `grants.ts` and given to the API
+    // stack's role as well, because the checkout route is the other half of this
+    // feature and needs the same two secrets.
+    role.addToPolicy(stripeCredentialsGrant(this, config));
 
-    role.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['secretsmanager:GetSecretValue'],
-        resources: [secretArn(config.stripeSecretName), secretArn(config.stripeWebhookSecretName)],
-      }),
-    );
+    // The publishable key, which is not a secret and is not read yet: a hosted
+    // checkout needs no Stripe.js on the page, so nothing in this service asks
+    // for it. The grant is here because this is the stack that owns the Stripe
+    // side of the deployment, and because the day something does read it — an
+    // embedded checkout, a price shown before signing in — the alternative is
+    // another 500 found in CloudWatch.
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['ssm:GetParameter'],
-        resources: [this.parameterArn(config.stripePublishableKeyParam)],
+        resources: [parameterArn(this, config.stripePublishableKeyParam)],
       }),
     );
 
@@ -232,12 +219,4 @@ export class PlayPaymentStack extends Stack {
     });
   }
 
-  /** The ARN of one parameter this stack's function reads. */
-  private parameterArn(name: string): string {
-    return Stack.of(this).formatArn({
-      service: 'ssm',
-      resource: 'parameter',
-      resourceName: name.replace(/^\//, ''),
-    });
-  }
 }

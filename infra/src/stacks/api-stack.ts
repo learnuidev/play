@@ -25,6 +25,7 @@ import type { FunctionSpec } from '../types';
 import { offlineFunctions, planGroups } from './api-groups';
 import { ApiRoutesStack } from './api-routes-stack';
 import { serviceEnvironment } from './environment';
+import { parameterArn, stripeCredentialsGrant } from './grants';
 
 /**
  * What the API needs from the media stack, and nothing else.
@@ -377,21 +378,28 @@ export class PlayApiStack extends Stack {
     // No `kms:Decrypt` beside them, because both are encrypted with the
     // AWS-managed `aws/ssm` key (a plain `String` is encrypted at rest too). A
     // parameter moved to a customer-managed key needs that grant added here.
-    const parameterArn = (name: string): string =>
-      Arn.format(
-        { service: 'ssm', resource: 'parameter', resourceName: name.replace(/^\//, '') },
-        this,
-      );
-
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['ssm:GetParameter'],
         resources: [
-          parameterArn(config.cloudFrontPrivateKeyParam),
-          parameterArn(config.cloudFrontPublicKeyIdParam),
+          parameterArn(this, config.cloudFrontPrivateKeyParam),
+          parameterArn(this, config.cloudFrontPublicKeyIdParam),
         ],
       }),
     );
+
+    // **The Stripe credentials, for the half of a purchase that is a route.**
+    //
+    // `POST /spaces/{spaceId}/checkout` runs in *this* stack and pays with the
+    // API key, while the webhook that records the payment runs in
+    // `PlayPaymentStack` and verifies with the signing secret. The two are one
+    // feature in two stacks, which is exactly how the first version of it shipped
+    // with the grant only on the webhook's role and answered 500 on the first
+    // real checkout: `not authorized to perform: secretsmanager:GetSecretValue`.
+    //
+    // Both roles are given the same statement — see `grants.ts` — because
+    // `stripeCredentials` reads both values in one call whichever half asks.
+    role.addToPolicy(stripeCredentialsGrant(this, config));
 
     // Bedrock, for writing quiz questions from a lesson.
     //
