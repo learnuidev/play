@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@ui/lib/utils';
+import { spaceMemberEmail, spaceMemberName } from '@/lib/space-member';
 import {
   SPACE_MEMBER_ROLES,
   SPACE_MEMBER_ROLE_LABELS,
@@ -34,24 +35,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@ui/components/ui/dropdown-menu';
-
-/**
- * Who a member is, in words, without giving an address away to somebody who
- * cannot use it: only whoever may manage the roster is shown addresses, and
- * everyone else sees who the row *is* rather than what it is keyed by.
- *
- * The name comes first because it is the one thing on the row that a person
- * chose: an address is a sign-in credential, and `Member a1b2c3` is an id. Both
- * remain the fallback for somebody who has not filled in a profile, or who has
- * been invited and has no account yet.
- */
-function displayName(member: SpaceMemberApi): string {
-  if (member.isYou) return 'You';
-  if (member.name) return member.name;
-  if (member.email) return member.email;
-  if (member.pending) return 'Invited';
-  return `Member ${member.userId.slice(0, 6)}`;
-}
 
 /**
  * One row of a course's roster: who it is, what they are here as, and — for
@@ -82,6 +65,8 @@ export function SpaceMemberRow({
   const resend = useResendSpaceInvitation(spaceId);
 
   const busy = updateRole.isPending || remove.isPending || resend.isPending;
+  const name = spaceMemberName(member);
+  const email = spaceMemberEmail(member);
   /**
    * What you may do to somebody else's row, as against your own.
    *
@@ -99,7 +84,7 @@ export function SpaceMemberRow({
     try {
       const { delivery } = await resend.mutateAsync({ memberId: member.userId });
       if (delivery.sent) {
-        toast.success(`Invitation sent again to ${member.email ?? member.userId}`);
+        toast.success(`Invitation sent again to ${member.email ?? name}`);
       } else {
         toast.warning('The invitation is still outstanding, but the email did not go out', {
           description: delivery.error,
@@ -151,12 +136,21 @@ export function SpaceMemberRow({
       ) : (
         /* Their own face when they have one, and the person-with-no-photo circle
            when they do not — the same circle the marketplace draws for them. */
-        <PersonAvatar name={displayName(member)} photoUrl={member.photoUrl} />
+        <PersonAvatar name={name} photoUrl={member.photoUrl} />
       )}
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-sm font-medium">{displayName(member)}</p>
+          <p className="truncate text-sm font-medium">{name}</p>
+          {/* The address, on the line the name is on rather than under it: a
+              roster is read to answer "who is this, and how do I reach them",
+              and the second line is already carrying when they joined. Null
+              whenever the API did not send one — see lib/space-member. */}
+          {email && (
+            <span className="truncate text-xs text-muted-foreground" title={email}>
+              {email}
+            </span>
+          )}
           {member.pending && (
             <Badge variant="outline" className="font-normal text-muted-foreground">
               Invited — not joined yet

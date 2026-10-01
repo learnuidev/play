@@ -19,14 +19,8 @@ import {
   DialogTrigger,
 } from '@ui/components/ui/dialog';
 import { Skeleton } from '@ui/components/ui/skeleton';
-import { SPACE_MEMBER_ROLE_LABELS, type CohortWithMembers, type SpaceMemberApi } from '@play/types';
-
-/** How a roster row is named here: an address if there is one, its key if not. */
-function displayName(member: SpaceMemberApi): string {
-  if (member.isYou) return 'You';
-  if (member.email) return member.email;
-  return `Member ${member.userId.slice(0, 6)}`;
-}
+import { SPACE_MEMBER_ROLE_LABELS, type CohortWithMembers } from '@play/types';
+import { spaceMemberEmail, spaceMemberName } from '@/lib/space-member';
 
 /**
  * Puts members of the course into one cohort, and takes them out again.
@@ -156,6 +150,7 @@ export function CohortMembersDialog({
           <div className="grid gap-2">
             {roster.map((member) => {
               const checked = ticked.has(member.userId);
+              const email = spaceMemberEmail(member);
               return (
                 <label
                   key={member.userId}
@@ -176,8 +171,18 @@ export function CohortMembersDialog({
                     className="size-4 shrink-0 accent-foreground"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">
-                      {displayName(member)}
+                    <span className="flex flex-wrap items-baseline gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {spaceMemberName(member)}
+                      </span>
+                      {/* Named by an address before this: a picker is a list of
+                          people to choose from, and a name with the address
+                          beside it is what somebody picks by. */}
+                      {email && (
+                        <span className="truncate text-xs text-muted-foreground" title={email}>
+                          {email}
+                        </span>
+                      )}
                     </span>
                     {member.pending && (
                       <span className="mt-0.5 block text-xs text-muted-foreground">

@@ -20,6 +20,7 @@ import {
 import { PersonAvatar } from '@play/ui';
 import type { SpaceMemberApi } from '@play/types';
 import { BlockLabel } from '@/components/shell/page-card';
+import { spaceMemberEmail, spaceMemberName } from '@/lib/space-member';
 import { AddInstructorDialog } from './add-instructor-dialog';
 import { InviteSpaceMemberDialog } from './invite-space-member-dialog';
 
@@ -214,7 +215,8 @@ function InstructorRow({
   const remove = useRemoveSpaceMember(spaceId);
 
   const busy = update.isPending || remove.isPending;
-  const name = member.name ?? member.email ?? `Member ${member.userId.slice(0, 6)}`;
+  const name = spaceMemberName(member);
+  const email = spaceMemberEmail(member);
 
   async function standDown() {
     try {
@@ -248,6 +250,15 @@ function InstructorRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <p className="truncate text-sm font-medium">{name}</p>
+          {/* The address, which is the only thing that tells two accounts of one
+              person apart — read off the row by the same rule every other list
+              of members uses, and absent for anybody the API did not send one
+              to. See lib/space-member. */}
+          {email && (
+            <span className="truncate text-xs text-muted-foreground" title={email}>
+              {email}
+            </span>
+          )}
           {member.isYou && (
             <Badge variant="outline" className="font-normal text-muted-foreground">
               This is you
@@ -257,10 +268,7 @@ function InstructorRow({
         <p className="mt-0.5 truncate text-xs text-muted-foreground">
           {member.pending
             ? 'Invited — not credited until they accept.'
-            : /* The address is the only thing that tells two accounts of one
-                 person apart, and the API sends it to whoever may manage the
-                 roster. */
-              (member.email ?? 'Teaches this course')}
+            : 'Teaches this course'}
         </p>
       </div>
 

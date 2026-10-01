@@ -18,6 +18,7 @@ import {
 } from '@ui/components/ui/dialog';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { cn } from '@ui/lib/utils';
+import { spaceMemberEmail, spaceMemberName } from '@/lib/space-member';
 
 /**
  * Putting somebody on a course's staff list.
@@ -102,7 +103,8 @@ export function AddInstructorDialog({
         ) : (
           <div className="grid max-h-80 gap-1 overflow-y-auto">
             {candidates.map((member) => {
-              const name = member.name ?? member.email ?? `Member ${member.userId.slice(0, 6)}`;
+              const name = spaceMemberName(member);
+              const email = spaceMemberEmail(member);
               const isChosen = member.userId === selected;
 
               return (
@@ -118,7 +120,14 @@ export function AddInstructorDialog({
                 >
                   <PersonAvatar name={name} photoUrl={member.photoUrl} size="md" />
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{name}</span>
+                    <span className="flex flex-wrap items-baseline gap-2">
+                      <span className="truncate text-sm font-medium">{name}</span>
+                      {email && (
+                        <span className="truncate text-xs text-muted-foreground" title={email}>
+                          {email}
+                        </span>
+                      )}
+                    </span>
                     <span className="block truncate text-xs text-muted-foreground">
                       {member.isYou ? 'This is you.' : `Joined ${new Date(member.joinedAt).toLocaleDateString()}`}
                     </span>

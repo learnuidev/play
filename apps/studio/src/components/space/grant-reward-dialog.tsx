@@ -4,6 +4,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Loader2Icon, SearchIcon, UsersIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@ui/lib/utils';
+import { spaceMemberEmail, spaceMemberName } from '@/lib/space-member';
 import {
   SPACE_MEMBER_ROLE_LABELS,
   type SpaceMemberApi,
@@ -29,17 +30,6 @@ import { Textarea } from '@ui/components/ui/textarea';
 
 /** The API's ceiling on the note, mirroring it so the field cannot overrun it. */
 const MAX_NOTE_LENGTH = 500;
-
-/**
- * Who a member is, in words: their address where the page has one, otherwise the
- * short tail of the id, which is enough to tell two people apart on one screen
- * without pretending to be a name.
- */
-function memberLabel(member: SpaceMemberApi): string {
-  if (member.isYou) return 'You';
-  if (member.email) return member.email;
-  return `Member ${member.userId.slice(0, 6)}`;
-}
 
 /**
  * Hands one reward to one member.
@@ -77,8 +67,12 @@ export function GrantRewardDialog({
       ? members
       : members.filter(
           (member) =>
+            // Searched by name as well as by address: an author looking somebody
+            // up here has an address in hand about as often as a spelling of
+            // their name, and the id that used to be the second key is not
+            // something anybody types.
             (member.email ?? '').toLowerCase().includes(query) ||
-            member.userId.toLowerCase().includes(query),
+            (member.name ?? '').toLowerCase().includes(query),
         );
 
   const selected = members.find((member) => member.userId === memberId);
@@ -106,7 +100,7 @@ export function GrantRewardDialog({
         ...(carriesCode && code.trim() ? { code: code.trim() } : {}),
       });
 
-      const who = memberLabel(selected);
+      const who = spaceMemberName(selected);
       // One grant per person per reward is what the table is keyed by, so
       // granting to somebody who already holds it hands back the one they have
       // rather than issuing a second. Saying "granted" there would be a claim the
@@ -206,6 +200,7 @@ export function GrantRewardDialog({
               <div className="grid gap-2 p-2">
                 {shown.map((member) => {
                   const isSelected = memberId === member.userId;
+                  const email = spaceMemberEmail(member);
                   return (
                     <label
                       key={member.userId}
@@ -223,8 +218,21 @@ export function GrantRewardDialog({
                         className="mt-0.5 size-4 shrink-0 accent-foreground"
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">
-                          {memberLabel(member)}
+                        <span className="flex flex-wrap items-baseline gap-2">
+                          <span className="truncate text-sm font-medium">
+                            {spaceMemberName(member)}
+                          </span>
+                          {/* Two people with the same name are told apart by
+                              nothing else, and a reward is handed to one
+                              account. */}
+                          {email && (
+                            <span
+                              className="truncate text-xs text-muted-foreground"
+                              title={email}
+                            >
+                              {email}
+                            </span>
+                          )}
                         </span>
                         <span className="mt-0.5 block text-xs text-muted-foreground">
                           {SPACE_MEMBER_ROLE_LABELS[member.role]}

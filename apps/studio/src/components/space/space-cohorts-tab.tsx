@@ -18,6 +18,7 @@ import { Badge } from '@ui/components/ui/badge';
 import { Button } from '@ui/components/ui/button';
 import { Skeleton } from '@ui/components/ui/skeleton';
 import { BlockLabel, EmptyState } from '@/components/shell/page-card';
+import { spaceMemberEmail, spaceMemberName } from '@/lib/space-member';
 import { CohortDialog } from '@/components/space/cohort-dialog';
 import { CohortMembersDialog } from '@/components/space/cohort-members-dialog';
 import type { CohortWithMembers, SpaceMemberApi } from '@play/types';
@@ -32,12 +33,26 @@ function runLabel(cohort: CohortWithMembers): string {
   return 'No schedule';
 }
 
-/** How one of a cohort's member ids is named, with the roster as the only source. */
+/**
+ * How one of a cohort's member ids is named, with the roster as the only source.
+ *
+ * The **name**, not the address, and that is the one place in the studio where
+ * the two are separated: a chip is a pill a few characters wide, and an address
+ * in one is a pill nobody can read. What the address is for — telling two
+ * accounts of one person apart — is on the roster a tab away and in the dialog
+ * behind these chips, both of which draw it in full.
+ */
 function memberLabel(memberId: string, roster: Map<string, SpaceMemberApi>): string {
   const member = roster.get(memberId);
   if (!member) return `Member ${memberId.slice(0, 6)}`;
-  if (member.isYou) return 'You';
-  return member.email ?? `Member ${memberId.slice(0, 6)}`;
+  return spaceMemberName(member);
+}
+
+/** The same member, with the address, for the chip's tooltip. */
+function memberTitle(memberId: string, roster: Map<string, SpaceMemberApi>): string {
+  const member = roster.get(memberId);
+  if (!member) return `Member ${memberId.slice(0, 6)}`;
+  return [spaceMemberName(member), spaceMemberEmail(member)].filter(Boolean).join(' · ');
 }
 
 /**
@@ -250,12 +265,15 @@ export function SpaceCohortsTab({
                   {cohort.memberIds.map((memberId) => {
                     const busy = removingMember === `${cohort.cohortId}:${memberId}`;
                     const label = memberLabel(memberId, roster);
+                    const title = memberTitle(memberId, roster);
                     return (
                       <li
                         key={memberId}
                         className="flex items-center gap-1 rounded-full border bg-muted/40 py-1 pl-3 pr-1 text-xs"
                       >
-                        <span className="max-w-56 truncate">{label}</span>
+                        <span className="max-w-56 truncate" title={title}>
+                          {label}
+                        </span>
                         {canManage && (
                           <button
                             type="button"
