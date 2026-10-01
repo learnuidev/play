@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   ArrowLeftIcon,
+  CheckIcon,
+  CopyIcon,
   ExternalLinkIcon,
   PlayIcon,
   SquareIcon,
@@ -216,6 +218,7 @@ export function FrontendView({ app }: { app: AppKey }) {
 function EnvTab({ app, stage }: { app: AppKey; stage: string }) {
   const [env, setEnv] = useState<FrontendEnvView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -241,12 +244,50 @@ function EnvTab({ app, stage }: { app: AppKey; stage: string }) {
     };
   }, [app, stage]);
 
+  // What a person pastes into Vercel is not this table: it is `KEY=value`, one
+  // per line, which is the shape the project-variable form and `vercel env add`
+  // both accept. A row with no value is left out rather than pasted as an empty
+  // one — Next treats an empty variable and an absent one differently, and the
+  // absent one is what the table is reporting.
+  const paste = (env?.rows ?? []).filter((row) => row.value);
+  const unset = (env?.rows ?? []).filter((row) => !row.value).map((row) => row.key);
+  const text = paste.map((row) => `${row.key}=${row.value}`).join("\n");
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Refused; the values are selectable in the table.
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeading
           title={`${app} · ${stage}`}
           hint="Derived, not typed. Each of these is a stack output the console hands the app when it starts it — which is why starting an app against an environment rewrites nothing on disk."
+          action={
+            paste.length ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void copy()}
+                title={`Copy all ${paste.length} variables as KEY=value lines, for this app's Vercel project`}
+                icon={
+                  copied ? (
+                    <CheckIcon className="text-ok size-3.5" />
+                  ) : (
+                    <CopyIcon className="size-3.5" />
+                  )
+                }
+              >
+                {copied ? "Copied" : "Copy for Vercel"}
+              </Button>
+            ) : null
+          }
         />
         <div className="mt-5">
           {error ? (
@@ -257,6 +298,14 @@ function EnvTab({ app, stage }: { app: AppKey; stage: string }) {
             <p className="text-muted-foreground text-xs">Reading the deployment…</p>
           )}
         </div>
+
+        {unset.length ? (
+          <p className="text-muted-foreground mt-4 text-xs leading-relaxed">
+            Left out of the copy: <span className="font-mono">{unset.join(", ")}</span> —{" "}
+            {unset.length === 1 ? "it has" : "they have"} no value on {stage}, and pasting{" "}
+            {unset.length === 1 ? "it" : "them"} as empty would only hide that.
+          </p>
+        ) : null}
       </Card>
 
       <Card>

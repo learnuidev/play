@@ -9,8 +9,8 @@
   },
   "mail": {
     "fromAddress": "learnuidev@gmail.com",
-    "appBaseUrl": "http://studio.lets-play.xyz",
-    "marketplaceBaseUrl": "https://lets-play.xyz"
+    "appBaseUrl": "http://staging.studio.lets-play.xyz",
+    "marketplaceBaseUrl": "https://staging.lets-play.xyz"
   },
   "auth": {
     "googleClientId": "344458249806-pob2vjh9ctn3grhb9g3kcf26806cg2h3.apps.googleusercontent.com",
@@ -19,16 +19,16 @@
       "http://localhost:3000/auth/callback",
       "http://localhost:3001",
       "http://localhost:3001/auth/callback",
-      "https://lets-play.xyz",
-      "https://lets-play.xyz/auth/callback",
-      "https://studio.lets-play.xyz",
-      "https://studio.lets-play.xyz/auth/callback"
+      "https://staging.lets-play.xyz",
+      "https://staging.lets-play.xyz/auth/callback",
+      "https://staging.studio.lets-play.xyz",
+      "https://staging.studio.lets-play.xyz/auth/callback"
     ],
     "logoutUrls": [
       "http://localhost:3000",
       "http://localhost:3001",
-      "https://lets-play.xyz",
-      "https://studio.lets-play.xyz"
+      "https://staging.lets-play.xyz",
+      "https://staging.studio.lets-play.xyz"
     ]
   },
   "cloudFrontPrivateKeyParam": "/play/staging/cloudfront/private-key",
