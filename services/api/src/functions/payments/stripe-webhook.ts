@@ -23,32 +23,41 @@ import { stripeCredentials, verifyStripeSignature } from '../../lib/stripe';
  *
  * ## What it does with an event
  *
- * A purchase here is a **checkout session**, and the row it writes is keyed by
- * that session: what was paid, for which course, by whom. Then it does the one
- * thing the money is for — it enrols the buyer, by calling the same
- * `enrollInSpace` the marketplace's own register button calls, so a learner who
- * pays is in the course by exactly the route a learner who registers is. Paying
- * twice is not an error: the membership write is conditional, and a second
- * payment for a course somebody is already in leaves the first membership alone.
+ * A purchase here is a **payment intent** — the marketplace draws its own
+ * checkout page with Elements — and the row it writes is keyed by that intent:
+ * what was paid, for which course, by whom. Then it does the one thing the money
+ * is for — it enrols the buyer, by calling the same `enrollInSpace` the
+ * marketplace's own register button calls, so a learner who pays is in the course
+ * by exactly the route a learner who registers is. Paying twice is not an error:
+ * the membership write is conditional, and a second payment for a course somebody
+ * is already in leaves the first membership alone.
  *
- * **The other kind of checkout session is a card being saved.** It is the same
- * hosted page in `mode=setup` — no line item, nothing charged, completing with a
- * setup intent instead of a payment intent — and it is branched on `mode` before
- * anything else is read. This used to be *how* a card was saved; the marketplace
- * now draws its own card field with Elements and records the result through
- * `POST /me/payment-methods`, so what is left here is the straggler: a hosted
- * page somebody still has open. It writes the same row through the same
- * function, so the two paths cannot disagree about a card.
+ * **A checkout session is still handled, and it is a straggler.** Every purchase
+ * used to be one: the marketplace sent the browser to Stripe's hosted page and
+ * this endpoint heard `checkout.session.completed`. Nothing creates one any more,
+ * but a page somebody still has open — or a session opened minutes before a
+ * deploy — completes and pays exactly as it did, and a purchase nobody records is
+ * a buyer with no course. So the session path stays, and it writes the *same row*
+ * as the intent path does (see the lookup in `recordCheckout`: one sale, one row,
+ * whichever id Stripe names first).
+ *
+ * **A session in `mode=setup` is a card being saved.** No line item, nothing
+ * charged, completing with a setup intent — and it is branched on `mode` before
+ * anything else is read. That is a straggler too: the marketplace draws its own
+ * card field with Elements and records the result through
+ * `POST /me/payment-methods`. It writes the same row through the same function,
+ * so the two paths cannot disagree about a card.
  *
  * ## Idempotency, which is the whole difficulty of a webhook
  *
  * Stripe delivers at least once and retries anything that is not a 2xx, so every
  * handler here has to be safe to run twice. Three things make it so: the row's
- * key is the session id, so a re-delivery updates one row rather than adding a
- * second sale; `enrollInSpace` is conditional on the membership not existing; and
- * the events that name only a payment intent — a refund, a failure — are looked
- * up through the index the table declares for that, tolerating the case where the
- * payment is not ours to update.
+ * key is the intent (or the session) the event names, so a re-delivery updates
+ * one row rather than adding a second sale; `enrollInSpace` is conditional on the
+ * membership not existing; and every event that names a payment without naming a
+ * row — a success, a refund, a failure — is looked up through the index the table
+ * declares for the intent, tolerating the case where the payment is not ours to
+ * update.
  *
  * ## What it deliberately does not do
  *
@@ -112,8 +121,21 @@ interface Charge {
   payment_intent?: string | null;
 }
 
+/**
+ * A payment intent, which is what a purchase made on the marketplace's own
+ * checkout arrives as.
+ *
+ * The amount and the currency travel with the event, so nothing here reads the
+ * course's price again: what was charged is what Stripe says was charged. The
+ * metadata is what the checkout route put on it — without it this event would
+ * name a payment with no course and no buyer.
+ */
 interface PaymentIntent {
   id: string;
+  amount: number;
+  currency: string;
+  customer?: string | null;
+  receipt_email?: string | null;
   metadata?: Record<string, string> | null;
 }
 
@@ -192,14 +214,21 @@ function rawBody(event: APIGatewayProxyEventV2): string | null {
  */
 async function apply(event: StripeEvent): Promise<string> {
   switch (event.type) {
+    case 'payment_intent.succeeded':
+      return recordIntent(event.data.object as unknown as PaymentIntent);
+    case 'payment_intent.payment_failed':
+      return failIntent(event.data.object as unknown as PaymentIntent);
+    case 'payment_intent.canceled':
+      return expireIntent(event.data.object as unknown as PaymentIntent);
+
+    // The hosted page this deployment used to send buyers to. Nothing creates a
+    // session any more, and these are the stragglers: a page somebody still has
+    // open, which pays exactly as it always did.
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded':
       return recordCheckout(event.data.object as unknown as CheckoutSession);
     case 'checkout.session.expired':
       return expireCheckout(event.data.object as unknown as CheckoutSession);
-
-    case 'payment_intent.payment_failed':
-      return failIntent(event.data.object as unknown as PaymentIntent);
 
     case 'charge.refunded':
       return refundCharge(event.data.object as unknown as Charge);
@@ -212,7 +241,65 @@ async function apply(event: StripeEvent): Promise<string> {
 }
 
 /**
- * A checkout that completed — the event a purchase is.
+ * A payment that went through — the event a purchase on the marketplace's own
+ * checkout arrives as.
+ *
+ * `payment_intent.succeeded` means the money was taken, and that is the whole
+ * difference from the session path below: a session can complete with
+ * `payment_status: unpaid` and be paid later by a method that clears
+ * asynchronously, which is why `recordCheckout` has to look before it enrols. An
+ * intent that succeeded has succeeded, so this always writes PAID and always
+ * enrols.
+ *
+ * **The row is usually already there** — `create-checkout` writes the attempt as
+ * PENDING when the checkout page opens, keyed by this intent — and it is looked
+ * up rather than assumed for the reason the session path also looks: the row it
+ * has to move may be keyed by something else. A payment that started on the
+ * hosted page has a row keyed by its session, and the intent it paid carries the
+ * same metadata, so writing a second row keyed by the intent would be two
+ * receipts for one course.
+ */
+async function recordIntent(intent: PaymentIntent): Promise<string> {
+  const existing = await findPaymentByIntent(intent.id);
+
+  // The metadata first, because it is what the route wrote for *this* attempt;
+  // the existing row's own fields are the fallback for an intent whose metadata
+  // is missing — a payment made from Stripe's dashboard against a course, say,
+  // which is still a payment of ours if the row is.
+  const spaceId = intent.metadata?.spaceId ?? existing?.spaceId;
+  const userId = intent.metadata?.userId ?? existing?.userId;
+
+  if (!spaceId || !userId) {
+    // Not ours to record: an intent this deployment did not create — a test
+    // event, or a charge made from the dashboard. There is no row to write
+    // without inventing one, and a signed request is still not a purchase.
+    return 'the intent carries no spaceId and userId metadata, so there is nothing to record';
+  }
+
+  const space = await getSpace(spaceId);
+  if (!space) return `no course ${spaceId} to record a payment against`;
+
+  const email = existing?.email ?? intent.receipt_email ?? undefined;
+  const payment = await recordPayment({
+    paymentId: existing?.paymentId ?? intent.id,
+    spaceId,
+    organizationId: space.organizationId,
+    userId,
+    status: 'PAID',
+    amountCents: intent.amount,
+    currency: intent.currency,
+    ...(email ? { email } : {}),
+    ...(intent.customer ? { stripeCustomerId: intent.customer } : {}),
+    stripePaymentIntentId: intent.id,
+    ...(intent.metadata?.priceId ? { stripePriceId: intent.metadata.priceId } : {}),
+  });
+
+  const enrolled = await enrol(spaceId, space.organizationId, userId, email);
+  return `recorded ${payment.paymentId} as paid; ${enrolled}`;
+}
+
+/**
+ * A checkout that completed — the event a purchase *used* to be.
  *
  * `checkout.session.completed` fires when the *session* completes, which for a
  * delayed payment method is before the money has actually arrived: the session
@@ -221,6 +308,14 @@ async function apply(event: StripeEvent): Promise<string> {
  * recorded — the attempt is real and worth having — and **not** enrolled: giving
  * a course away on a promise is the one mistake here that costs money rather than
  * a support message.
+ *
+ * **The row is looked for by the payment intent first.** The same purchase
+ * arrives twice now — once as the session that paid it, once as the intent
+ * itself — and Stripe copies a session's metadata onto the intent, so both
+ * events pass every check in this file and would write a row each: two receipts
+ * for one course, and a refund button on both. Whichever handler runs second
+ * finds the row the first one wrote and moves *that*, which is what makes the
+ * order they arrive in irrelevant.
  */
 async function recordCheckout(session: CheckoutSession): Promise<string> {
   // A **setup** session is a card being saved, not a course being bought, and it
@@ -240,13 +335,17 @@ async function recordCheckout(session: CheckoutSession): Promise<string> {
     return 'the session carries no spaceId and userId metadata, so there is nothing to record';
   }
 
+  const known = session.payment_intent
+    ? await findPaymentByIntent(session.payment_intent)
+    : undefined;
+
   const paid = session.payment_status === 'paid';
   const space = await getSpace(spaceId);
   if (!space) return `no course ${spaceId} to record a payment against`;
 
-  const email = session.customer_details?.email ?? undefined;
+  const email = session.customer_details?.email ?? known?.email ?? undefined;
   const payment = await recordPayment({
-    paymentId: session.id,
+    paymentId: known?.paymentId ?? session.id,
     spaceId,
     organizationId: space.organizationId,
     userId,
@@ -265,6 +364,28 @@ async function recordCheckout(session: CheckoutSession): Promise<string> {
 
   const enrolled = await enrol(spaceId, space.organizationId, userId, email);
   return `recorded ${payment.paymentId} as paid; ${enrolled}`;
+}
+
+/**
+ * A payment intent nobody confirmed, cancelled — by Stripe on whatever schedule
+ * it cancels unconfirmed intents, or by somebody in the dashboard.
+ *
+ * This is `checkout.session.expired`'s counterpart, and it is what keeps an
+ * abandoned checkout from sitting in somebody's billing history as PENDING for
+ * good: the row the checkout page wrote moves to `EXPIRED`, which is the status
+ * the marketplace already draws as "you tried and did not finish" rather than
+ * "this failed".
+ *
+ * Found by the intent, so a cancellation of an intent this deployment never wrote
+ * a row for — somebody else's, or a test event — says so instead of inventing
+ * one.
+ */
+async function expireIntent(intent: PaymentIntent): Promise<string> {
+  const payment = await findPaymentByIntent(intent.id);
+  if (!payment) return `no payment of this deployment used ${intent.id}`;
+
+  await setPaymentStatus(payment.paymentId, 'EXPIRED');
+  return `marked ${payment.paymentId} expired`;
 }
 
 /**
@@ -349,11 +470,13 @@ async function expireCheckout(session: CheckoutSession): Promise<string> {
 }
 
 /**
- * A payment that did not go through.
+ * A payment that did not go through. The card was declined, or the bank refused
+ * it, and the row the checkout page wrote becomes `FAILED`.
  *
  * Looked up by the intent, because that is all the event names — and skipped when
- * there is no row for it, which is the normal state for an intent that failed
- * before any session of ours was involved.
+ * there is no row for it, which is the normal state for an intent this
+ * deployment never opened: somebody's test event, or a charge attempted from the
+ * dashboard.
  */
 async function failIntent(intent: PaymentIntent): Promise<string> {
   const payment = await findPaymentByIntent(intent.id);

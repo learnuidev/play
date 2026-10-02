@@ -6,6 +6,7 @@ import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Loader2Icon, LockIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSavePaymentMethod, useStartPaymentMethodSetup } from '@play/api';
+import { useElementsAppearance } from '@/lib/stripe-appearance';
 import { Button } from '@ui/components/ui/button';
 import {
   Dialog,
@@ -45,7 +46,15 @@ export function AddCardDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { mutateAsync: startSetup } = useStartPaymentMethodSetup();
-  const dark = useDarkDocument();
+  /**
+   * How the field is drawn — the theme the page is in, and no accent.
+   *
+   * A saved card belongs to the account rather than to a course, so there is no
+   * brand colour to pass: the form is the product's, and the shared appearance
+   * is what keeps it the same form as the checkout's. See
+   * `lib/stripe-appearance`.
+   */
+  const appearance = useElementsAppearance();
 
   const [session, setSession] = useState<{
     clientSecret: string;
@@ -133,41 +142,7 @@ export function AddCardDialog({
             Opening the card form…
           </p>
         ) : (
-          <Elements
-            stripe={stripePromise}
-            options={{
-              clientSecret: session.clientSecret,
-              /**
-               * The theme the reader is actually in, and **the only place the
-               * colours are set**.
-               *
-               * An Element draws inside Stripe's own iframe, so it cannot
-               * inherit anything from this page — `color: 'inherit'` on the
-               * card field resolves against the iframe's document and comes out
-               * black, which is a number field nobody can read on a dark card.
-               * That is what it did. The appearance API is the supported way to
-               * say it instead: two named themes, one radius, and no per-field
-               * style object to get wrong.
-               */
-              appearance: {
-                theme: dark ? 'night' : 'stripe',
-                variables: {
-                  borderRadius: '12px',
-                  fontFamily:
-                    'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-                  fontSizeBase: '14px',
-                  // Spelled out for the same reason the theme is: an Element is
-                  // an iframe and inherits nothing, so every colour it draws with
-                  // has to be given to it. These are the digits.
-                  colorText: dark ? '#f8fafc' : '#0f172a',
-                  colorTextSecondary: dark ? '#94a3b8' : '#64748b',
-                  colorTextPlaceholder: dark ? '#94a3b8' : '#64748b',
-                  colorDanger: '#f87171',
-                  colorBackground: dark ? '#0b0b0c' : '#ffffff',
-                },
-              },
-            }}
-          >
+          <Elements stripe={stripePromise} options={{ clientSecret: session.clientSecret, appearance }}>
             <CardForm
               clientSecret={session.clientSecret}
               country={session.country}
@@ -315,31 +290,4 @@ function CardForm({
       </div>
     </div>
   );
-}
-
-/**
- * Whether the page is dark — read from the document, not from the theme library.
- *
- * The first version of this asked `next-themes` what the theme was, and the card
- * field came out with the *light* theme's dark digits on a dark card. Which
- * theme a library remembers is not the question; the question is what colour the
- * page around the field actually is, and that is the `dark` class on `<html>`.
- *
- * A `MutationObserver` on that class is how a toggle reaches the field: Stripe
- * redraws an Element when its appearance changes, so following the document
- * keeps the digits legible whichever way the toggle is pressed.
- */
-function useDarkDocument(): boolean {
-  const [dark, setDark] = useState(false);
-
-  useEffect(() => {
-    const read = () => setDark(document.documentElement.classList.contains('dark'));
-    read();
-
-    const observer = new MutationObserver(read);
-    observer.observe(document.documentElement, { attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-
-  return dark;
 }

@@ -95,16 +95,23 @@ export function stripePublishableKeyParam(stage: string): string {
  * not know is answered with a 200 saying so, while subscribing to none of these
  * is a payment that never becomes an enrolment.
  *
- * `checkout.session.completed` is two features rather than one: a course being
- * **bought**, and a card being **saved** — saving one is the same hosted page in
- * `mode=setup`, so the same event carries both and the handler branches on the
- * session's mode. There is nothing extra to subscribe to for saved cards.
+ * `payment_intent.succeeded` is the one that matters most: it is what a course
+ * being **bought** on the marketplace's own checkout arrives as, and a deployment
+ * that does not subscribe to it takes money and enrols nobody.
+ *
+ * `checkout.session.completed` is the hosted page this deployment used to send
+ * buyers to, kept for the stragglers — a page somebody still has open — and it is
+ * two features in one event: a course being bought, and a card being **saved**,
+ * because saving one was the same page in `mode=setup`. The handler branches on
+ * the session's mode. There is nothing extra to subscribe to for saved cards.
  */
 export const STRIPE_EVENTS = [
+  "payment_intent.succeeded",
+  "payment_intent.payment_failed",
+  "payment_intent.canceled",
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
   "checkout.session.expired",
-  "payment_intent.payment_failed",
   "charge.refunded",
 ];
 

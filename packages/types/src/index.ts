@@ -482,15 +482,36 @@ export interface UpdateSpacePayload {
 /**
  * What asking to pay for a course answers with.
  *
- * A URL rather than a payment: this is a redirect to Stripe's own hosted page,
- * and nothing about the purchase is decided until the webhook hears the money
- * arrive. The id is the checkout session, which is also the id of the pending
- * payment row — the same string, so a support question about a URL and a row in
- * the table are the same lookup.
+ * **A client secret, not a URL.** The marketplace draws the payment form itself
+ * with Stripe Elements, so this is what that form confirms — the same shape the
+ * card form's own route answers with, because the two are the same kind of
+ * thing: an intent opened on the server, and a page that collects the details
+ * Stripe then charges.
+ *
+ * Nothing about the purchase is decided here: no money has moved and the
+ * membership does not exist until the webhook hears it arrive.
  */
-export interface CheckoutSessionResponse {
-  url: string;
+export interface CourseCheckoutResponse {
+  /**
+   * `pi_…` — the payment intent, and the key of the row this attempt was
+   * written as. The same string, so a support question about a payment and a row
+   * in the table are the same lookup.
+   */
   paymentId: string;
+  /** `pi_…_secret_…`: what `stripe.confirmPayment` is given. */
+  clientSecret: string;
+  /** `pk_…`: what `loadStripe` is given. Not a secret — it is served to browsers. */
+  publishableKey: string;
+  /**
+   * Where Stripe sends the browser back to when a payment needs a page of its
+   * own — a bank's verification step, or a wallet that leaves the site.
+   *
+   * Built by the API from the deployment's own marketplace address rather than
+   * composed by the page out of `window.location`: it is the address the course
+   * page is served at, and the same one the hosted page used to return to.
+   */
+  returnUrl: string;
+  /** What Stripe will charge: the price the server resolved, not the catalog's. */
   amountCents: number;
   currency: string;
 }
@@ -850,7 +871,12 @@ export const REFUND_WINDOW_DAYS = 30;
 
 /** One purchase, as the person who made it reads it. */
 export interface BillingEntry {
-  /** The Stripe checkout session id, and the row's own key. */
+  /**
+   * The row's own key, and what Stripe calls the thing that was paid: a `pi_…`
+   * payment intent for every purchase made through the marketplace's own
+   * checkout, and a `cs_…` session for the ones bought on Stripe's hosted page
+   * before the marketplace drew its own.
+   */
   paymentId: string;
   spaceId: string;
   /** The course as it is called now. Empty when the course is gone. */

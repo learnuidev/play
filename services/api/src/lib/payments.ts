@@ -9,10 +9,14 @@ export const PAYMENTS_TABLE = env.paymentsTableName;
 /**
  * The one index this module reads.
  *
- * A refund and a failed payment arrive as events naming the *payment intent*,
- * and the session that started it is not in them — so without this index those
- * two events would be a scan of every payment in the table, or a row that never
- * gets updated.
+ * Every event about a payment that has already happened names the **payment
+ * intent** — a failure, a cancellation, a refund — and the row those events are
+ * about is keyed by whatever the purchase was opened as. For a payment made in
+ * the marketplace's own checkout the two are the same string; for one made on
+ * Stripe's hosted page the row is keyed by the *session* and the intent is only
+ * on it, which is exactly the case this index is for. Without it, those events
+ * would be a scan of every payment in the table, or a row that never gets
+ * updated.
  *
  * The table declares two more — what one person has bought, and who has bought
  * one course — and neither is read here yet: they are what the marketplace's own
@@ -154,14 +158,15 @@ export async function findPaymentByIntent(
 }
 
 /**
- * Writes what Stripe said about one checkout session.
+ * Writes what Stripe said about one payment.
  *
  * A `Put` rather than an update, and that is the idempotency: the row's key **is**
- * the session, so Stripe re-delivering the same event — which it does, on any
- * response that is not a 2xx — writes the same row again rather than adding a
- * second sale. `createdAt` is preserved across that, because the row appearing is
- * not the same event as the purchase happening, and a receipt should not change
- * its date because a webhook was retried.
+ * the payment Stripe named — the intent, or the session for a purchase that
+ * started on the hosted page — so Stripe re-delivering the same event, which it
+ * does on any response that is not a 2xx, writes the same row again rather than
+ * adding a second sale. `createdAt` is preserved across that, because the row
+ * appearing is not the same event as the purchase happening, and a receipt should
+ * not change its date because a webhook was retried.
  *
  * The status is written as given rather than guarded against: the events arrive
  * in the order Stripe emitted them, a later one is the newer truth, and a

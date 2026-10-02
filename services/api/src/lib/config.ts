@@ -46,9 +46,12 @@ export const env = {
   oauthTokensTableName: required('OAUTH_TOKENS_TABLE', process.env.OAUTH_TOKENS_TABLE),
   oauthCodesTableName: required('OAUTH_CODES_TABLE', process.env.OAUTH_CODES_TABLE),
   /**
-   * What was paid for a course, keyed by the Stripe checkout session that paid
-   * for it. Written by the webhook — see `functions/payments/stripe-webhook.ts`
-   * — and read by the marketplace's own screens.
+   * What was paid for a course, keyed by the Stripe payment the purchase was
+   * made with — the intent for one made in the marketplace, the session for the
+   * older hosted-page purchases. Written by the webhook and by the checkout
+   * route that opens the payment — see
+   * `functions/payments/stripe-webhook.ts` — and read by the marketplace's own
+   * screens.
    */
   paymentsTableName: required('PAYMENTS_TABLE', process.env.PAYMENTS_TABLE),
   /**

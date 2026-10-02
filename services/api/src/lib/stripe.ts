@@ -188,71 +188,91 @@ export async function createPrice(input: {
   });
 }
 
-/** A Stripe checkout session, as much of it as this service reads. */
-export interface StripeCheckoutSession {
+/** A Stripe payment intent, as much of it as this service reads. */
+export interface StripePaymentIntent {
   id: string;
-  url: string | null;
-  payment_intent: string | null;
-  amount_total: number | null;
-  currency: string | null;
+  /**
+   * `pi_…_secret_…`: what the browser confirms the intent with.
+   *
+   * Null is possible in Stripe's own type and means the intent cannot be
+   * confirmed by anybody, so it is treated as a failure rather than passed on.
+   */
+  client_secret: string | null;
+  status: string;
+  amount: number;
+  currency: string;
 }
 
 /**
- * A hosted checkout page, which is where a learner actually pays.
+ * The charge a course is bought with.
  *
- * **Redirect rather than embedded**: Stripe's hosted page handles the card
- * fields, the tax line, the receipt and every payment method the account has
- * enabled, and none of that is code this repository should own. The marketplace
- * sends the browser to `url` and Stripe sends it back to `successUrl`.
+ * **An intent rather than a session, because the form is the marketplace's.**
+ * Stripe's hosted page was a redirect off this product; what the Payment Element
+ * confirms in the marketplace's own checkout page is an intent, so what that page
+ * needs from here is not a URL but a *secret* — and the intent behind it, which
+ * is the id the webhook, the receipt and every refund afterwards name.
  *
- * The metadata is what makes a payment mean something on the way back: the
- * webhook is told the session id, and without these three it would have a payment
- * with no course and no buyer attached to it. `client_reference_id` carries the
- * same person for Stripe's own dashboard, where a support question starts.
+ * `automatic_payment_methods` is the one line that decides what the form offers,
+ * and leaving the choice to it is on purpose: enabled, the **account's**
+ * configuration decides, which is what the hosted page did and the rule this
+ * service follows everywhere it is not drawing a wallet. The card form is the
+ * exception — it has to collect a card, because a row with a brand and four
+ * digits is drawn from what it saves — and a purchase is not that: what a
+ * payment method leaves behind here is money and a receipt.
  *
- * `customerId` is passed when the buyer has saved a card, which is what puts
- * their existing cards on Stripe's page for them to pick. It is passed *instead
- * of* `customerEmail` rather than beside it: Stripe refuses the pair, and the
- * address is already on the customer the id names.
+ * `customerId` is passed when the buyer has one, which is what puts their saved
+ * cards *inside* the form beside the empty fields. `receiptEmail` is passed
+ * whenever the deployment knows their address, because that is what makes Stripe
+ * send a receipt for a purchase made on this page.
+ *
+ * ## What an intent does not have, and it is worth saying once
+ *
+ * A checkout session carries **line items**: the course as a product, at a price,
+ * with a tax code — which is where Stripe's own tax and Managed Payments
+ * handling was computed for this deployment. An intent carries an amount and a
+ * description. So a payment taken through this route is a number this service
+ * resolved in `priceForCourse`, and a deployment that needs tax computed from the
+ * buyer's address has to say so on the intent (`automatic_tax`, which needs a
+ * customer and Stripe Tax enabled) — a decision about money rather than a detail
+ * of this function, and one this file cannot make on the deployment's behalf.
  */
-export async function createCheckoutSession(input: {
-  priceId: string;
-  quantity?: number;
-  successUrl: string;
-  cancelUrl: string;
-  /** The buyer, for the receipt and for the webhook. */
-  customerEmail?: string;
-  /** The Stripe customer that buyer already has, when they have one. */
+export async function createPaymentIntent(input: {
+  amountCents: number;
+  currency: string;
+  /** What Stripe's dashboard and the receipt call this charge. */
+  description: string;
+  /** The customer that buyer already has, when they have one. */
   customerId?: string;
-  clientReferenceId: string;
+  /** Where the receipt goes, when the deployment knows their address. */
+  receiptEmail?: string;
   metadata: Record<string, string>;
-}): Promise<StripeCheckoutSession> {
+}): Promise<StripePaymentIntent> {
   const params: Record<string, string> = {
-    mode: 'payment',
-    'line_items[0][price]': input.priceId,
-    'line_items[0][quantity]': String(input.quantity ?? 1),
-    success_url: input.successUrl,
-    cancel_url: input.cancelUrl,
-    client_reference_id: input.clientReferenceId,
+    amount: String(input.amountCents),
+    currency: input.currency,
+    description: input.description,
+    'automatic_payment_methods[enabled]': 'true',
   };
 
   if (input.customerId) params.customer = input.customerId;
-  else if (input.customerEmail) params.customer_email = input.customerEmail;
+  if (input.receiptEmail) params.receipt_email = input.receiptEmail;
+  // The metadata is what makes a payment mean something: the webhook is told the
+  // intent id, and without these it would have a payment with no course and no
+  // buyer attached to it.
   for (const [key, value] of Object.entries(input.metadata)) {
     params[`metadata[${key}]`] = value;
   }
 
-  return stripeRequest<StripeCheckoutSession>('POST', 'checkout/sessions', params);
+  return stripeRequest<StripePaymentIntent>('POST', 'payment_intents', params);
 }
 
 /**
  * A Stripe customer: the person a card is saved against.
  *
- * Stripe can create a customer implicitly from a checkout session, and it does
- * for every course bought here — but a customer made that way is only
- * discovered after the fact, and **saving a card happens before any purchase**.
- * So this is called for somebody who has never bought anything, and the id it
- * answers with is the one their cards hang off.
+ * A customer made implicitly is only discovered after the fact, and **saving a
+ * card happens before any purchase**. So this is called for somebody who has
+ * never bought anything, and the id it answers with is the one their cards hang
+ * off.
  *
  * Looked up before it is called rather than created every time — see
  * `stripeCustomerIdFor` in `lib/payment-methods` — because a person with two

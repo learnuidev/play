@@ -1028,28 +1028,34 @@ export interface SpaceMember {
 /**
  * What became of one attempt to buy a course.
  *
- * The states are the checkout session's own life, because that is what a payment
- * row *is* here — one attempt, keyed by the session Stripe created for it. A
- * person who abandons a checkout leaves an `EXPIRED` row rather than nothing,
- * which is the difference between "they never tried" and "they tried and it did
- * not go through", and that difference is the whole of what an author asking
- * about a missing sale needs to know.
+ * The states are the payment's own life as Stripe tells it, because that is what
+ * a payment row *is* here — one attempt, keyed by the intent (or, before the
+ * marketplace drew its own checkout, the session) Stripe created for it. A person
+ * who abandons a checkout leaves an `EXPIRED` row rather than nothing, which is
+ * the difference between "they never tried" and "they tried and it did not go
+ * through", and that difference is the whole of what an author asking about a
+ * missing sale needs to know.
  */
 export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'REFUNDED';
 
 /**
  * One purchase, as the payments table holds it.
  *
- * Keyed by the **Stripe checkout session id**, which is the one identifier both
+ * Keyed by the **Stripe payment intent id**, which is the one identifier both
  * ends of a purchase know: the backend knows it because it is what it asked
- * Stripe for, and the webhook knows it because Stripe sends the session back
- * with the event. Nothing else is unique to one purchase — a person may buy the
- * same course twice, and a payment intent can outlive the attempt that made it —
- * so this is the key that makes a re-delivered event an update to one row rather
- * than a second sale.
+ * Stripe for, and the webhook knows it because Stripe names the intent in the
+ * event that says the money arrived. Nothing else is unique to one purchase — a
+ * person may buy the same course twice, and an intent can be retried after a
+ * declined card — so this is the key that makes a re-delivered event an update to
+ * one row rather than a second sale.
+ *
+ * Rows written before the marketplace drew its own checkout are keyed by the
+ * **checkout session** instead, because that is what those purchases were: the
+ * id is opaque to the rest of the table, and every read of a payment goes through
+ * `paymentId` rather than assuming what it starts with.
  */
 export interface Payment {
-  /** Partition key: the checkout session id, `cs_…`. */
+  /** Partition key: `pi_…` for a payment made in the marketplace, `cs_…` for an older one. */
   paymentId: string;
   spaceId: string;
   /** Denormalized from the space, so an author's sales query needs no join. */

@@ -98,6 +98,11 @@ export function useEnrollInCourse(spaceId: string) {
  * cache refreshed on a promise, and the page a buyer comes back to is the one
  * that finds out.
  *
+ * What it answers with is what the checkout page draws its form from: a client
+ * secret, and the publishable key Stripe.js is loaded with. The card details go
+ * to Stripe from that form, so nothing about them passes through this hook — the
+ * number is typed into Stripe's own iframe and this app never sees it.
+ *
  * That is also why this is not an `onSuccess` that enrols: the two facts — "a
  * checkout was opened" and "somebody paid" — are different facts, and only the
  * webhook knows the second one.

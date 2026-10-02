@@ -6,13 +6,13 @@ import type {
   BatchVerificationResponse,
   BillingHistoryResponse,
   CatalogCourseResponse,
-  CheckoutSessionResponse,
   CohortResponse,
   Comment,
   CompletionResponse,
   ContentFileResponse,
   ContentMutationResponse,
   ContentResponse,
+  CourseCheckoutResponse,
   CreateApiKeyPayload,
   CreateApiKeyResponse,
   CreateCohortPayload,
@@ -488,19 +488,21 @@ export const api = {
     request<SpaceMemberResponse>(`/spaces/${spaceId}/enrollment`, { method: 'POST' }),
 
   /**
-   * Asks to buy a course, and answers with where to pay.
+   * Opens a checkout for a course, and answers with what the payment form needs.
    *
-   * A **URL**, not a membership: the backend opens a Stripe checkout session and
-   * this is Stripe's own hosted page, so the caller redirects rather than
-   * rendering anything. Nothing here grants access — that is the webhook's job,
-   * when Stripe confirms the payment — which is why the page a buyer returns to
-   * is a page that says "confirming", not one that claims they are in.
+   * A **client secret**, not a membership and not a redirect: the backend opens a
+   * Stripe payment intent, and the marketplace draws the card form itself with
+   * Elements — so the caller renders the form rather than leaving the app, which
+   * is how the screen where somebody types a card number stays this product's.
+   * Nothing here grants access: that is the webhook's job, when Stripe says the
+   * money arrived, which is why the page a buyer is returned to says "confirming"
+   * rather than claiming they are in.
    *
    * A course that is free, or one the caller is already in, is refused with the
    * sentence saying which: 400 and 409 respectively.
    */
   startCourseCheckout: (spaceId: string) =>
-    request<CheckoutSessionResponse>(`/spaces/${spaceId}/checkout`, { method: 'POST' }),
+    request<CourseCheckoutResponse>(`/spaces/${spaceId}/checkout`, { method: 'POST' }),
 
   /** Drops the caller out of a course. The course itself is untouched. */
   leaveCourse: (spaceId: string) =>
