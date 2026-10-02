@@ -216,6 +216,16 @@ export function useDeleteQuestion(bankId?: string) {
  * The answer comes back as the question itself, so a row can be written straight
  * into the list rather than waiting for a refetch — a reviewer working down fifty
  * questions should not watch each one blink.
+ *
+ * **When there is no answer, the list is refetched instead.** An API that has not
+ * been deployed with the un-verify half of that still replies to a `DELETE` with
+ * an empty `204`, and the two halves of this product ship separately, so this
+ * screen can be newer than the service it is talking to. Reading `.question` off
+ * that empty body is what threw `Cannot destructure property 'question' of
+ * 'param' as it is undefined` at the moment somebody took a verification back:
+ * the call had worked, and the screen broke reporting it. A missing body is
+ * "the call worked, the row is not in hand", which is a slower row rather than an
+ * error.
  */
 export function useVerifyQuestion(bankId?: string) {
   const qc = useQueryClient();
@@ -224,8 +234,10 @@ export function useVerifyQuestion(bankId?: string) {
   return useMutation({
     mutationFn: ({ questionId, verified }: { questionId: string; verified: boolean }) =>
       verified ? api.verifyQuestion(questionId) : api.unverifyQuestion(questionId),
-    onSuccess: ({ question }, { questionId }) => {
-      if (bankId) {
+    onSuccess: (answer, { questionId }) => {
+      const question = answer?.question;
+
+      if (bankId && question) {
         qc.setQueryData(
           bankKeys.questions(bankId),
           (previous: Awaited<ReturnType<typeof api.listBankQuestions>> | undefined) =>

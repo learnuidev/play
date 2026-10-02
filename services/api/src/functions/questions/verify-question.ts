@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireQuestionAccess } from '../../lib/access';
 import { requireUserId } from '../../lib/auth';
-import { handle, noContent, ok, pathParam } from '../../lib/http';
+import { handle, ok, pathParam } from '../../lib/http';
 import { getQuestion, updateQuestionStatus } from '../../lib/questions';
 
 /**
@@ -18,6 +18,15 @@ import { getQuestion, updateQuestionStatus } from '../../lib/questions';
  * checked this" is the absence of the fact, and a row carrying an empty name is
  * a row somebody has to read carefully to understand.
  *
+ * **Both directions answer with the question**, which is the one thing about this
+ * route that has been wrong: un-verifying used to end in a `204` with nothing in
+ * it, while the client had typed the answer as a question and read `.question`
+ * off it — so the call did its work and then threw `Cannot destructure property
+ * 'question' of 'param' as it is undefined` at the person who made it. What the
+ * body is *for* is the same in both directions: a reviewer working down fifty
+ * questions writes each row into the list from this answer rather than watching
+ * it blink through a refetch.
+ *
  * Verifying here and verifying from a quiz's page are the same act on the same
  * question: it is shared, so it is verified once.
  */
@@ -29,7 +38,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   if (event.httpMethod === 'DELETE') {
     await updateQuestionStatus(questionId, { status: 'NEEDS_VERIFICATION' });
-    return noContent();
+    return ok({ question: await getQuestion(questionId) });
   }
 
   await updateQuestionStatus(questionId, {

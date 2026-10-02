@@ -740,12 +740,22 @@ export const api = {
    * directions and there is no third state to set: a question is either read by
    * somebody or it is not. It is the same act whichever page it is done from,
    * because it is the same question.
+   *
+   * **Both answer with the question**, and the `undefined` in the second one is
+   * not decoration: the `DELETE` used to end in a `204` with no body at all, and
+   * the two halves of this product deploy separately — a studio carrying this
+   * code can be talking to an API that has not been deployed with the answer yet.
+   * Typed as it is, that is a body the screen checks for; typed as a question it
+   * was a promise the API did not keep, and reading `.question` off nothing threw
+   * the moment somebody un-verified a question.
    */
   verifyQuestion: (questionId: string) =>
     request<QuestionResponse>(`/questions/${questionId}/verification`, { method: 'PUT' }),
 
   unverifyQuestion: (questionId: string) =>
-    request<QuestionResponse>(`/questions/${questionId}/verification`, { method: 'DELETE' }),
+    request<QuestionResponse | undefined>(`/questions/${questionId}/verification`, {
+      method: 'DELETE',
+    }),
 
   /**
    * Every question about one course's lessons, from every bank.
