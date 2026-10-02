@@ -275,6 +275,20 @@ export async function createCustomer(input: {
  * the payment method. That is why the webhook reads `setup_intent` off the
  * session rather than a payment intent: there is no money in this event at all.
  *
+ * **Managed Payments is turned off for this request, and it is not optional on
+ * this repo's account.** Stripe enables it by default on a new account, and it
+ * refuses a setup session outright:
+ *
+ *   Invalid mode: setup. Managed Payments … only supports mode: subscription or
+ *   mode: payment. Use a supported mode, or pass managed_payments[enabled]=false
+ *
+ * Which is the right answer for this page and not a workaround: Managed Payments
+ * is Stripe acting as merchant of record — it does the tax and the invoicing for
+ * a *sale* — and there is no sale here. Saving a card is a request to remember
+ * one, and a card saved under a merchant-of-record arrangement would be one this
+ * deployment may not be the merchant for. The purchase path keeps whatever the
+ * account is configured to do; only this one asks for it to stand aside.
+ *
  * Nothing here sets `payment_method_types`. Stripe decides which methods the
  * account accepts and which currencies they work in, and a list written here
  * would be this repository's second opinion about that.
@@ -290,6 +304,7 @@ export async function createSetupSession(input: {
     customer: input.customerId,
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
+    'managed_payments[enabled]': 'false',
   };
 
   for (const [key, value] of Object.entries(input.metadata)) {
