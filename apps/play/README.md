@@ -221,19 +221,32 @@ looks contended: what it tells you is that the run next to it is somebody else's
 
 ### Logs
 
-For a backend: CloudWatch, **one function at a time**, event-driven ones first.
-`FilterLogEvents` takes a single log group and a new environment has 158 of them,
-so fanning out per request would be 158 API calls to draw a screen. The
-event-driven ones come first because they never answer a request and therefore
-have nowhere else to say anything.
+For a backend, one function at a time — and three things about it: what it did,
+what it said, and a way to search what it said.
+
+**One function at a time**, because `FilterLogEvents` takes a single log group
+and a new environment has 158 of them: fanning out per request would be 158 API
+calls to draw a screen. The event-driven ones come first because they never
+answer a request and therefore have nowhere else to say anything.
+
+**The list of functions is `DescribeLogGroups` with the stage as a name prefix**,
+not `lambda list-functions`. That is a fix, not a preference: `list-functions` is
+paginated account-wide, so filtering it by name in this process showed a stage's
+Lambdas *only if they happened to fall in the first page* — on this account
+`dev`'s 175 came back as 80, and two thirds of the alphabet was simply not there
+to search for. A prefix query is filtered by the service, so it is complete
+whatever else the account holds, and it is the more honest source for a tab that
+reads logs: a function with no log group is a function this tab has nothing to
+say about. Each row also carries **how many bytes of log it holds**, which is how
+you find the function filling CloudWatch up.
 
 **The function is searched for, not selected from a list.** An environment has
-around 165 Lambdas, and a `<select>` holding all of them is a control you scroll
+around 175 Lambdas, and a `<select>` holding all of them is a control you scroll
 rather than one you use. So there is a search box — substring, case-insensitive,
 over the key *and* the deployed name, because the string somebody has is often
 the one out of a stack trace — and the matches appear **only while something is
-typed**: list is the answer to a search rather than a piece of furniture, and 165
-names standing open under the box is the panel this replaced. Enter opens the
+typed**: the list is the answer to a search rather than a piece of furniture, and
+175 names standing open under the box is the panel this replaced. Enter opens the
 first match, Escape puts the box back, and the matches scroll rather than page.
 
 **It remembers what you were looking at**, per stage, in `localStorage`: the
@@ -248,6 +261,68 @@ environment while *which* ones you are working on is not. What is **not** stored
 is the query text: restoring a filter on load would hide most of the list from
 somebody who has not typed anything, and the thing worth coming back to is the
 function, not the string that found it.
+
+#### Activity — the chart
+
+Above the lines, what the function has been doing: `Invocations`, `Errors` and
+`Duration`'s **p95**, out of CloudWatch. A p95 rather than an average because an
+average hides exactly the tail that a latency number is for, and it is the one
+question a transcript cannot answer — a slow invocation and a fast one look
+identical in a log.
+
+**Two scales, and two colours.** The counts share the left axis and the
+milliseconds get the right one, because drawing all three against one scale is
+what makes these charts useless — 400 ms flattens every bar, or the bars flatten
+the latency to nothing. `run` is the latency line and `destructive` is the error
+bars, the same tones the chips use; invocations are the muted foreground, because
+"it ran" is not news.
+
+**The series are filled in before they are drawn.** CloudWatch omits the periods
+it has no data for rather than answering zero, so an idle hour would otherwise
+collapse to no width at all — and a chart of "is this being called" that cannot
+show an idle hour is not a chart of anything. `durationP95` stays `null` in a
+quiet slot rather than becoming `0`: no invocations is not a fast response.
+
+The chart is an inline `<svg>` and about eighty lines of arithmetic. A charting
+library is 40 kB to draw one line and two bars, and everything it would draw with
+comes from this app's own tokens anyway.
+
+**The range buttons are the page's one clock.** `1h`/`3h`/`24h`/`7d` governs the
+chart *and* the lines below it: "what did this function do" and "what did it say"
+are one question asked twice, and two range controls would be two answers to it.
+
+#### Searching the lines
+
+The search box under the transcript goes to CloudWatch as a **filter pattern**,
+not a filter over what is already on screen — which is the difference between
+finding the one error in an hour of noise and finding the one in front of you.
+It is a button rather than a keystroke filter for the same reason: one press is
+one read, where a filter that ran as you typed would be one read per character.
+CloudWatch's own syntax works there — a bare word, `"two words"` for a phrase,
+`?one ?two` for either, `{ $.level = "error" }` for a JSON term — and it is
+case-sensitive, which the hint says rather than leaving somebody to conclude
+their logs are empty.
+
+#### Reading the lines
+
+Every line is taken apart before it is drawn (`lib/logs.ts`), because a
+CloudWatch pane is a column of monospace in which the error and the report saying
+the function is one payload away from running out of memory look exactly like the
+190 `INFO` lines around them:
+
+| Line | Drawn as |
+| --- | --- |
+| `START` / `END` | a muted tag and the version — a request's bookends |
+| `REPORT` | its numbers as label/value pairs, with the memory in the warn tone when it is within 80% of the limit |
+| `ERROR Invoke Error {…}` | the message in the destructive tone, with the type and the stack beneath it |
+| the handler's JSON | its `msg` as the line, and the rest of the object beside it as `{ key: value }` |
+| anything else | the text |
+
+The **request id** is drawn once per line as a short muted chip rather than left
+inside the text: it is how one invocation is followed through a busy function.
+The runtime's own framing prefix — `2026-09-01T13:49:31.406Z\t<id>\tINFO\t` — is
+stripped, because the timestamp is already the column beside it and both halves
+are already shown as their own.
 
 For a frontend: the `next dev` output, straight from the process the console
 started — including one started before the page was opened, because the server
@@ -785,6 +860,8 @@ src/server/
   signing-key.ts   the CloudFront key pair: is it in SSM, and putting it there
   tables.ts        the environment's DynamoDB tables: what they are, and a page
                    of what is in one — every call a read
+  metrics.ts       CloudWatch's numbers for one function, with the quiet slots
+                   filled in so the chart can show an idle hour
   run.ts           the run engine — steps, transcript, cancel, result — for both
                    kinds of run
   run-api.ts       one step's transcript after the fact, and the live stream
@@ -824,6 +901,11 @@ src/app/api/
                    CloudFormation's own history            (GET)
   backends/[stage]/logs
                    the stage's functions, or one's logs    (GET)
+                   — `?minutes=` is the window and `?q=`
+                   is a CloudWatch filter pattern
+  backends/[stage]/metrics
+                   one function's invocations, errors      (GET)
+                   and p95 duration, bucketed
   backends/[stage]/tables
                    the stage's tables, or one table's      (GET)
                    shape and a page of its rows —
@@ -864,6 +946,8 @@ src/lib/
   frontends.ts     the same for the three apps
   format.ts        durations, times, sizes — every string a page formats
   dynamo.ts        DynamoDB's wire format, rendered for a person
+  logs.ts          a Lambda log line, taken apart
+  ranges.ts        the windows the console offers, and each one's bucket
   cn.ts            class-name merging
 ```
 

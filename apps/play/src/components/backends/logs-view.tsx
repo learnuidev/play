@@ -10,6 +10,7 @@ import { TextInput } from "@/components/ui/field";
 import { FunctionMetricsCard } from "@/components/backends/function-metrics";
 import { LogTranscript } from "@/components/backends/log-transcript";
 import { cn } from "@/lib/cn";
+import { bytes as formatBytes } from "@/lib/format";
 import { DEFAULT_RANGE, type MetricRange, windowLabel } from "@/lib/ranges";
 import type { BackendFunctionView, BackendLogs } from "@/lib/types";
 
@@ -359,6 +360,15 @@ export function LogsView({ stage }: { stage: string }) {
                   >
                     {fn.key}
                   </span>
+                  {/* What the group holds, which is the one number a log list
+                      can offer that nothing else can: it is how you find the
+                      function filling CloudWatch up. Quiet functions say
+                      nothing rather than "0 B". */}
+                  {fn.storedBytes > 0 ? (
+                    <span className="text-muted-foreground/70 shrink-0 text-xs tabular-nums">
+                      {formatBytes(fn.storedBytes)}
+                    </span>
+                  ) : null}
                   {fn.eventDriven ? (
                     <span className="text-muted-foreground shrink-0 text-xs">event-driven</span>
                   ) : null}

@@ -463,13 +463,23 @@ export interface EnvironmentSettingsInput {
  * Backends: what a deploy reads and produces, and what it did
  * ------------------------------------------------------------------ */
 
+/**
+ * One function of a stage, as its logs are read.
+ *
+ * The source is **log groups**, not `lambda list-functions` — see
+ * `server/logs.ts` for the bug that decided it — so what a row carries is what a
+ * log group knows: its name (which is the function's, prefixed), how much it
+ * holds, and how long it keeps it.
+ */
 export interface BackendFunctionView {
   /** The deployed Lambda name: `play-<stage>-<key>`. */
   name: string;
   key: string;
   logGroup: string;
-  runtime: string | null;
-  modified: string | null;
+  /** How many bytes of log data this function's group holds. */
+  storedBytes: number;
+  /** Days it keeps its events, or null when it is set never to forget. */
+  retentionDays: number | null;
   /** Never answers a request, so nowhere else to say anything. */
   eventDriven: boolean;
 }
