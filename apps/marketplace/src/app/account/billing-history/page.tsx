@@ -24,12 +24,18 @@ import { Skeleton } from '@ui/components/ui/skeleton';
  *
  * ## The receipts
  *
- * Every attempt rather than only the ones that went through: a checkout somebody
- * abandoned and a card that was declined are both things a person opens this page
- * to find, and a list that showed only the sales would leave them with nothing to
- * look at and no explanation. They are drawn differently — a paid row is a
- * receipt, an abandoned one is a sentence — which is the whole reason the status
- * travels with the row instead of being filtered out here.
+ * What *happened*, rather than every payment that was ever opened: a purchase, a
+ * refund, a card that was declined, a checkout nobody finished. Each of those is
+ * a fact about money that somebody opens this screen to check, and they are drawn
+ * differently — a paid row is a receipt, a declined one is a sentence — which is
+ * the whole reason the status travels with the row instead of being filtered
+ * here.
+ *
+ * **A payment still in flight is not one of them**, and the API is where that is
+ * decided: `PENDING` rows are what a closed checkout page leaves behind, one per
+ * visit, and a list that carried them opened on a wall of "Payment pending"
+ * underneath the courses somebody had actually bought. What is left is what
+ * became of the money.
  *
  * ## The refund
  *
