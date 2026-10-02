@@ -400,7 +400,7 @@ function RegisterPanel({
   const checkout = useStartCheckout(spaceId);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
 
-  const { enrolled, isLoading } = useEnrollment(spaceId);
+  const { enrolled, isLoading, purchasedAt } = useEnrollment(spaceId);
   const coursePath = `/courses/${spaceId}`;
 
   const signedIn = status === 'authenticated';
@@ -517,7 +517,7 @@ function RegisterPanel({
         <>
           <p className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
             <CheckCircle2Icon className="size-4" />
-            You are registered
+            {purchasedAt ? 'You have bought this course' : 'You are registered'}
           </p>
 
           {/* What is left, above the way back in: somebody who opens this page
@@ -590,9 +590,31 @@ function RegisterPanel({
 
       {enrolled && <CourseRewardsLink spaceId={spaceId} />}
 
+      {/*
+        Leaving, or not being able to.
+
+        A course that was **bought** cannot be left: leaving is instant and
+        silent, and it would take somebody out of a course they paid for without
+        touching the payment. A purchase has a way out of its own — a refund
+        inside the 30 days — so what a buyer is offered here is the way to it
+        rather than a button with no effect. The API refuses the call either way;
+        this is the same rule said before it is asked.
+      */}
       {enrolled && (
         <div className="border-t pt-3">
-          {confirmingLeave ? (
+          {purchasedAt ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              You bought this course on {formatDate(purchasedAt)}, so it stays in your learning. If
+              you want your money back, ask for a refund from your{' '}
+              <Link
+                href="/account/billing-history"
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                billing history
+              </Link>
+              .
+            </p>
+          ) : confirmingLeave ? (
             <div className="grid gap-2">
               <p className="text-xs text-muted-foreground">
                 Leaving removes the course from your learning. Your progress is kept if you register

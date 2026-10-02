@@ -21,6 +21,114 @@ export const PAYMENTS_TABLE = env.paymentsTableName;
  */
 const PAYMENT_INTENT_INDEX = 'PaymentIntentIndex';
 
+/**
+ * What one person has bought, in the order they bought it.
+ *
+ * The index the table declared for exactly this — "what one person has bought"
+ * — and the read behind three screens: the billing history, the course page that
+ * has to know whether this is a purchase rather than a registration, and the
+ * leave route that refuses to undo one. All three ask about the caller's own
+ * payments, so all three are one query by their own `sub`.
+ */
+const USER_CREATED_INDEX = 'UserCreatedIndex';
+
+/**
+ * How long a learner has to change their mind about a purchase.
+ *
+ * Thirty days from the payment, and the number lives here rather than in the
+ * screens that print it: the marketplace shows the deadline, the route enforces
+ * it, and a second copy would be the one that drifts. It is mirrored as
+ * `REFUND_WINDOW_DAYS` in `@play/types` for the copy that says "30 days" in a
+ * sentence — the same arrangement the profile's length limits have.
+ */
+export const REFUND_WINDOW_DAYS = 30;
+
+/** Thirty days in milliseconds, spelled once. */
+const REFUND_WINDOW_MS = REFUND_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+/** When the money was taken: the payment's own `paidAt`, or when it was written. */
+export function paidAtOf(payment: Payment): number {
+  return payment.paidAt ?? payment.createdAt;
+}
+
+/**
+ * The last moment a refund may be asked for, or undefined when there is none.
+ *
+ * A payment that is not `PAID` has no window — an attempt that expired and one
+ * already refunded are both closed, and answering with a date for either would
+ * be offering a countdown to nothing. So this answers "when the window closes"
+ * only for the payments the window is still open on.
+ */
+export function refundDeadlineOf(payment: Payment): number | undefined {
+  if (payment.status !== 'PAID') return undefined;
+  return paidAtOf(payment) + REFUND_WINDOW_MS;
+}
+
+/**
+ * Whether Stripe is the one who would have to give the money back.
+ *
+ * Without a payment intent there is nothing to refund: the row exists because a
+ * checkout was opened, not because a charge was made. Every row the webhook
+ * writes as PAID has one, so this is the guard for the rows that predate the
+ * field rather than a state a learner can reach.
+ */
+export function isRefundable(payment: Payment, now: number = Date.now()): boolean {
+  if (payment.status !== 'PAID' || !payment.stripePaymentIntentId) return false;
+  return now < paidAtOf(payment) + REFUND_WINDOW_MS;
+}
+
+/**
+ * Everything this person has attempted to buy, newest first.
+ *
+ * Paged to the end rather than to a page, and deliberately: a person's purchases
+ * are counted in tens, and the two callers that are not the billing history —
+ * "did they buy this course", "is this a purchase" — cannot answer from a page.
+ * The ceiling is a stop for a pathological account rather than a page size.
+ */
+const MY_PAYMENTS_CEILING = 500;
+
+export async function listPaymentsForUser(userId: string): Promise<Payment[]> {
+  const payments: Payment[] = [];
+  let exclusiveStartKey: Record<string, unknown> | undefined;
+
+  do {
+    const res = await client.send(
+      new QueryCommand({
+        TableName: PAYMENTS_TABLE,
+        IndexName: USER_CREATED_INDEX,
+        KeyConditionExpression: '#userId = :userId',
+        ExpressionAttributeNames: { '#userId': 'userId' },
+        ExpressionAttributeValues: { ':userId': userId },
+        // Newest first: the index is ordered by `createdAt`, and a receipt list
+        // is read from the top.
+        ScanIndexForward: false,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
+
+    payments.push(...((res.Items ?? []) as Payment[]));
+    exclusiveStartKey = res.LastEvaluatedKey;
+  } while (exclusiveStartKey && payments.length < MY_PAYMENTS_CEILING);
+
+  return payments;
+}
+
+/**
+ * Whether this person bought this course.
+ *
+ * "Bought" is `PAID` and nothing else: a refunded payment is money that came
+ * back, and a pending one is an attempt that has not bought anything. It is read
+ * off the same list the billing history draws, so the course page and the
+ * receipt cannot disagree about whether there was a purchase.
+ */
+export async function findPaidPayment(
+  userId: string,
+  spaceId: string,
+): Promise<Payment | undefined> {
+  const payments = await listPaymentsForUser(userId);
+  return payments.find((payment) => payment.spaceId === spaceId && payment.status === 'PAID');
+}
+
 export async function getPayment(paymentId: string): Promise<Payment | undefined> {
   const res = await client.send(new GetCommand({ TableName: PAYMENTS_TABLE, Key: { paymentId } }));
   return res.Item as Payment | undefined;
@@ -119,7 +227,13 @@ export async function setPaymentStatus(
       new UpdateCommand({
         TableName: PAYMENTS_TABLE,
         Key: { paymentId },
-        UpdateExpression: 'SET #status = :status, updatedAt = :at',
+        // `refundedAt` travels with `REFUNDED` rather than being a second write
+        // at each call site: the status and the moment it happened are one fact,
+        // and a caller that remembered one and forgot the other would leave a
+        // refunded payment whose receipt says nothing about when.
+        UpdateExpression:
+          'SET #status = :status, updatedAt = :at' +
+          (status === 'REFUNDED' ? ', refundedAt = :at' : ''),
         ConditionExpression: 'attribute_exists(paymentId)',
         ExpressionAttributeNames: { '#status': 'status' },
         ExpressionAttributeValues: { ':status': status, ':at': at },

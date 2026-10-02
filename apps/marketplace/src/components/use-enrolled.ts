@@ -28,19 +28,30 @@ export function useEnrolledSpaceIds(): Set<string> {
  * The two are one answer because they are read together: a lesson page that
  * treated "not yet loaded" as "not registered" would flash a register button at
  * somebody who is already in the course.
+ *
+ * `purchasedAt` is the same read answering a second question — whether this
+ * enrolment was *bought* or given. A purchase cannot be left, only refunded, and
+ * the course page has to know which of the two it is looking at before it offers
+ * either. It is the paid payment's own `paidAt`, so the page, the refund window
+ * and the receipt all read one moment.
  */
-export function useEnrollment(spaceId: string): { enrolled: boolean; isLoading: boolean } {
+export function useEnrollment(spaceId: string): {
+  enrolled: boolean;
+  isLoading: boolean;
+  purchasedAt?: number;
+} {
   const signedIn = useIsSignedIn();
   const { data, isLoading } = useMyCourses(signedIn);
   const courses = data?.courses;
 
-  return useMemo(
-    () => ({
-      enrolled: (courses ?? []).some((course) => course.space.spaceId === spaceId),
+  return useMemo(() => {
+    const mine = (courses ?? []).find((course) => course.space.spaceId === spaceId);
+    return {
+      enrolled: Boolean(mine),
       // Nothing is being asked of the API when nobody is signed in, so there is
       // nothing to wait for either.
       isLoading: signedIn && isLoading,
-    }),
-    [courses, isLoading, signedIn, spaceId],
-  );
+      ...(mine?.purchasedAt ? { purchasedAt: mine.purchasedAt } : {}),
+    };
+  }, [courses, isLoading, signedIn, spaceId]);
 }

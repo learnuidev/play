@@ -741,10 +741,111 @@ export interface MyCourse {
   space: Space;
   role: SpaceMemberRole;
   organizationName: string;
+  /**
+   * When they **bought** it, if they did.
+   *
+   * The distinction that matters on a course page: a course with a price and a
+   * learner who was invited into it freely are two different relationships, and
+   * only the second one can be walked away from. It is the paid payment's own
+   * `paidAt`, so the course page, the refund window and the receipt all read the
+   * same moment rather than three approximations of it.
+   */
+  purchasedAt?: number;
 }
 
 export interface ListMyCoursesResponse {
   courses: MyCourse[];
+}
+
+/**
+ * A card somebody has saved, as this product holds it.
+ *
+ * **Never the number.** The card itself lives in Stripe, entered on Stripe's own
+ * page; what is stored here is the token that refers to it and the four facts
+ * worth showing a person — which brand, which four digits, and when it expires.
+ * Anything more would be this service holding a card, which is a thing it must
+ * never do.
+ */
+export interface SavedPaymentMethod {
+  /** Stripe's `pm_…` id, and the only handle anything ever acts through. */
+  paymentMethodId: string;
+  /** `visa`, `mastercard`, … as Stripe spells it, lower case. */
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+  createdAt: number;
+}
+
+export interface ListPaymentMethodsResponse {
+  paymentMethods: SavedPaymentMethod[];
+}
+
+/**
+ * Where to send somebody to add a card.
+ *
+ * A URL rather than a card, for the reason a checkout is: the card form is
+ * Stripe's hosted page, and nothing is stored until Stripe says the card was
+ * entered. The id is the setup session, so a support question about the redirect
+ * names something.
+ */
+export interface AddPaymentMethodResponse {
+  url: string;
+  setupId: string;
+}
+
+/**
+ * What became of one attempted purchase.
+ *
+ * The same five the payments table holds, and the same five a Stripe event can
+ * move a row between: a checkout that nobody completed is `EXPIRED` rather than
+ * nothing, because "they tried" is a different fact from "they never did".
+ */
+export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'REFUNDED';
+
+/**
+ * How long a learner has to change their mind about a purchase, in days.
+ *
+ * Mirrors the constant the API enforces in `lib/payments` — the same way the
+ * profile's length limits are declared here for the forms and held again on the
+ * server — and it is here so that no screen has to write "30" into a sentence.
+ * What a screen decides with is `BillingEntry.refundable` and `refundDeadline`,
+ * which the API computes: this number is for the copy, not for the rule.
+ */
+export const REFUND_WINDOW_DAYS = 30;
+
+/** One purchase, as the person who made it reads it. */
+export interface BillingEntry {
+  /** The Stripe checkout session id, and the row's own key. */
+  paymentId: string;
+  spaceId: string;
+  /** The course as it is called now. Empty when the course is gone. */
+  courseTitle: string;
+  status: PaymentStatus;
+  amountCents: number;
+  currency: string;
+  createdAt: number;
+  paidAt?: number;
+  refundedAt?: number;
+  /**
+   * Whether asking for a refund right now would be accepted.
+   *
+   * Decided by the API rather than by the screen, because the rule is a fact
+   * about the payment and not about the page: the 30 days, the status, and
+   * whether there is a Stripe payment behind it at all. A screen that computed
+   * this itself would be a second answer to a question with one.
+   */
+  refundable: boolean;
+  /** When the 30 days are up, for the payments that are still inside them. */
+  refundDeadline?: number;
+}
+
+export interface BillingHistoryResponse {
+  payments: BillingEntry[];
+}
+
+export interface RefundPaymentResponse {
+  payment: BillingEntry;
 }
 
 /**

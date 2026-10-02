@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLinkIcon, EyeIcon, EyeOffIcon, Loader2Icon, StoreIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Space } from '@play/types';
+import { REFUND_WINDOW_DAYS, type Space } from '@play/types';
 import { useUpdateSpace } from '@api/modules/space/space.queries';
 import { Button } from '@ui/components/ui/button';
 import { Input } from '@ui/components/ui/input';
@@ -196,7 +196,7 @@ function SpacePriceRow({
           </p>
           <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
             {isPaid(space)
-              ? 'A learner pays once, through Stripe, and is enrolled when the payment clears. Leaving the course does not refund it.'
+              ? `A learner pays once, through Stripe, and is enrolled when the payment clears. A course that was bought cannot be left: they have ${REFUND_WINDOW_DAYS} days to ask for a refund instead.`
               : published
                 ? 'Anyone can register without paying. Set an amount to charge for this course instead.'
                 : 'Applies when this course is published. Set an amount to charge for it, or leave it empty to keep it free.'}

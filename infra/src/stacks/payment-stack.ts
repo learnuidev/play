@@ -40,11 +40,11 @@ export interface PlayPaymentStackProps extends StackProps {
  * `GetSecretValue` and a JSON parse. Putting it in the secret as well would make
  * the one value that is public the one value that costs a decryption to read.
  *
- * **The tables are not here either.** `PaymentsTable` is declared in the
- * generated service table and created by `PlayDataStack`, like every other table
- * in this service, because what a change to a table costs is not what a change to
- * a webhook costs. This stack imports the two it needs and grants its function
- * the DynamoDB actions the generated table declares.
+ * **The tables are not here either.** `PaymentsTable` and `PaymentMethodsTable`
+ * are declared in the generated service table and created by `PlayDataStack`,
+ * like every other table in this service, because what a change to a table costs
+ * is not what a change to a webhook costs. This stack imports the ones it needs
+ * and grants its function the DynamoDB actions the generated table declares.
  *
  * ## Why the webhook has its own function URL
  *
@@ -107,8 +107,8 @@ export class PlayPaymentStack extends Stack {
    * Its own role rather than the API's shared one, for the reason the pre sign-up
    * trigger has one: it is not in the API stack, so it cannot be given that role,
    * and what it may touch is worth saying out loud anyway — one secret, one
-   * parameter, and the two tables a payment is written to. Nothing here reads a
-   * video, signs a URL or sends mail.
+   * parameter, and the three tables a payment and a saved card are written to.
+   * Nothing here reads a video, signs a URL or sends mail.
    */
   private createWebhook(
     config: PlayConfig,
@@ -123,25 +123,31 @@ export class PlayPaymentStack extends Stack {
     const { code, handler } = bundle(spec.entry);
 
     const payments = tables.PaymentsTable;
+    const paymentMethods = tables.PaymentMethodsTable;
     const spaceMembers = tables.SpaceMembersTable;
     const spaces = tables.SpacesTable;
     for (const [id, table] of Object.entries({
       PaymentsTable: payments,
+      PaymentMethodsTable: paymentMethods,
       SpaceMembersTable: spaceMembers,
       SpacesTable: spaces,
     })) {
       if (!table) {
         throw new Error(
           `${id} is not in the data stack, so the payment webhook cannot be granted it — ` +
-            'the webhook records what was paid for and enrols the buyer, and both are writes',
+            'the webhook records what was paid for, what card was saved and enrols the buyer, ' +
+            'and every one of those is a write',
         );
       }
     }
 
     // Every table the handler's own libraries read, granted the actions the
     // generated service declares for each. `PaymentsTable` is this stack's
-    // subject; the other two are what a paid enrolment is made of.
-    const statements = ['PaymentsTable', 'SpaceMembersTable', 'SpacesTable'].map((id) => {
+    // subject; `PaymentMethodsTable` is the other thing Stripe's events write —
+    // a card saved in `mode=setup` arrives as the same completed checkout — and
+    // the other two are what a paid enrolment is made of.
+    const granted = ['PaymentsTable', 'PaymentMethodsTable', 'SpaceMembersTable', 'SpacesTable'];
+    const statements = granted.map((id) => {
       const table = tables[id];
       const declared = TABLES.find((spec) => spec.id === id);
       if (!declared) {

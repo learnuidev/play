@@ -1,9 +1,11 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
+  AddPaymentMethodResponse,
   AddQuizQuestionsResponse,
   ApproveAuthorizationResponse,
   AudioResponse,
   BatchVerificationResponse,
+  BillingHistoryResponse,
   CatalogCourseResponse,
   CheckoutSessionResponse,
   CohortResponse,
@@ -62,6 +64,7 @@ import type {
   ListOrgMembersResponse,
   ListOrganizationApiKeysResponse,
   ListOrganizationsResponse,
+  ListPaymentMethodsResponse,
   ListPlaylistResponse,
   ListQuestionBanksResponse,
   ListQuestionsResponse,
@@ -87,6 +90,7 @@ import type {
   QuizAttemptResponse,
   QuizPaperResponse,
   QuizCheckResponse,
+  RefundPaymentResponse,
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
   RevokeRewardGrantResponse,
@@ -1038,6 +1042,54 @@ export const api = {
     request<UploadProfilePhotoResponse>('/me/profile/photo', {
       method: 'PUT',
       body: JSON.stringify(payload),
+    }),
+
+  /**
+   * The cards this person has saved.
+   *
+   * Under `/me`, with no id: they are the caller's own, and the token is the
+   * only id there is. What comes back is what this product saved — the brand and
+   * the last four digits, never a card.
+   */
+  listPaymentMethods: () => request<ListPaymentMethodsResponse>('/me/payment-methods'),
+
+  /**
+   * Asking to add one, and being sent to Stripe to enter it.
+   *
+   * A **URL**, like the checkout: this service never sees a card number, so the
+   * form is Stripe's hosted page and the caller redirects. Nothing is stored
+   * until Stripe tells the webhook a card was entered, which is why the screen
+   * somebody returns to waits rather than drawing a list it cannot know yet.
+   */
+  startPaymentMethodSetup: () =>
+    request<AddPaymentMethodResponse>('/me/payment-methods', { method: 'POST' }),
+
+  /** Removes one: at Stripe first, then here. */
+  removePaymentMethod: (paymentMethodId: string) =>
+    request<void>(`/me/payment-methods/${encodeURIComponent(paymentMethodId)}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Every purchase this person has made or attempted, newest first.
+   *
+   * The receipts, from this service's own record rather than from Stripe: a
+   * receipt read a year later says what the course is called now, whether the
+   * money went back, and whether it still can.
+   */
+  listPayments: () => request<BillingHistoryResponse>('/me/payments'),
+
+  /**
+   * Asks for one of them back, inside the 30 days.
+   *
+   * A real refund: Stripe is told to return the charge and the course is taken
+   * away with it. The API refuses with a 409 that says why when the window has
+   * passed or the payment was never completed, so the screen can print the
+   * API's own sentence rather than guessing.
+   */
+  refundPayment: (paymentId: string) =>
+    request<RefundPaymentResponse>(`/me/payments/${encodeURIComponent(paymentId)}/refund`, {
+      method: 'POST',
     }),
 };
 

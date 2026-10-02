@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 
 import { isConditionalCheckFailed } from '../../lib/dynamodb';
+import { recordSetupSession } from '../../lib/payment-methods';
 import {
   findPaymentByIntent,
   recordPayment,
@@ -30,6 +31,13 @@ import { stripeCredentials, verifyStripeSignature } from '../../lib/stripe';
  * twice is not an error: the membership write is conditional, and a second
  * payment for a course somebody is already in leaves the first membership alone.
  *
+ * **The other kind of checkout session is a card being saved.** Saving a card so
+ * it can be used at the next purchase is the same hosted page in `mode=setup`:
+ * no line item, nothing charged, and it completes with a setup intent instead of
+ * a payment intent. It arrives as the same `checkout.session.completed`, so it is
+ * branched on `mode` before anything else is read, and what it writes is a card
+ * on the person rather than a sale — see `recordSetup`.
+ *
  * ## Idempotency, which is the whole difficulty of a webhook
  *
  * Stripe delivers at least once and retries anything that is not a 2xx, so every
@@ -42,12 +50,15 @@ import { stripeCredentials, verifyStripeSignature } from '../../lib/stripe';
  *
  * ## What it deliberately does not do
  *
- * **A refund does not take the course away.** The money going back is recorded —
- * the row's status, and when — and the enrolment is left where it is, because
- * removing somebody from a course they may be halfway through is a decision about
- * the product rather than a data fix, and one a webhook is the worst possible
- * place to make. An author who wants access revoked revokes it; what they cannot
- * get back is the record that it was paid for and refunded, which is here.
+ * **A refund heard here does not take the course away.** The money going back is
+ * recorded — the row's status, and when — and the enrolment is left where it is,
+ * because removing somebody from a course they may be halfway through is a
+ * decision about the product rather than a data fix, and one a webhook is the
+ * worst possible place to make. A refund somebody *asked for* is a different
+ * event with a person behind it: `functions/payments/refund-payment.ts` is where
+ * that decision is made, and it revokes the access it just paid back. What
+ * arrives here is the confirmation that the charge was refunded, whoever
+ * started it, and the row ends up `REFUNDED` either way.
  */
 
 type WebhookResult = { statusCode: number; body: string };
@@ -80,6 +91,17 @@ interface CheckoutSession {
   payment_intent?: string | null;
   customer_details?: { email?: string | null } | null;
   metadata?: Record<string, string> | null;
+  /**
+   * `payment` for a course being bought, `setup` for a card being saved.
+   *
+   * The one field that tells the two kinds of checkout session apart, and both
+   * arrive as the same event: `mode` is therefore read *before* the metadata,
+   * because a setup session has a buyer and no course, and the purchase path
+   * would tell Stripe it had nothing to record.
+   */
+  mode?: string;
+  /** The intent a setup session completes with. Only set in `setup` mode. */
+  setup_intent?: string | null;
 }
 
 interface Charge {
@@ -171,7 +193,6 @@ async function apply(event: StripeEvent): Promise<string> {
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded':
       return recordCheckout(event.data.object as unknown as CheckoutSession);
-
     case 'checkout.session.expired':
       return expireCheckout(event.data.object as unknown as CheckoutSession);
 
@@ -200,6 +221,13 @@ async function apply(event: StripeEvent): Promise<string> {
  * a support message.
  */
 async function recordCheckout(session: CheckoutSession): Promise<string> {
+  // A **setup** session is a card being saved, not a course being bought, and it
+  // arrives as this same event: the difference is `mode`, and it is read before
+  // the metadata because the two sessions carry different metadata — a setup
+  // session has a buyer and no course, so the purchase path below would report
+  // that there was nothing to record.
+  if (session.mode === 'setup') return recordSetup(session);
+
   const spaceId = session.metadata?.spaceId;
   const userId = session.metadata?.userId;
 
@@ -238,6 +266,44 @@ async function recordCheckout(session: CheckoutSession): Promise<string> {
 }
 
 /**
+ * A card somebody saved, which is the other half of `mode=setup`.
+ *
+ * The event names a setup intent and nothing else, and the two reads that turn
+ * it into a card — the intent for the payment method, the method for its brand
+ * and last four digits — are `recordSetupSession`'s, because what is worth
+ * testing there is the row and not Stripe's JSON.
+ *
+ * A session with no `userId` is not ours to record: the row exists only to be
+ * shown back to the person who saved it, and there is nobody to show it to.
+ * A method that is not a card, or an intent with no method yet, is reported
+ * rather than stored — a row with no digits would be a card nobody recognizes.
+ *
+ * Re-delivery is the normal case here rather than the exception — the same
+ * event arrives again on any response that is not a 2xx — and it writes the same
+ * row again with the `createdAt` it already had. That is why this is a `Put`
+ * on the card's own key rather than an append.
+ */
+async function recordSetup(session: CheckoutSession): Promise<string> {
+  const userId = session.metadata?.userId;
+  if (!userId) {
+    return 'the setup session carries no userId metadata, so there is no account to save a card to';
+  }
+  if (!session.setup_intent) {
+    return `setup session ${session.id} completed without a setup intent`;
+  }
+
+  const card = await recordSetupSession({
+    userId,
+    setupIntentId: session.setup_intent,
+    ...(session.customer ? { stripeCustomerId: session.customer } : {}),
+  });
+
+  return card
+    ? `saved ${card.brand} ending ${card.last4} for ${userId}`
+    : `setup session ${session.id} saved no card this service records`;
+}
+
+/**
  * Puts the buyer in the course.
  *
  * The same call the register button makes, so there is one definition of what
@@ -264,8 +330,19 @@ async function enrol(
   }
 }
 
-/** A checkout nobody completed. Recorded, so "they tried" is not invisible. */
+/**
+ * A checkout nobody completed. Recorded, so "they tried" is not invisible.
+ *
+ * A **setup** session expiring is not recorded at all, and is not the same
+ * thing: nobody abandoned a purchase, they closed a card form, and there is no
+ * payment row for the session id to move. Saying so is the whole of what this
+ * event means for a card that was never saved.
+ */
 async function expireCheckout(session: CheckoutSession): Promise<string> {
+  if (session.mode === 'setup') {
+    return `setup session ${session.id} expired before a card was saved`;
+  }
+
   await setPaymentStatus(session.id, 'EXPIRED');
   return `marked ${session.id} expired`;
 }

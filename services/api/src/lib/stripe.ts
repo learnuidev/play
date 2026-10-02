@@ -40,6 +40,26 @@ const secrets = new SecretsManagerClient({});
  * matters is an idempotency key chosen by the caller — which for a checkout is
  * better handled by the person pressing the button again.
  */
+/**
+ * A refusal from Stripe, carrying the status it was refused with.
+ *
+ * The message alone is not enough for one caller: **removing a saved card**. A
+ * card somebody deleted in Stripe's own dashboard is a card Stripe answers 404
+ * for, and that is an *outcome* rather than a failure — the row this service
+ * still shows is the stale half, and asking Stripe to detach it again can only
+ * ever fail. Without the status that case is indistinguishable from a network
+ * error, and the card would be stuck in somebody's list forever.
+ */
+export class StripeError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'StripeError';
+  }
+}
+
 async function stripeRequest<T>(
   method: 'GET' | 'POST',
   path: string,
@@ -64,7 +84,7 @@ async function stripeRequest<T>(
     // Stripe's own sentence is the useful one — "Invalid API Key provided", "No
     // such price" — and it names the field, which a generic failure would not.
     const message = body?.error?.message ?? `Stripe answered ${response.status}`;
-    throw new Error(`Stripe refused ${path}: ${message}`);
+    throw new StripeError(response.status, `Stripe refused ${path}: ${message}`);
   }
 
   return body as T;
@@ -187,6 +207,11 @@ export interface StripeCheckoutSession {
  * webhook is told the session id, and without these three it would have a payment
  * with no course and no buyer attached to it. `client_reference_id` carries the
  * same person for Stripe's own dashboard, where a support question starts.
+ *
+ * `customerId` is passed when the buyer has saved a card, which is what puts
+ * their existing cards on Stripe's page for them to pick. It is passed *instead
+ * of* `customerEmail` rather than beside it: Stripe refuses the pair, and the
+ * address is already on the customer the id names.
  */
 export async function createCheckoutSession(input: {
   priceId: string;
@@ -195,6 +220,8 @@ export async function createCheckoutSession(input: {
   cancelUrl: string;
   /** The buyer, for the receipt and for the webhook. */
   customerEmail?: string;
+  /** The Stripe customer that buyer already has, when they have one. */
+  customerId?: string;
   clientReferenceId: string;
   metadata: Record<string, string>;
 }): Promise<StripeCheckoutSession> {
@@ -207,12 +234,152 @@ export async function createCheckoutSession(input: {
     client_reference_id: input.clientReferenceId,
   };
 
-  if (input.customerEmail) params.customer_email = input.customerEmail;
+  if (input.customerId) params.customer = input.customerId;
+  else if (input.customerEmail) params.customer_email = input.customerEmail;
   for (const [key, value] of Object.entries(input.metadata)) {
     params[`metadata[${key}]`] = value;
   }
 
   return stripeRequest<StripeCheckoutSession>('POST', 'checkout/sessions', params);
+}
+
+/**
+ * A Stripe customer: the person a card is saved against.
+ *
+ * Stripe can create a customer implicitly from a checkout session, and it does
+ * for every course bought here — but a customer made that way is only
+ * discovered after the fact, and **saving a card happens before any purchase**.
+ * So this is called for somebody who has never bought anything, and the id it
+ * answers with is the one their cards hang off.
+ *
+ * Looked up before it is called rather than created every time — see
+ * `stripeCustomerIdFor` in `lib/payment-methods` — because a person with two
+ * cards and a purchase should be one customer in Stripe's dashboard, not three.
+ */
+export async function createCustomer(input: {
+  email?: string;
+  userId: string;
+}): Promise<{ id: string }> {
+  return stripeRequest<{ id: string }>('POST', 'customers', {
+    ...(input.email ? { email: input.email } : {}),
+    'metadata[userId]': input.userId,
+  });
+}
+
+/**
+ * The page a person enters a card on, without buying anything.
+ *
+ * `mode=setup` rather than `mode=payment`, which is the whole difference: no
+ * line item, no amount, nothing charged — Stripe collects a card and attaches it
+ * to the customer, and the session completes with a **setup intent** that names
+ * the payment method. That is why the webhook reads `setup_intent` off the
+ * session rather than a payment intent: there is no money in this event at all.
+ *
+ * Nothing here sets `payment_method_types`. Stripe decides which methods the
+ * account accepts and which currencies they work in, and a list written here
+ * would be this repository's second opinion about that.
+ */
+export async function createSetupSession(input: {
+  customerId: string;
+  successUrl: string;
+  cancelUrl: string;
+  metadata: Record<string, string>;
+}): Promise<{ id: string; url: string | null }> {
+  const params: Record<string, string> = {
+    mode: 'setup',
+    customer: input.customerId,
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+  };
+
+  for (const [key, value] of Object.entries(input.metadata)) {
+    params[`metadata[${key}]`] = value;
+  }
+
+  return stripeRequest<{ id: string; url: string | null }>('POST', 'checkout/sessions', params);
+}
+
+/** A setup intent, as much of it as this service reads. */
+export interface StripeSetupIntent {
+  id: string;
+  /** The card that was saved. Null until the intent succeeds. */
+  payment_method: string | null;
+  customer: string | null;
+}
+
+/**
+ * The setup intent a completed setup session produced.
+ *
+ * The session names the intent and not the card, so this is the first of the two
+ * reads that turn "somebody entered a card" into a row this service can show
+ * them. It cannot fail for a completed session — Stripe does not complete one
+ * without the card — and a null `payment_method` is still handled by the caller,
+ * because a row with no card id would be a card that cannot be removed.
+ */
+export async function getSetupIntent(setupIntentId: string): Promise<StripeSetupIntent> {
+  return stripeRequest<StripeSetupIntent>(
+    'GET',
+    `setup_intents/${encodeURIComponent(setupIntentId)}`,
+  );
+}
+
+/** A payment method, as much of it as this service reads. */
+export interface StripePaymentMethod {
+  id: string;
+  type: string;
+  card?: {
+    brand: string;
+    last4: string;
+    exp_month: number;
+    exp_year: number;
+  };
+}
+
+/** One saved payment method, by id. */
+export async function getPaymentMethod(paymentMethodId: string): Promise<StripePaymentMethod> {
+  return stripeRequest<StripePaymentMethod>(
+    'GET',
+    `payment_methods/${encodeURIComponent(paymentMethodId)}`,
+  );
+}
+
+/**
+ * Taking a card off a customer.
+ *
+ * **In Stripe first, then the row** — and that order is the point: a card
+ * removed from this service but left on the customer is a card still offered on
+ * Stripe's own checkout page, which is the one thing a person pressing "Remove"
+ * is asking to stop. A Stripe call that fails therefore leaves the row alone and
+ * the screen says so, which is the honest failure: nothing was removed.
+ *
+ * `detach` rather than `DELETE /payment_methods/{id}`: same resource, but the
+ * detach endpoint is the documented way to remove a method from a customer, and
+ * a `DELETE` is a call `stripeRequest` cannot make anyway.
+ */
+export async function detachPaymentMethod(paymentMethodId: string): Promise<void> {
+  await stripeRequest<{ id: string }>(
+    'POST',
+    `payment_methods/${encodeURIComponent(paymentMethodId)}/detach`,
+  );
+}
+
+/**
+ * Giving money back, in full.
+ *
+ * A learner's own refund is a full one always: the 30-day window is this
+ * product's rule and "part of the course" is not a thing to charge for. The
+ * amount is left to Stripe — omitting it refunds the whole charge — so the two
+ * ends cannot disagree about what full means.
+ *
+ * Keyed by the **payment intent**, which is what a charge is a charge of, and
+ * the same id the webhook's own `charge.refunded` event names. Nothing here is
+ * idempotent by key: a second call for a payment already refunded is refused by
+ * Stripe, and the caller checks the row's status first anyway.
+ */
+export async function refundPaymentIntent(paymentIntentId: string): Promise<{ id: string }> {
+  return stripeRequest<{ id: string }>('POST', 'refunds', {
+    payment_intent: paymentIntentId,
+  });
 }
 
 /**

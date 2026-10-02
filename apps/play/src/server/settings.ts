@@ -94,6 +94,11 @@ export function stripePublishableKeyParam(stage: string): string {
  * in one direction only, and this is it: subscribing to an event the handler does
  * not know is answered with a 200 saying so, while subscribing to none of these
  * is a payment that never becomes an enrolment.
+ *
+ * `checkout.session.completed` is two features rather than one: a course being
+ * **bought**, and a card being **saved** — saving one is the same hosted page in
+ * `mode=setup`, so the same event carries both and the handler branches on the
+ * session's mode. There is nothing extra to subscribe to for saved cards.
  */
 export const STRIPE_EVENTS = [
   "checkout.session.completed",

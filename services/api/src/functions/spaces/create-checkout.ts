@@ -1,7 +1,9 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
+import type { AuthUser } from '../../lib/auth';
 import { requireUser } from '../../lib/auth';
 import { env } from '../../lib/config';
 import { HttpError, handle, ok, pathParam } from '../../lib/http';
+import { stripeCustomerIdFor } from '../../lib/payment-methods';
 import { recordPayment } from '../../lib/payments';
 import { getSpaceMember } from '../../lib/space-members';
 import { getSpace, setSpaceStripePrice } from '../../lib/spaces';
@@ -82,7 +84,12 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     priceId: price.id,
     successUrl: `${courseUrl}?paid=1`,
     cancelUrl: courseUrl,
-    ...(user.email ? { customerEmail: user.email } : {}),
+    // The buyer's existing Stripe customer, when they have one, so this purchase
+    // lands on the same customer as the cards they have saved and the receipts
+    // they already have — which is also what lets Stripe's own page offer them a
+    // card they saved earlier. Falls back to the address, and the session creates
+    // a customer from it, exactly as it did before there were saved cards.
+    ...(await customerForCheckout(user)),
     clientReferenceId: user.userId,
     metadata: {
       spaceId,
@@ -176,6 +183,29 @@ async function priceForCourse(input: {
   });
 
   return { id: created.id };
+}
+
+/**
+ * The buyer as Stripe should be told about them.
+ *
+ * A customer id when they have one, and their address otherwise. **Resolving it
+ * must never cost somebody a purchase**, which is why a failure here is logged
+ * and swallowed: the customer lookup reads two tables and may call Stripe to
+ * create one, and every one of those could be having a bad minute. What is lost
+ * when it fails is that Stripe's page does not know this buyer yet — the
+ * purchase itself is unaffected, because a session with an address on it creates
+ * the customer Stripe needs. What would not be acceptable is a pay button that
+ * answers 500 because a wallet lookup went wrong.
+ */
+async function customerForCheckout(
+  user: AuthUser,
+): Promise<{ customerId: string } | { customerEmail?: string }> {
+  try {
+    return { customerId: await stripeCustomerIdFor(user) };
+  } catch (error) {
+    console.error(`Could not resolve a Stripe customer for ${user.userId}`, error);
+    return user.email ? { customerEmail: user.email } : {};
+  }
 }
 
 export const handler = handle(main);

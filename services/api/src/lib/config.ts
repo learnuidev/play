@@ -52,6 +52,14 @@ export const env = {
    */
   paymentsTableName: required('PAYMENTS_TABLE', process.env.PAYMENTS_TABLE),
   /**
+   * The cards people have saved, keyed by their own `sub` and Stripe's `pm_…`
+   * id. **Tokens, not cards**: what is written here is what Stripe handed back
+   * after somebody entered a card on Stripe's own page — the brand, the last four
+   * digits and the expiry — and nothing that could be used to charge anybody on
+   * its own. See `lib/payment-methods.ts`.
+   */
+  paymentMethodsTableName: required('PAYMENT_METHODS_TABLE', process.env.PAYMENT_METHODS_TABLE),
+  /**
    * Where this deployment's Stripe credentials live. **Names, not values**: the
    * API key and the webhook signing secret are read from Secrets Manager at the
    * moment they are needed, and the publishable key — which is not a secret, and

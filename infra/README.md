@@ -99,11 +99,12 @@ Two files decide what gets deployed, and neither is generated at deploy time.
 **A table the config does not name is created, even on a stage that imports.**
 `PlayDataStack` decides per table rather than per stage: `dev` names the 27 tables
 the legacy backend created, and a table this app has added since — `PaymentsTable`
-was the first — cannot be among them, because it does not exist until something
-creates it. Importing a name that is not there would be a table every handler
-reads and no table at all, failing as a `ResourceNotFoundException` at the first
-request. So `dev` gains this app's newer tables as its own: created empty, named
-`play-dev-<table>`, and retained like every other table here.
+was the first, `PaymentMethodsTable` the next — cannot be among them, because it
+does not exist until something creates it. Importing a name that is not there
+would be a table every handler reads and no table at all, failing as a
+`ResourceNotFoundException` at the first request. So `dev` gains this app's newer
+tables as its own: created empty, named `play-dev-<table>`, and retained like
+every other table here.
 
 **A function with `ownRole` belongs to another stack.** `link-federated-user` is
 in `PlayAuthStack` and `stripe-webhook` is in `PlayPaymentStack`, both for the same

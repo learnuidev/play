@@ -155,6 +155,7 @@ dropped the player API the classroom uses.
 | Questions, the banks they live in, and what a quiz asks | `services/api/src/lib/{questions,question-banks,quiz-questions}.ts` + `functions/{banks,questions,quiz}/*` — see [quizzes.md](quizzes.md) |
 | A quiz being sat: the paper, the marking, the attempts | `services/api/src/lib/quiz-attempts.ts` + `functions/quiz/{get-quiz,submit-quiz-attempt}.ts`, drawn by `packages/learning/src/components/quiz/quiz-taking.tsx` |
 | A credential somebody calls the API with, and the screens for it | `services/api` + the studio's `/api-keys` and `/oauth/*` |
+| A card somebody saves, a refund, a receipt | `services/api/src/lib/{stripe,payments,payment-methods,billing}.ts` + `functions/payments/*`, drawn by the marketplace's `/account/*` |
 | A request, its cache key and its invalidation | `@play/api/modules/*/*.queries.ts` |
 | Anything a page renders that is not specific to a screen | `@play/ui` |
 | A shape the API serializes | `@play/types` — and the same shape in `services/api/src/types` |
@@ -452,7 +453,7 @@ from its first path segment:
 | --- | --- | --- |
 | `Content` | `videos`, `sections`, `contents`, `questions`, `banks` | 417 resources |
 | `Courses` | `spaces`, `cohorts`, `rewards`, `catalog` | 216 |
-| `People` | `organizations`, `me` | 184 |
+| `People` | `organizations`, `me` | 218 |
 | `PublicApi` | `v1`, `oauth` | 191 |
 
 The counts are what `cdk synth` reports for each nested stack, and `Content` is

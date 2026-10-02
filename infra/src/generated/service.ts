@@ -1100,6 +1100,47 @@ export const TABLES: TableSpec[] = [
     ],
     grantsIndexes: true,
   },
+  /**
+   *  The cards a person has saved.
+   *
+   *  **Keyed by the person and the card**, because both are needed to act on one:
+   *  every read is "the cards *I* saved", and the one route that takes a card id
+   *  removes a card *of the caller's* — so the pair is the key, and a card
+   *  belonging to somebody else is not found rather than found and refused.
+   *
+   *  What is stored is a **token, not a card**: the `pm_…` id Stripe returns
+   *  after somebody enters their details on Stripe's own page, the customer it is
+   *  attached to, and the four things a person recognizes their card by — brand,
+   *  last four digits, expiry month and year. Nothing here could charge anybody
+   *  on its own, which is the point of the card form being Stripe's.
+   *
+   *  No index, and deliberately: the only question asked of this table is "what
+   *  has this person saved", which is the key's own order. "Who has saved this
+   *  card" is not a question anything here asks, and an index is a write cost on
+   *  every save for a read nobody makes.
+   */
+  {
+    id: 'PaymentMethodsTable',
+    envVar: 'PAYMENT_METHODS_TABLE',
+    billingMode: 'PAY_PER_REQUEST',
+    attributeDefinitions: [
+      { name: 'userId', type: 'S' },
+      { name: 'paymentMethodId', type: 'S' },
+    ],
+    keySchema: [
+      { name: 'userId', keyType: 'HASH' },
+      { name: 'paymentMethodId', keyType: 'RANGE' },
+    ],
+    globalSecondaryIndexes: [
+    ],
+    actions: [
+      'dynamodb:DeleteItem',
+      'dynamodb:GetItem',
+      'dynamodb:PutItem',
+      'dynamodb:Query',
+    ],
+    grantsIndexes: false,
+  },
 ];
 
 export const FUNCTIONS: FunctionSpec[] = [
@@ -2589,6 +2630,73 @@ export const FUNCTIONS: FunctionSpec[] = [
     timeout: 29,
     memorySize: 512,
     http: [{"path":"me/profile/photo","method":"PUT","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  /**
+   *  Money, addressed like the profile above: under `/me`, because a person's
+   *  cards and their receipts are their own and the token is the only id needed
+   *  to find them. The one route that takes an id — removing a card, refunding a
+   *  payment — takes an id *of the caller's*, checked before anything acts on it.
+   *
+   *  Adding a card is two calls in one screen: this session opens Stripe's own
+   *  card form (`mode=setup`, so nothing can be charged by the page somebody
+   *  lands on), and the webhook hears the card being entered. Nothing is stored
+   *  here, which is why the route answers with a URL rather than a card.
+   */
+  {
+    key: 'list-payment-methods',
+    entry: 'src/functions/payments/list-payment-methods.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"me/payment-methods","method":"GET","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'add-payment-method',
+    entry: 'src/functions/payments/add-payment-method.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"me/payment-methods","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'remove-payment-method',
+    entry: 'src/functions/payments/remove-payment-method.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"me/payment-methods/{paymentMethodId}","method":"DELETE","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  /**
+   *  The receipts, and the one thing a person can do to one of them inside the
+   *  30 days: ask for the money back. The refund is a real one — Stripe is told
+   *  to refund the charge, and the course is taken away with it — so the route is
+   *  POST rather than a PATCH of the payment's status.
+   */
+  {
+    key: 'list-payments',
+    entry: 'src/functions/payments/list-payments.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"me/payments","method":"GET","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
+    key: 'refund-payment',
+    entry: 'src/functions/payments/refund-payment.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"me/payments/{paymentId}/refund","method":"POST","authorized":true}],
     s3: [],
     eventBridge: [],
   },

@@ -320,6 +320,8 @@ export interface MyCourse {
   space: Space;
   role: SpaceMemberRole;
   organizationName: string;
+  /** When they bought it, if they did — the paid payment's own `paidAt`. */
+  purchasedAt?: number;
 }
 
 /**
@@ -1072,8 +1074,100 @@ export interface Payment {
   createdAt: number;
   updatedAt: number;
   paidAt?: number;
-  /** When the money went back. The enrolment is deliberately left alone. */
+  /**
+   * When the money went back.
+   *
+   * Set by whichever end saw it happen — the webhook hearing `charge.refunded`,
+   * or the learner's own route hearing Stripe accept the refund. What the
+   * enrolment does about it is the caller's decision and not this row's: a
+   * webhook leaves it alone, and a refund the learner asked for takes it away.
+   */
   refundedAt?: number;
+}
+
+/**
+ * One card a person has saved, as the payment-methods table holds it.
+ *
+ * **Keyed by the person and the card**, because both are needed to act on it: a
+ * card belongs to whoever saved it, and every call that changes one is made as
+ * that person. The card number is not here and never will be — it was entered on
+ * Stripe's own page, and this row holds the `pm_…` token Stripe gave back plus
+ * the four facts worth showing somebody: which brand, which four digits, which
+ * month and year it expires.
+ *
+ * `stripeCustomerId` is denormalized onto each row rather than kept in a row of
+ * its own. A person has exactly one Stripe customer, and it is the thing a new
+ * card is attached to and a checkout is opened against — so a table of one row
+ * per person holding one string would be a table whose only purpose is to be
+ * read before every write here anyway.
+ */
+export interface SavedPaymentMethodRow {
+  /** Partition key: the Cognito `sub` of the person who saved it. */
+  userId: string;
+  /** Range key: Stripe's `pm_…` id. */
+  paymentMethodId: string;
+  /**
+   * The Stripe customer the card is attached to.
+   *
+   * Denormalized onto each row rather than kept in a row of its own: a person
+   * has exactly one Stripe customer, and it is what a new card is attached to
+   * and what a checkout is opened against — so a table of one row per person
+   * holding one string would be a table whose only purpose is to be read before
+   * every write here anyway.
+   *
+   * Optional because it is Stripe's answer rather than this service's: a setup
+   * session always names the customer it was opened for, and a row that somehow
+   * does not have one is still a card that can be removed.
+   */
+  stripeCustomerId?: string;
+  /** `visa`, `mastercard`, … as Stripe spells it, lower case. */
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+  createdAt: number;
+}
+
+/**
+ * One card, as the person who saved it reads it.
+ *
+ * Mirrors `SavedPaymentMethod` in `@play/types` — the row above is not it: the
+ * caller's own id says nothing to them, and a Stripe customer id is an
+ * identifier from another system that no screen has a use for.
+ */
+export interface SavedPaymentMethod {
+  /** Stripe's `pm_…` id, and the only handle anything ever acts through. */
+  paymentMethodId: string;
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+  createdAt: number;
+}
+
+/**
+ * One purchase as the person who made it reads it.
+ *
+ * A different shape from `Payment` rather than the row itself, for the reason
+ * the catalog is a different shape from a space: a receipt needs the course's
+ * *title*, which the row does not carry, and it needs the refund window turned
+ * into an answer — whether it is open, and when it closes — rather than a date
+ * for a client to do arithmetic on. The Stripe ids stay behind: nothing a
+ * learner reads names a payment intent.
+ */
+export interface BillingEntry {
+  paymentId: string;
+  spaceId: string;
+  /** The course as it is called now, or `''` when the course is gone. */
+  courseTitle: string;
+  status: PaymentStatus;
+  amountCents: number;
+  currency: string;
+  createdAt: number;
+  paidAt?: number;
+  refundedAt?: number;
+  refundable: boolean;
+  refundDeadline?: number;
 }
 
 /**
