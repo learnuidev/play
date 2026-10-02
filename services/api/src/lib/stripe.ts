@@ -289,12 +289,21 @@ export async function createCustomer(input: {
  * deployment may not be the merchant for. The purchase path keeps whatever the
  * account is configured to do; only this one asks for it to stand aside.
  *
+ * **`currency` is required even though nothing is charged**, which is the
+ * request the mode check is followed by: `Missing required param: currency`.
+ * A setup session has no amount, but which payment methods a hosted page may
+ * offer is partly a currency question — a US bank debit is USD, a SEPA debit EUR
+ * — so Stripe cannot build the page without one. The caller passes the currency
+ * the person actually buys in; see `billingContextFor`.
+ *
  * Nothing here sets `payment_method_types`. Stripe decides which methods the
  * account accepts and which currencies they work in, and a list written here
  * would be this repository's second opinion about that.
  */
 export async function createSetupSession(input: {
   customerId: string;
+  /** ISO 4217, lower case. Names the money the page's methods are offered in. */
+  currency: string;
   successUrl: string;
   cancelUrl: string;
   metadata: Record<string, string>;
@@ -302,6 +311,7 @@ export async function createSetupSession(input: {
   const params: Record<string, string> = {
     mode: 'setup',
     customer: input.customerId,
+    currency: input.currency,
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
     'managed_payments[enabled]': 'false',

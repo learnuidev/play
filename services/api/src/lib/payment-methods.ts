@@ -15,6 +15,16 @@ import {
 export const PAYMENT_METHODS_TABLE = env.paymentMethodsTableName;
 
 /**
+ * What a course with no currency set sells for.
+ *
+ * The product's own fallback everywhere a price is read — `space.currency ??
+ * 'usd'` — so it is the right answer here too rather than a second opinion:
+ * somebody who has never bought anything is offered the methods a page in this
+ * deployment's money offers.
+ */
+const DEFAULT_CURRENCY = 'usd';
+
+/**
  * The cards a person has saved, which is the one thing this service knows about
  * them that is about money.
  *
@@ -113,9 +123,22 @@ export async function deletePaymentMethodRow(
 }
 
 /**
- * The Stripe customer this person's cards and purchases belong to.
+ * What a card form needs to know about the person filling it in.
  *
- * Three places it can already exist, checked in the order that costs least:
+ * Two answers, from one set of reads: the **customer** a new card is attached
+ * to, and the **currency** the session is opened in.
+ */
+export interface BillingContext {
+  customerId: string;
+  /** ISO 4217, lower case, as Stripe spells it. */
+  currency: string;
+}
+
+/**
+ * What this person's cards and purchases stand on, in Stripe.
+ *
+ * Three places a customer can already exist, checked in the order that costs
+ * least:
  *
  * 1. **a card they have saved** — which records the customer it was attached to,
  *    so anybody with a card answers here;
@@ -132,21 +155,45 @@ export async function deletePaymentMethodRow(
  * form and closed it — is an empty customer in the dashboard. It is left alone
  * rather than deleted: deleting customers is how a receipt loses the name it was
  * issued to.
+ *
+ * ## The currency, and why a card form needs one
+ *
+ * A **setup session has no amount**, and Stripe still requires a currency for
+ * it: which payment methods a hosted page may offer is partly a currency
+ * question — a US bank debit is USD, a SEPA debit EUR — so the page cannot be
+ * built without one. `Missing required param: currency` is the refusal, and it
+ * arrives after the mode is accepted, which is what makes it look unrelated to
+ * the mode.
+ *
+ * The answer is the currency this person actually buys in: the one on their most
+ * recent purchase. Not a constant, because a constant would be this service
+ * deciding what money a deployment takes — and the same list of payments is
+ * already being read here for the customer, so the honest answer costs nothing.
+ * Somebody who has never bought anything gets the product's own default, which
+ * is what a course with no currency set sells for.
  */
-export async function stripeCustomerIdFor(user: AuthUser): Promise<string> {
+export async function billingContextFor(user: AuthUser): Promise<BillingContext> {
   const cards = await listPaymentMethods(user.userId);
-  const fromCard = cards[0]?.stripeCustomerId;
-  if (fromCard) return fromCard;
-
   const payments = await listPaymentsForUser(user.userId);
+
+  const currency = payments.find((payment) => payment.currency)?.currency ?? DEFAULT_CURRENCY;
+
+  const fromCard = cards[0]?.stripeCustomerId;
+  if (fromCard) return { customerId: fromCard, currency };
+
   const fromPayment = payments.find((payment) => payment.stripeCustomerId)?.stripeCustomerId;
-  if (fromPayment) return fromPayment;
+  if (fromPayment) return { customerId: fromPayment, currency };
 
   const created = await createCustomer({
     ...(user.email ? { email: user.email } : {}),
     userId: user.userId,
   });
-  return created.id;
+  return { customerId: created.id, currency };
+}
+
+/** The one place a buyer's customer is wanted without the rest. */
+export async function stripeCustomerIdFor(user: AuthUser): Promise<string> {
+  return (await billingContextFor(user)).customerId;
 }
 
 /**

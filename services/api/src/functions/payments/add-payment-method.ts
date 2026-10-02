@@ -2,7 +2,7 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireUser } from '../../lib/auth';
 import { env } from '../../lib/config';
 import { handle, ok } from '../../lib/http';
-import { stripeCustomerIdFor } from '../../lib/payment-methods';
+import { billingContextFor } from '../../lib/payment-methods';
 import { createSetupSession } from '../../lib/stripe';
 
 /**
@@ -22,14 +22,15 @@ import { createSetupSession } from '../../lib/stripe';
  *
  * The customer is resolved first, and only then is a session opened for it: a
  * card is saved *against a customer*, and the one it is saved against has to be
- * the same one this person's purchases were made under. `stripeCustomerIdFor`
- * finds it on a card they already have, on a payment they have already made, or
- * creates it.
+ * the same one this person's purchases were made under. The **currency** comes
+ * from the same read — Stripe requires one even though nothing is charged, and
+ * the honest answer is the money this person already buys in rather than a
+ * constant chosen here. Both are `billingContextFor`; see it for why.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const user = requireUser(event);
 
-  const customerId = await stripeCustomerIdFor(user);
+  const { customerId, currency } = await billingContextFor(user);
 
   // Where Stripe sends the browser back to: the screen the card is added from,
   // which is the marketplace's, and the flag is what tells that page to wait for
@@ -38,6 +39,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   const session = await createSetupSession({
     customerId,
+    currency,
     successUrl: `${cardsUrl}?added=1`,
     cancelUrl: cardsUrl,
     metadata: { userId: user.userId },
