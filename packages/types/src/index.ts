@@ -878,6 +878,22 @@ export interface SetupIntentResponse {
    * rather than assuming one.
    */
   billingAddress: BillingAddress | null;
+  /**
+   * `cuses_…_secret_…`: the session that keeps the customer's saved cards out of
+   * this form.
+   *
+   * An "add a card" form that opens on the cards somebody already has is not the
+   * form they asked for: Stripe draws them, with the one used last selected and a
+   * "Change payment method" step in front of the fields. The session is made with
+   * saved-method redisplay switched off, and the element is handed this so that
+   * it opens on an empty card field instead.
+   *
+   * **Null is "no session", and it is a working answer rather than a failure** —
+   * the element then behaves exactly as it did before any of this existed. The
+   * API answers null when the deployment's Stripe account cannot make one,
+   * because a display setting is not worth a card form that will not open.
+   */
+  customerSessionClientSecret: string | null;
 }
 
 /** Saving the card a form just confirmed. */

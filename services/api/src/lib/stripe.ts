@@ -376,6 +376,43 @@ export async function createSetupIntent(input: {
   );
 }
 
+/**
+ * A customer session, whose whole job here is to **switch something off**.
+ *
+ * The add-a-card form is the one place in this product that collects a *new*
+ * card, and what a Payment Element shows for a SetupIntent with a customer on it
+ * is Stripe's decision: left alone it draws the cards that customer already has,
+ * with the one they used last selected and a "Change payment method" — then
+ * "Add payment method" — in front of the fields. So somebody who pressed "Add a
+ * card" had to click through two more screens to reach the thing they asked for,
+ * offering them a set of cards that were already listed on the page they came
+ * from.
+ *
+ * `payment_method_redisplay: disabled` is Stripe's own control for exactly that,
+ * and it is the whole of what this session is *for*: the element opens on the
+ * empty fields and nothing else.
+ *
+ * `payment_method_save` is set the other way round — **on** — and it is there
+ * because of what this form is. A card form that collects a card is saving one;
+ * leaving the feature unstated would make this session a place where Stripe
+ * decides that, next to the SetupIntent that already says it plainly, and the
+ * failure would be a card that appears in the wallet while not being attached to
+ * the customer it was saved for. It costs one parameter to say so.
+ *
+ * A `client_secret` of `null` is Stripe saying it made a session but has nothing
+ * to hand over, which the caller treats as no session at all.
+ */
+export async function createCustomerSession(input: {
+  customerId: string;
+}): Promise<{ client_secret: string | null }> {
+  return stripeRequest<{ client_secret: string | null }>('POST', 'customer_sessions', {
+    customer: input.customerId,
+    'components[payment_element][enabled]': 'true',
+    'components[payment_element][features][payment_method_redisplay]': 'disabled',
+    'components[payment_element][features][payment_method_save]': 'enabled',
+  });
+}
+
 /** A setup intent, as much of it as this service reads. */
 export interface StripeSetupIntent {
   id: string;

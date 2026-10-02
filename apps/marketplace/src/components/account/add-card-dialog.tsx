@@ -38,6 +38,17 @@ import {
  * and the id comes back to the API, which reads the intent from Stripe before
  * writing anything. The card is therefore in the wallet the moment it is saved,
  * with no webhook to wait for.
+ *
+ * ## And why it opens on an empty card field
+ *
+ * A setup intent names the customer the card will be saved to, and Stripe's
+ * answer to that is to draw *that customer's* existing cards in the element —
+ * the last one used selected, and a "Change payment method" step in front of the
+ * fields. So the form somebody reached by pressing "Add a card" opened on the
+ * cards they already had, offering to add one two clicks further in, and the
+ * cards it offered were listed on the page behind the dialog. The API therefore
+ * opens a customer session with saved-method redisplay switched off and hands
+ * its secret to the element, which is what makes this a form for a new card.
  */
 export function AddCardDialog({
   open,
@@ -62,6 +73,8 @@ export function AddCardDialog({
     stripe: Promise<Stripe | null>;
     /** The address this account was last set to, for the Element to open on. */
     billingDetails: ReturnType<typeof billingDetailsOf>;
+    /** What keeps this customer's saved cards out of the form. See below. */
+    customerSessionClientSecret: string | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Bumped by "Try again", and the only reason this effect ever runs twice. */
@@ -99,6 +112,7 @@ export function AddCardDialog({
           clientSecret: intent.clientSecret,
           stripe: loadStripe(intent.publishableKey),
           billingDetails: billingDetailsOf(intent.billingAddress),
+          customerSessionClientSecret: intent.customerSessionClientSecret,
         });
       } catch (cause) {
         if (!cancelled) {
@@ -144,7 +158,34 @@ export function AddCardDialog({
             Opening the card form…
           </p>
         ) : (
-          <Elements stripe={stripePromise} options={{ clientSecret: session.clientSecret, appearance }}>
+          <Elements
+            stripe={stripePromise}
+            options={{
+              clientSecret: session.clientSecret,
+              appearance,
+              /**
+               * And the other half of "this form collects a card".
+               *
+               * A SetupIntent names the customer the card will be saved to, and
+               * Stripe's own answer to that is to draw *that customer's* existing
+               * cards in the element with the last one used selected — so
+               * pressing "Add a card" opened on the cards somebody already had,
+               * behind a "Change payment method" link and a second step, and the
+               * one thing the form exists to do was two clicks away. The session
+               * says redisplay is off, and this is where the element is told
+               * about it.
+               *
+               * Spread rather than passed as null: an absent option is the
+               * element's "no opinion", and `null` would be a value it has to
+               * interpret. An API that could not make a session answers null,
+               * and the form then draws exactly what it drew before any of this
+               * existed.
+               */
+              ...(session.customerSessionClientSecret
+                ? { customerSessionClientSecret: session.customerSessionClientSecret }
+                : {}),
+            }}
+          >
             <CardForm
               clientSecret={session.clientSecret}
               billingDetails={session.billingDetails}
