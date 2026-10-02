@@ -1034,24 +1034,27 @@ export const TABLES: TableSpec[] = [
   /**
    *  What a paid course cost, and who paid it.
    *
-   *  **Keyed by the Stripe checkout session**, which is the one identifier both
-   *  ends of a purchase know: the backend knows it because it is what it asked
-   *  Stripe for, and the webhook knows it because Stripe sends the session back
-   *  with the event. Nothing else here is unique to one purchase — a person may
-   *  buy the same course twice, and a Stripe payment intent can outlive the
-   *  attempt that made it — so this is the key that makes a re-delivered event an
-   *  update to one row rather than a second sale.
+   *  **Keyed by the Stripe payment the purchase was made with**, which is the one
+   *  identifier both ends of it know: the backend knows it because it is what it
+   *  asked Stripe for, and the webhook knows it because Stripe names the intent
+   *  in the event that says the money arrived. Nothing else here is unique to one
+   *  purchase — a person may buy the same course twice, and an intent can be
+   *  retried after a declined card — so this is the key that makes a re-delivered
+   *  event an update to one row rather than a second sale. Rows written when the
+   *  marketplace still redirected to Stripe's hosted page are keyed by the
+   *  **checkout session**, which is what those purchases were.
    *
-   *  A session is also the unit a refund and an expiry are about: both arrive as
-   *  events naming the session, and both are this row changing status rather than
-   *  a row appearing somewhere else.
+   *  That payment is also the unit a refund and an expiry are about: both arrive
+   *  as events naming it — the intent, always — and both are this row changing
+   *  status rather than a row appearing somewhere else.
    *
    *  The three indexes are the three questions asked of it, and none of them can
    *  be a scan: what one person has bought (`userId`), who has bought one course
    *  (`spaceId`) — the author's own view of their sales — and what became of one
    *  payment (`stripePaymentIntentId`), which is the one lookup the key cannot
-   *  answer: a refund and a failed payment arrive as events naming the *intent*,
-   *  and the session that started it is not in them.
+   *  always answer: a refund and a failed payment arrive as events naming the
+   *  *intent*, and a row keyed by the session it was bought with does not carry
+   *  it in the key.
    */
   {
     id: 'PaymentsTable',
@@ -1561,7 +1564,7 @@ export const FUNCTIONS: FunctionSpec[] = [
   /**
    *  Paying for one, which is the other way into the same membership. Its own
    *  route rather than a branch inside `enroll-in-space`, because it is not the
-   *  same act: enrolling writes a row, and this asks Stripe for a checkout page
+   *  same act: enrolling writes a row, and this asks Stripe for a payment intent
    *  and writes an *attempt* down. What turns one into the other is the webhook,
    *  which is the only thing that hears the money arrive.
    *

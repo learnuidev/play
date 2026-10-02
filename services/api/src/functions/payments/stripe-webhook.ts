@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 
 import { isConditionalCheckFailed } from '../../lib/dynamodb';
-import { recordSetupIntent } from '../../lib/payment-methods';
+import { customerForPurchase, recordSetupIntent } from '../../lib/payment-methods';
 import {
   findPaymentByIntent,
   recordPayment,
@@ -136,6 +136,12 @@ interface PaymentIntent {
   currency: string;
   customer?: string | null;
   receipt_email?: string | null;
+  /**
+   * The method it was confirmed with — a `pm_…` id, since nothing here expands
+   * it. Read for one thing: the billing address the buyer paid with, which is
+   * kept on their customer so the next form opens filled in.
+   */
+  payment_method?: string | null;
   metadata?: Record<string, string> | null;
 }
 
@@ -262,10 +268,11 @@ async function apply(event: StripeEvent): Promise<string> {
 async function recordIntent(intent: PaymentIntent): Promise<string> {
   const existing = await findPaymentByIntent(intent.id);
 
-  // The metadata first, because it is what the route wrote for *this* attempt;
-  // the existing row's own fields are the fallback for an intent whose metadata
-  // is missing — a payment made from Stripe's dashboard against a course, say,
-  // which is still a payment of ours if the row is.
+  // The metadata first, because it is what the checkout route wrote for *this*
+  // attempt. The row's own fields are the fallback rather than the other way
+  // round: an intent that arrived carrying nothing is still ours to record if a
+  // payment of ours names it, and refusing on the metadata alone would leave a
+  // paid row unenrolled.
   const spaceId = intent.metadata?.spaceId ?? existing?.spaceId;
   const userId = intent.metadata?.userId ?? existing?.userId;
 
@@ -280,6 +287,24 @@ async function recordIntent(intent: PaymentIntent): Promise<string> {
   if (!space) return `no course ${spaceId} to record a payment against`;
 
   const email = existing?.email ?? intent.receipt_email ?? undefined;
+
+  // The customer this purchase belongs to, made now if this is the buyer's first
+  // — see `customerForPurchase`, which also keeps the address they paid with on
+  // it. Resolved before the row is written so the row carries the link on its
+  // first write rather than being written twice.
+  //
+  // The row's own customer is the third fallback, and it is what makes a
+  // re-delivery safe: the intent of a first-time buyer names no customer, so
+  // without it the second delivery of the same event would make a *second*
+  // customer for one purchase — and the buyer's row would move to whichever
+  // arrived last, leaving their cards on the other.
+  const customerId = await customerForPurchase({
+    userId,
+    ...(email ? { email } : {}),
+    customerId: intent.customer ?? existing?.stripeCustomerId ?? null,
+    paymentMethodId: intent.payment_method,
+  });
+
   const payment = await recordPayment({
     paymentId: existing?.paymentId ?? intent.id,
     spaceId,
@@ -289,7 +314,7 @@ async function recordIntent(intent: PaymentIntent): Promise<string> {
     amountCents: intent.amount,
     currency: intent.currency,
     ...(email ? { email } : {}),
-    ...(intent.customer ? { stripeCustomerId: intent.customer } : {}),
+    ...(customerId ? { stripeCustomerId: customerId } : {}),
     stripePaymentIntentId: intent.id,
     ...(intent.metadata?.priceId ? { stripePriceId: intent.metadata.priceId } : {}),
   });
@@ -470,8 +495,9 @@ async function expireCheckout(session: CheckoutSession): Promise<string> {
 }
 
 /**
- * A payment that did not go through. The card was declined, or the bank refused
- * it, and the row the checkout page wrote becomes `FAILED`.
+ * A payment that did not go through. The card was declined, the bank refused it,
+ * or an instalment provider turned the buyer down, and the row the checkout page
+ * wrote becomes `FAILED`.
  *
  * Looked up by the intent, because that is all the event names — and skipped when
  * there is no row for it, which is the normal state for an intent this

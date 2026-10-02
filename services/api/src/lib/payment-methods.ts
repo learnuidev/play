@@ -9,7 +9,8 @@ import {
   createCustomer,
   getPaymentMethod,
   getSetupIntent,
-  setCustomerCountry,
+  setCustomerAddress,
+  toBillingAddress,
   type StripePaymentMethod,
 } from './stripe';
 
@@ -148,9 +149,10 @@ export interface BillingContext {
  *
  * 1. **a card they have saved** — which records the customer it was attached to,
  *    so anybody with a card answers here;
- * 2. **a payment they have made** — Stripe creates a customer for a checkout
- *    session, and the webhook writes its id onto the payment row, so a buyer who
- *    has never saved a card still has one;
+ * 2. **a payment they have made** — a purchase is where a customer is worth
+ *    making, so `customerForPurchase` makes one for a first-time buyer and the
+ *    webhook writes its id onto the payment row: anybody who has bought anything
+ *    answers here;
  * 3. **nowhere**, in which case one is created.
  *
  * The order matters beyond cost: finding the *same* customer the purchases were
@@ -290,13 +292,88 @@ export async function recordSetupIntent(input: {
 
   await putPaymentMethod(row);
 
-  // The country the card was saved with becomes the account's, so the next card
-  // form opens where this one ended rather than on the deployment's own country.
-  // A card that came without one changes nothing: no address is not an address.
-  const country = method.billing_details?.address?.country;
-  if (country && customerId) await setCustomerCountry(customerId, country);
+  // The address the card was saved with becomes the account's, so the next form
+  // — this one, or the marketplace's checkout — opens where this one ended.
+  // **All of it, and not only the country**: remembering the country alone left
+  // every later form with an empty postal code under a filled-in country, which
+  // reads as the form asking for the same details over again. A method that came
+  // without an address changes nothing: no address is not an address.
+  const address = toBillingAddress(method.billing_details?.address);
+  if (address && customerId) await setCustomerAddress(customerId, address);
 
   return row;
+}
+
+/**
+ * The customer a purchase belongs to, with the address the buyer paid with kept
+ * on it.
+ *
+ * ## Why a purchase, and not the checkout route
+ *
+ * That route deliberately does not make a customer: it runs when a page opens,
+ * and one per abandoned checkout is a dashboard full of empty customers. So a
+ * buyer who has never saved a card arrives at this point with **no customer at
+ * all** — and until this function existed, that was the end of it. They bought a
+ * course, and the next checkout opened on an empty postal code, and the one after
+ * that, because there was nowhere to have kept what they typed.
+ *
+ * A payment is the moment an account is worth a customer: the address is in hand,
+ * the money has moved, and every card and every later purchase belongs against
+ * it. So one is made here for a first-time buyer, and the address they paid with
+ * is written onto it in the same breath.
+ *
+ * ## The address comes out of the payment method
+ *
+ * Which is the only place it exists. The card form writes its own address as it
+ * confirms — the person is standing there — but a purchase never passes through
+ * that form: what Stripe collected is inside the `pm_…` the intent was confirmed
+ * with, which nothing in the marketplace can see. This reads it back.
+ *
+ * ## Best effort, and that is the design
+ *
+ * Everything here is for the *next* visit rather than for this purchase, so a
+ * Stripe call that fails is logged and the payment is recorded anyway — where
+ * throwing would ask Stripe to re-deliver an event for money that has already
+ * been taken and a course that is already enrolled. What is returned is the
+ * customer the intent named, if it named one, so the payment row keeps its link
+ * even when the address could not be read.
+ */
+export async function customerForPurchase(input: {
+  userId: string;
+  email?: string;
+  /** The customer the intent was confirmed under, when it had one. */
+  customerId?: string | null;
+  /** The `pm_…` it was confirmed with. Without one there is no address to keep. */
+  paymentMethodId?: string | null;
+}): Promise<string | null> {
+  const existing = input.customerId ?? null;
+  if (!input.paymentMethodId) return existing;
+
+  try {
+    const method = await getPaymentMethod(input.paymentMethodId);
+    const address = toBillingAddress(method.billing_details?.address);
+
+    if (existing) {
+      if (address) await setCustomerAddress(existing, address);
+      return existing;
+    }
+
+    // Nobody to keep it on. An address with no customer means a customer worth
+    // making; a payment method with no address means there is nothing to keep,
+    // and making one would be an empty customer for a purchase that did not need
+    // it.
+    if (!address) return null;
+
+    const created = await createCustomer({
+      ...(input.email ? { email: input.email } : {}),
+      userId: input.userId,
+    });
+    await setCustomerAddress(created.id, address);
+    return created.id;
+  } catch (error) {
+    console.error(`Could not keep the billing address of ${input.userId}`, error);
+    return existing;
+  }
 }
 
 /** The card details of a payment method, or nothing when it is not a card. */

@@ -23,7 +23,6 @@ import {
   useLeaveCourse,
   useMyRewards,
   useSpaceProgress,
-  useStartCheckout,
 } from '@play/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStatus } from '@play/auth';
@@ -53,10 +52,13 @@ import type {
  * sign in and register to take it.
  *
  * **Or buy it.** A course with a price is not registered for: the button says
- * what it costs and sends the reader to Stripe, and the membership appears when
- * the webhook hears the payment land. `?paid=1` is how Stripe sends them back,
- * which is why this page reads the query string at all — and why it is wrapped
- * in a boundary, since `useSearchParams` needs one in the App Router.
+ * what it costs and opens the marketplace's own checkout, which is where the
+ * card form lives — the same page, one click in, rather than a hand-off to
+ * Stripe's. The membership appears when the webhook hears the payment land, and
+ * `?paid=1` is how Stripe returns a buyer whose bank sent them away for a
+ * verification step — which is why this page reads the query string at all, and
+ * why it is wrapped in a boundary, since `useSearchParams` needs one in the App
+ * Router.
  */
 export default function CoursePage() {
   return (
@@ -397,7 +399,6 @@ function RegisterPanel({
   const status = useAuthStatus();
   const enroll = useEnrollInCourse(spaceId);
   const leave = useLeaveCourse(spaceId);
-  const checkout = useStartCheckout(spaceId);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
 
   const { enrolled, isLoading, purchasedAt } = useEnrollment(spaceId);
@@ -418,12 +419,14 @@ function RegisterPanel({
   /**
    * The half of a purchase that happens before the webhook.
    *
-   * Stripe sends the browser back to this page with `?paid=1`, and at that
-   * moment the money is taken but the membership does not exist yet: the
-   * enrolment is written by the webhook, seconds later, and the page cannot know
-   * from the URL alone that it has happened. So while that flag is set the panel
-   * *waits* rather than offering to charge again — a pay button under a success
-   * redirect is a button somebody presses twice.
+   * Stripe returns the browser to this page with `?paid=1` — either because the
+   * checkout sent it here when the card cleared, or because the bank did and
+   * Stripe passed it on — and at that moment the money is taken but the
+   * membership does not exist yet: the enrolment is written by the webhook,
+   * seconds later, and the page cannot know from the URL alone that it has
+   * happened. So while that flag is set the panel *waits* rather than offering to
+   * charge again — a pay button under a success return is a button somebody
+   * presses twice.
    */
   const search = useSearchParams();
   const returning = search.get('paid') === '1';
@@ -475,28 +478,26 @@ function RegisterPanel({
   }
 
   /**
-   * Sending the reader to Stripe.
+   * Opening the checkout, which is where paying happens.
    *
-   * A full navigation rather than a popup: Stripe's hosted page is a page, and a
-   * redirect survives the bank's own verification step — which is a different
-   * origin again — where a popup is blocked or stranded.
+   * A page rather than a dialog, and the reason is the form itself: a card
+   * number typed into a narrow box beside a course description is a cramped place
+   * to spend money, while the checkout has the room for the order summary, the
+   * instructors and the total on one screen. This page keeps its own copy of the
+   * course's price either way, so the button under it says what the course costs
+   * rather than leaving it to be discovered one click later.
    */
   async function pay() {
     // The same door as registering: paying needs an account, because the buyer is
-    // who the enrolment is for. Signing in returns here, to this page, where the
-    // button is waiting — a checkout session opened before the account existed
-    // would be a payment with nobody to enrol.
+    // who the enrolment is for. Signing in returns to the checkout page, where
+    // the form is waiting — an intent opened before the account existed would be
+    // a payment with nobody to enrol.
     if (!signedIn) {
-      router.push(`/sign-in?next=${encodeURIComponent(coursePath)}`);
+      router.push(`/sign-in?next=${encodeURIComponent(`${coursePath}/checkout`)}`);
       return;
     }
 
-    try {
-      const session = await checkout.mutateAsync();
-      window.location.assign(session.url);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not start the payment');
-    }
+    router.push(`${coursePath}/checkout`);
   }
 
   async function unregister() {
@@ -542,17 +543,17 @@ function RegisterPanel({
         </>
       ) : confirming ? (
         <>
-          {/* The money is taken and the enrolment is not written yet. Saying so
-              is the difference between a page that looks broken and one that is
-              waiting for something it cannot see. */}
+          {/* The payment is on its way and the enrolment is not written yet.
+              Saying so is the difference between a page that looks broken and one
+              that is waiting for something it cannot see. */}
           <p className="inline-flex items-center gap-1.5 text-sm font-medium">
             <Loader2Icon className="animate-spin size-4" />
             Confirming your payment
           </p>
           <p className="text-xs leading-relaxed text-muted-foreground">
             {waited >= 4
-              ? 'Stripe has taken the payment. Your access appears as soon as the confirmation reaches us — reload this page in a moment, and it will be here.'
-              : 'Stripe has taken the payment and the confirmation is on its way. This page is checking for it.'}
+              ? 'Your payment is with Stripe, and some ways of paying take longer to clear than a card — a bank, or an instalment plan like Klarna or Afterpay. Your access appears as soon as the confirmation reaches us: reload this page in a moment, and it will be here.'
+              : 'The confirmation is on its way. This page is checking for it — a card usually lands in seconds.'}
           </p>
         </>
       ) : (
@@ -568,15 +569,13 @@ function RegisterPanel({
           <Button
             className="w-full gap-1.5"
             onClick={() => void (paid ? pay() : register())}
-            disabled={enroll.isPending || checkout.isPending}
+            disabled={enroll.isPending}
           >
-            {(enroll.isPending || checkout.isPending) && <Loader2Icon className="animate-spin" />}
+            {enroll.isPending && <Loader2Icon className="animate-spin" />}
             {paid
-              ? checkout.isPending
-                ? 'Opening Stripe…'
-                : signedIn
-                  ? `Pay ${price}`
-                  : 'Sign in to pay'
+              ? signedIn
+                ? `Pay ${price}`
+                : 'Sign in to pay'
               : enroll.isPending
                 ? 'Registering…'
                 : signedIn

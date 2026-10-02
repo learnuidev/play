@@ -841,10 +841,10 @@ a public endpoint:
 
 | | Where | What it does |
 | --- | --- | --- |
-| Opening a checkout | `POST /spaces/{spaceId}/checkout` in `PlayApiStack` | Resolves the course's price in Stripe, opens a hosted session, writes the attempt down as `PENDING` |
+| Opening a checkout | `POST /spaces/{spaceId}/checkout` in `PlayApiStack` | Resolves the course's price in Stripe, opens a payment intent, writes the attempt down as `PENDING` |
 | Recording the payment | the webhook in `PlayPaymentStack` | Verifies the signature, marks the payment paid, and **enrols the buyer** |
 
-Nothing in the first half grants access: a session being created is not money
+Nothing in the first half grants access: an intent being opened is not money
 arriving. The enrolment is `enrollInSpace` — the same call the register button
 makes — and `functions/spaces/enroll.ts` refuses a course with a price, so the
 webhook is the only way in. The membership *is* the record of payment, which is
@@ -855,8 +855,11 @@ why there is no second lookup that could disagree with it.
 is a cache the backend makes on the first checkout and stores back as
 `stripePriceId`. That is why changing what a course costs is changing a number
 rather than chasing an id through a dashboard, and why the marketplace's tile and
-the studio's price field read the same field the API checks. The console's Stripe
-card above is what makes all of it work: no credentials, no checkout.
+the studio's price field read the same field the API checks. The charge itself is
+the amount rather than the price — a payment intent takes a number — so the Stripe
+price is the record of what a course sells for, not the thing being charged. The
+console's Stripe card above is what makes all of it work: no credentials, no
+checkout.
 
 ## Where things are
 

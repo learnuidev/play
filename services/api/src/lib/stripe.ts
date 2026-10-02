@@ -418,15 +418,19 @@ export interface StripePaymentMethod {
     exp_year: number;
   };
   /**
-   * The billing details the card was saved with.
+   * The billing details the card was saved with — **the whole address**.
    *
-   * Only the country is read, and it is read for one reason: it is the one piece
-   * of an address a person has to state, because a postal code is only
-   * meaningful next to it. Whatever they chose is kept on the customer below, so
-   * the next card form opens on it rather than on this deployment's country.
+   * This read only the country once, on the reasoning that a country is the one
+   * piece of an address a person has to state because a postal code is only
+   * meaningful next to it. The reasoning was fine and the conclusion was wrong:
+   * the country was remembered and the postal code was not, so every later form
+   * opened on a country with an empty box underneath it — a form that had plainly
+   * been told something and was still asking for the same details again.
+   *
+   * So all of it is kept, and all of it is handed back to the next form.
    */
   billing_details?: {
-    address?: { country?: string | null } | null;
+    address?: StripeAddress | null;
   } | null;
 }
 
@@ -629,54 +633,136 @@ export function verifyStripeSignature(input: {
 }
 
 /**
- * The billing country this person's account is set to, if any.
+ * A billing address, as this service keeps it.
  *
- * Read to **prefill** a card form. Stripe's own customer object is where an
- * address of record belongs — it is what a receipt is issued against and what
- * tax is computed from, and it is already the thing every card and every
- * purchase here hangs off — so the choice somebody makes in a card form is
- * written there rather than into a table of this service's own.
+ * Stripe spells these in snake case (`postal_code`, `line1`) and this does not:
+ * it is the shape the API answers with and both apps draw their forms from, so it
+ * reads like every other field in `@play/types`. The translation happens once, in
+ * `toBillingAddress`, at the edge where Stripe's JSON arrives.
+ *
+ * Every field is optional, because Stripe collects whatever the payment method
+ * needed: a card wants a country and a postal code, a wallet may want nothing at
+ * all, and a missing field is "they have not said" rather than an empty string —
+ * which is the difference between a form that opens on what somebody typed last
+ * time and one that opens on a blank it will not accept.
+ */
+export interface BillingAddress {
+  line1?: string;
+  line2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+}
+
+/** An address as Stripe spells it: snake case, and nullable in every field. */
+export interface StripeAddress {
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+}
+
+/**
+ * Stripe's address in this service's spelling, or nothing when it is empty.
+ *
+ * An address with no fields is `null` rather than `{}`: both mean "they have not
+ * said", and the one that is a truthy object would make every caller check for
+ * emptiness itself.
+ */
+export function toBillingAddress(address: StripeAddress | null | undefined): BillingAddress | null {
+  if (!address) return null;
+
+  const known: BillingAddress = {
+    ...(address.line1 ? { line1: address.line1 } : {}),
+    ...(address.line2 ? { line2: address.line2 } : {}),
+    ...(address.city ? { city: address.city } : {}),
+    ...(address.state ? { state: address.state } : {}),
+    ...(address.postal_code ? { postalCode: address.postal_code } : {}),
+    ...(address.country ? { country: address.country } : {}),
+  };
+
+  return Object.keys(known).length > 0 ? known : null;
+}
+
+/**
+ * The billing address this person's account is set to, if any.
+ *
+ * Read to **prefill** a card form — the whole address, not only the country.
+ * Stripe's own customer object is where an address of record belongs: it is what
+ * a receipt is issued against and what tax is computed from, and it is already
+ * the thing every card and every purchase here hangs off. So what somebody types
+ * into a card form is written there rather than into a table of this service's
+ * own.
  *
  * A customer with no address is `null` rather than a guess: "they have not said"
  * and "they are in the United States" are different answers, and a form that
  * assumed the second would be the reason nobody ever checks it.
  */
-export async function getCustomerCountry(customerId: string): Promise<string | null> {
-  return (await getCustomer(customerId)).country;
+export async function getCustomerAddress(customerId: string): Promise<BillingAddress | null> {
+  return (await getCustomer(customerId)).address;
 }
 
-/** Remembering it, when a card says what it is. */
-export async function setCustomerCountry(customerId: string, country: string): Promise<void> {
-  await stripeRequest<{ id: string }>('POST', `customers/${encodeURIComponent(customerId)}`, {
-    'address[country]': country,
-  });
+/**
+ * Remembering it, when a payment method says what it is.
+ *
+ * **Only the fields that are there are sent.** Stripe merges what a `POST`
+ * carries, so a field left out keeps what the customer already had, while an
+ * empty string would be this service erasing somebody's address with a blank —
+ * which is why these are conditional rather than assigned in a loop.
+ */
+export async function setCustomerAddress(
+  customerId: string,
+  address: BillingAddress,
+): Promise<void> {
+  const params: Record<string, string> = {};
+  if (address.line1) params['address[line1]'] = address.line1;
+  if (address.line2) params['address[line2]'] = address.line2;
+  if (address.city) params['address[city]'] = address.city;
+  if (address.state) params['address[state]'] = address.state;
+  if (address.postalCode) params['address[postal_code]'] = address.postalCode;
+  if (address.country) params['address[country]'] = address.country;
+
+  // Nothing to say: a write with no fields is a request Stripe would answer with
+  // the customer unchanged, and a round trip that cannot change anything is not
+  // worth making.
+  if (Object.keys(params).length === 0) return;
+
+  await stripeRequest<{ id: string }>(
+    'POST',
+    `customers/${encodeURIComponent(customerId)}`,
+    params,
+  );
 }
 
 /**
  * The two things this service reads off a customer, in one call.
  *
- * The **billing country** and the **default payment method**, because they are
+ * The **billing address** and the **default payment method**, because they are
  * asked for together: a page that draws a wallet wants to know which card is the
- * default and a card form wants to know where to open. Two `GET`s for two fields
- * of one object would be two round trips to Stripe for the same answer.
+ * default, a card form wants to know what to open on, and the marketplace's
+ * checkout wants the country for instalment messaging. Three `GET`s for three
+ * fields of one object would be three round trips to Stripe for the same answer.
  */
 export interface StripeCustomer {
-  country: string | null;
+  address: BillingAddress | null;
   /** The `pm_…` id the account charges by default, if one is set. */
   defaultPaymentMethodId: string | null;
 }
 
 export async function getCustomer(customerId: string): Promise<StripeCustomer> {
-  const empty: StripeCustomer = { country: null, defaultPaymentMethodId: null };
+  const empty: StripeCustomer = { address: null, defaultPaymentMethodId: null };
 
   try {
     const customer = await stripeRequest<{
-      address?: { country?: string | null } | null;
+      address?: StripeAddress | null;
       invoice_settings?: { default_payment_method?: string | null } | null;
     }>('GET', `customers/${encodeURIComponent(customerId)}`);
 
     return {
-      country: customer.address?.country ?? null,
+      address: toBillingAddress(customer.address),
       // An id rather than an object: nothing here expands the reference, and a
       // caller that assumed an object would read `undefined` off a string.
       defaultPaymentMethodId:

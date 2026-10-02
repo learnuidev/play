@@ -2,17 +2,25 @@ import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireUser } from '../../lib/auth';
 import { handle, ok } from '../../lib/http';
 import { billingContextFor } from '../../lib/payment-methods';
-import { createSetupIntent, getCustomerCountry, publishableKey } from '../../lib/stripe';
+import { createSetupIntent, getCustomerAddress, publishableKey } from '../../lib/stripe';
 
 /**
  * Opening a card form.
  *
  * The marketplace draws its own card field with Stripe Elements, and an Element
- * needs two things this route hands it: a **client secret** for a SetupIntent,
- * and the **publishable key** Stripe.js is loaded with. Both come back here
- * rather than from the app's environment, because both are the deployment's —
- * a publishable key in `.env.local` is a copy of a value the console already
- * holds, and a client secret is minted per attempt and cannot be one.
+ * needs three things this route hands it: a **client secret** for a SetupIntent,
+ * the **publishable key** Stripe.js is loaded with, and the **billing address**
+ * to open on. All three come back here rather than from the app's environment,
+ * because all three are the deployment's and the account's — a publishable key
+ * in `.env.local` is a copy of a value the console already holds, a client secret
+ * is minted per attempt and cannot be one, and the address is what the person
+ * themselves typed last time.
+ *
+ * **The whole address, not just the country.** It used to answer with a country
+ * alone, which the form prefilled and left the postal code empty beside — so the
+ * form that had been told where somebody lives still asked them to say it again,
+ * which is the bug this field exists to close. What is answered here is what
+ * `recordSetupIntent` wrote onto the customer when the last card was saved.
  *
  * Nothing is saved by this call. What it creates is an intent: the browser
  * confirms it, and `POST /me/payment-methods` is what turns the result into a
@@ -29,13 +37,13 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   const { customerId } = await billingContextFor(user);
 
-  const [intent, key, country] = await Promise.all([
+  const [intent, key, billingAddress] = await Promise.all([
     createSetupIntent({ customerId, metadata: { userId: user.userId } }),
     publishableKey(),
-    // Their own choice from the last card they saved, if they have made one.
-    // Null is "they have not said", which the form shows as an empty country
-    // rather than as this deployment's.
-    getCustomerCountry(customerId),
+    // Their own address from the last card they saved, if they have saved one.
+    // Null is "they have not said", which the form shows as empty fields rather
+    // than as this deployment's country.
+    getCustomerAddress(customerId),
   ]);
 
   if (!intent.client_secret) {
@@ -48,7 +56,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     setupIntentId: intent.id,
     clientSecret: intent.client_secret,
     publishableKey: key,
-    country,
+    billingAddress,
   });
 }
 

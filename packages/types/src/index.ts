@@ -480,6 +480,26 @@ export interface UpdateSpacePayload {
 }
 
 /**
+ * A billing address, as this product keeps it.
+ *
+ * Stripe spells these in snake case (`postal_code`) and this does not: it is the
+ * shape the API answers with and both apps draw their forms from, so it reads
+ * like every other field here. Every one is optional, because Stripe collects
+ * whatever the payment method needed — a card wants a country and a postal code,
+ * a wallet may want nothing — and a missing field is "they have not said" rather
+ * than an empty string.
+ */
+export interface BillingAddress {
+  line1?: string;
+  line2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  /** ISO 3166-1 alpha-2, upper case, as Stripe spells it. */
+  country?: string;
+}
+
+/**
  * What asking to pay for a course answers with.
  *
  * **A client secret, not a URL.** The marketplace draws the payment form itself
@@ -514,6 +534,22 @@ export interface CourseCheckoutResponse {
   /** What Stripe will charge: the price the server resolved, not the catalog's. */
   amountCents: number;
   currency: string;
+  /**
+   * The buyer's billing address as Stripe knows it, or null.
+   *
+   * Two questions are answered by it. The checkout form opens on it, so somebody
+   * who has paid before is not asked to type the same postal code again — and
+   * **buy now, pay later is a question about the buyer's country**, so the
+   * instalment messaging needs the country out of the same answer: Klarna,
+   * Afterpay and Affirm are each offered in a fixed set of markets, and a page
+   * that drew their plans without knowing where the reader is would be
+   * advertising something the reader cannot have.
+   *
+   * Null is "nobody has told us" rather than a country: somebody who has never
+   * saved a card or bought anything pays perfectly well, on an empty form with no
+   * instalment line.
+   */
+  billingAddress: BillingAddress | null;
 }
 
 /** What the overview's four cards read. */
@@ -814,15 +850,15 @@ export interface ListPaymentMethodsResponse {
  * What a card form needs to open.
  *
  * The marketplace draws the card field itself with Stripe Elements, so this is
- * not a redirect to anywhere: it is the two values an Element cannot work
- * without — a **client secret** for a SetupIntent, and the **publishable key**
- * Stripe.js is loaded with — plus the intent's id, which is what the form quotes
- * back once Stripe says the card is on it.
+ * not a redirect to anywhere: it is the values an Element cannot work without —
+ * a **client secret** for a SetupIntent, and the **publishable key** Stripe.js is
+ * loaded with — plus the intent's id, which is what the form quotes back once
+ * Stripe says the card is on it, and the address to open on.
  *
- * Both come from the deployment rather than from the app's environment, so a
- * deployment has one source for them: the console already shows the publishable
- * key on its Checklist, and a copy in `.env.local` would be a second one to keep
- * in step.
+ * All of them come from the deployment and the account rather than from the
+ * app's environment, so a deployment has one source for them: the console already
+ * shows the publishable key on its Checklist, and a copy in `.env.local` would be
+ * a second one to keep in step.
  */
 export interface SetupIntentResponse {
   setupIntentId: string;
@@ -831,13 +867,17 @@ export interface SetupIntentResponse {
   /** `pk_…`: what `loadStripe` is given. Not a secret — it is served to browsers. */
   publishableKey: string;
   /**
-   * The billing country this account is set to, from the last card it saved.
+   * The address this account was last set to, from the card it saved.
    *
-   * ISO 3166-1 alpha-2, upper case, as Stripe spells it. **Null is "they have not
-   * said"** — a different answer from the deployment's own country, and the
-   * reason the form starts empty rather than assuming one.
+   * **The whole address, and that is the point of it.** A country alone was
+   * answered here once, and the form it pre-filled then showed an empty postal
+   * code underneath — the one field a card's billing check needs and the one
+   * nobody wants to type twice, so the form read as though it had forgotten
+   * everything. **Null is "they have not said"**, which is a different answer
+   * from this deployment's own country and the reason the form starts empty
+   * rather than assuming one.
    */
-  country: string | null;
+  billingAddress: BillingAddress | null;
 }
 
 /** Saving the card a form just confirmed. */

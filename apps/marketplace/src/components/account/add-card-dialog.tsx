@@ -6,6 +6,7 @@ import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Loader2Icon, LockIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSavePaymentMethod, useStartPaymentMethodSetup } from '@play/api';
+import { billingDetailsOf } from '@/lib/billing-address';
 import { useElementsAppearance } from '@/lib/stripe-appearance';
 import { Button } from '@ui/components/ui/button';
 import {
@@ -59,7 +60,8 @@ export function AddCardDialog({
   const [session, setSession] = useState<{
     clientSecret: string;
     stripe: Promise<Stripe | null>;
-    country: string | null;
+    /** The address this account was last set to, for the Element to open on. */
+    billingDetails: ReturnType<typeof billingDetailsOf>;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Bumped by "Try again", and the only reason this effect ever runs twice. */
@@ -96,7 +98,7 @@ export function AddCardDialog({
         setSession({
           clientSecret: intent.clientSecret,
           stripe: loadStripe(intent.publishableKey),
-          country: intent.country,
+          billingDetails: billingDetailsOf(intent.billingAddress),
         });
       } catch (cause) {
         if (!cancelled) {
@@ -145,7 +147,7 @@ export function AddCardDialog({
           <Elements stripe={stripePromise} options={{ clientSecret: session.clientSecret, appearance }}>
             <CardForm
               clientSecret={session.clientSecret}
-              country={session.country}
+              billingDetails={session.billingDetails}
               onSaved={() => onOpenChange(false)}
             />
           </Elements>
@@ -165,12 +167,12 @@ export function AddCardDialog({
  */
 function CardForm({
   clientSecret,
-  country,
+  billingDetails,
   onSaved,
 }: {
   clientSecret: string;
-  /** Their own country from last time, or null if they have never said. */
-  country: string | null;
+  /** The address this account was last set to, or undefined if never given. */
+  billingDetails: ReturnType<typeof billingDetailsOf>;
   onSaved: () => void;
 }) {
   const stripe = useStripe();
@@ -261,20 +263,18 @@ function CardForm({
           in it at all.
 
           This one collects the billing address: a country first, and then the
-          postal code that country actually has, checked against it. It opens on
-          the country this account was last set to, which is what "save it to my
-          preferences" means here — the API writes whatever was chosen onto the
-          Stripe customer, because that is the address a receipt is issued
-          against and it is already what every card and purchase here hangs off.
-          With no preference it starts unanswered, and Stripe refuses to confirm
-          the card until it is filled in. */}
-      <PaymentElement
-        options={{
-          defaultValues: {
-            billingDetails: { address: country ? { country } : undefined },
-          },
-        }}
-      />
+          postal code that country actually has, checked against it.
+
+          **It opens on the whole address, not on the country alone.** This form
+          used to be given a country and nothing else, so somebody who had already
+          said where they live was shown their country filled in above an empty
+          postal code — the form asking for the same details twice, which is what
+          fixing this looked like from the outside. What it is given now is
+          whatever Stripe collected last time, written onto the customer by the
+          route that saves a card and by the webhook when somebody pays. With
+          nothing remembered it starts empty, and Stripe refuses to confirm the
+          card until it is filled in. */}
+      <PaymentElement options={{ defaultValues: { billingDetails } }} />
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 

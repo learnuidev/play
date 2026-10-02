@@ -7,7 +7,15 @@ import { existingCustomerIdFor } from '../../lib/payment-methods';
 import { recordPayment } from '../../lib/payments';
 import { getSpaceMember } from '../../lib/space-members';
 import { getSpace, setSpaceStripePrice } from '../../lib/spaces';
-import { createPaymentIntent, createPrice, findPrice, productTaxCode, publishableKey } from '../../lib/stripe';
+import {
+  createPaymentIntent,
+  createPrice,
+  findPrice,
+  getCustomerAddress,
+  productTaxCode,
+  publishableKey,
+  type BillingAddress,
+} from '../../lib/stripe';
 
 /**
  * Opening the marketplace's own checkout for a course.
@@ -92,28 +100,32 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   const customerId = await customerForCheckout(user);
 
-  const [intent, key] = await Promise.all([
-    createPaymentIntent({
-      amountCents: priceCents,
-      currency,
-      // What the dashboard and the receipt call this charge, and the only place
-      // the course's name travels with the money: an intent has no line item to
-      // name it.
-      description: space.title,
-      ...(customerId ? { customerId } : {}),
-      ...(user.email ? { receiptEmail: user.email } : {}),
-      metadata: {
-        spaceId,
-        userId: user.userId,
-        organizationId: space.organizationId,
-        // Which of the course's prices this sale is of. The intent carries an
-        // amount rather than a price, so this is what puts the price on the
-        // payment row without a second read of Stripe after the fact.
-        priceId: price.id,
-      },
-    }),
-    publishableKey(),
-  ]);
+  // The publishable key **before the intent**, and deliberately: it is the one
+  // thing a deployment can simply be missing, and a checkout that cannot draw a
+  // form should fail before it leaves an intent behind in Stripe for a payment
+  // nobody will ever make. The read is cached for the container's life, so it
+  // costs nothing after the first checkout.
+  const key = await publishableKey();
+
+  const intent = await createPaymentIntent({
+    amountCents: priceCents,
+    currency,
+    // What the dashboard and the receipt call this charge, and the only place
+    // the course's name travels with the money: an intent has no line item to
+    // name it.
+    description: space.title,
+    ...(customerId ? { customerId } : {}),
+    ...(user.email ? { receiptEmail: user.email } : {}),
+    metadata: {
+      spaceId,
+      userId: user.userId,
+      organizationId: space.organizationId,
+      // Which of the course's prices this sale is of. The intent carries an
+      // amount rather than a price, so this is what puts the price on the
+      // payment row without a second read of Stripe after the fact.
+      priceId: price.id,
+    },
+  });
 
   if (!intent.client_secret) {
     // An intent with no client secret cannot be confirmed by anything, and
@@ -157,7 +169,35 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     returnUrl: `${courseUrl}?paid=1`,
     amountCents: priceCents,
     currency,
+    ...(await addressForCheckout(customerId)),
   });
+}
+
+/**
+ * The buyer's billing address, for the form that is about to be drawn.
+ *
+ * **The whole address**, because the payment Element opens on it: a postal code
+ * is the half of a card's billing check that has to be typed every time, and a
+ * form that remembered only the country asked for it again on every visit — see
+ * `addressForCheckout`. The country is read off the same answer by the page, for
+ * Stripe's instalment messaging, which is a question about where the buyer is
+ * rather than about what they typed.
+ *
+ * A failure is logged and swallowed for the reason everything around this
+ * purchase is: a lookup that went wrong must not stop somebody paying. What is
+ * lost is a pre-filled form.
+ */
+async function addressForCheckout(
+  customerId: string | null,
+): Promise<{ billingAddress: BillingAddress | null }> {
+  if (!customerId) return { billingAddress: null };
+
+  try {
+    return { billingAddress: await getCustomerAddress(customerId) };
+  } catch (error) {
+    console.error(`Could not read the address of Stripe customer ${customerId}`, error);
+    return { billingAddress: null };
+  }
 }
 
 /**
@@ -228,10 +268,12 @@ async function priceForCourse(input: {
  * reason a read must not make one.
  *
  * What is lost is small and worth naming: somebody who has never bought anything
- * and has never saved a card pays without a customer in Stripe, so their first
- * purchase is not gathered under one in the dashboard. Their receipt still goes
- * to their address, and the day they save a card `billingContextFor` makes the
- * customer every later purchase and card hangs off.
+ * and has never saved a card pays without a customer on the *intent*, so the form
+ * cannot offer them a card they saved earlier. Their receipt still goes to their
+ * address — and the purchase itself is what makes the customer, a moment later:
+ * the webhook puts one behind a first-time buyer and writes the address they paid
+ * with onto it, so the next checkout opens filled in and their receipts and cards
+ * gather under one row in the dashboard from then on.
  *
  * A failure is logged and swallowed for the reason the wallet lookup always
  * swallows one: **resolving this must never cost somebody a purchase**. What is

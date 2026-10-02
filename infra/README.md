@@ -132,7 +132,7 @@ them:
 The URL is an output rather than something a person derives, because a function
 URL carries a random subdomain assigned when the function is created. Paste
 `StripeWebhookUrl` into the Stripe dashboard as an endpoint, subscribe it to the
-five events the handler acts on (`STRIPE_EVENTS` in `apps/play/src/server/settings.ts`
+seven events the handler acts on (`STRIPE_EVENTS` in `apps/play/src/server/settings.ts`
 is the list; the handler's own `switch` is the authority), and paste the signing
 secret Stripe shows you back into the console.
 
@@ -143,11 +143,11 @@ thing — one is on the product's own surface and one is a public endpoint:
 
 | | Where | What it does |
 | --- | --- | --- |
-| **Opening a checkout** | `PlayApiStack` — `POST /spaces/{spaceId}/checkout` (`src/functions/spaces/create-checkout.ts`) | Resolves the course's price in Stripe, opens a hosted session, writes the attempt down as a `PENDING` payment, and answers with the URL |
+| **Opening a checkout** | `PlayApiStack` — `POST /spaces/{spaceId}/checkout` (`src/functions/spaces/create-checkout.ts`) | Resolves the course's price in Stripe, opens a payment intent for it, writes the attempt down as a `PENDING` payment, and answers with what the marketplace's own Elements form needs to draw itself |
 | **Recording the payment** | `PlayPaymentStack` — the webhook | Verifies Stripe's signature, marks the payment paid, and **enrols the buyer** through the same `enrollInSpace` the register button calls |
 
-Nothing in the first half grants access, and that is the whole design: a session
-being created is not money arriving, so the only thing that enrols anybody is
+Nothing in the first half grants access, and that is the whole design: an intent
+being opened is not money arriving, so the only thing that enrols anybody is
 Stripe telling this deployment that it did.
 
 **The price is a number on the course, and a Stripe price is a cache of it.**
@@ -158,7 +158,9 @@ rather than one per attempted purchase. A price that no longer matches the amoun
 is replaced on the next checkout — the old one is left in Stripe, because a
 payment already taken points at it. Nothing but the amount is ever an author's
 input: the id is written by the server, and a wrong one would be a checkout for
-somebody else's price.
+somebody else's price. Note that the **charge** is the amount, not the price — a
+payment intent takes a number — so the Stripe price is the record of what a course
+sells for rather than the thing being charged.
 
 Two consequences worth knowing before a deploy:
 
@@ -172,6 +174,14 @@ Two consequences worth knowing before a deploy:
   so the second half of a rotation is a deploy (or waiting). A payment taken in
   between fails verification rather than being accepted, which is the right way
   round.
+
+**Which payment methods a checkout offers is the Stripe account's setting, not
+this repository's.** The API opens each payment with `automatic_payment_methods`,
+so a card always works and Klarna, Afterpay (Clearpay in the UK) and Affirm appear
+in the marketplace's form the moment they are activated in the dashboard — and in
+the instalment line above it, which is Stripe's own messaging element and needs to
+know the buyer's country before it will quote a plan. There is nothing to deploy
+and nothing to configure here; `PlayPaymentStack` is only the webhook.
 
 ## The scripts
 

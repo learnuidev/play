@@ -27,6 +27,13 @@ import type { EnvironmentSettings } from "@/lib/types";
  *    harmless, while subscribing to *none* of these is a payment that never
  *    becomes an enrolment.
  *
+ * And one thing that is neither a value nor an event: **which payment methods a
+ * checkout offers is the account's own setting**. A card always works; Klarna,
+ * Afterpay and Affirm appear in the marketplace's payment form — and in the
+ * instalment line above it — the moment they are switched on in the dashboard,
+ * because the API opens each payment with `automatic_payment_methods` and lets
+ * Stripe decide. Nothing to deploy, and nothing in this repository to change.
+ *
  * ## Why it is its own card, above the credentials
  *
  * For the same reason the Google card is: this is the order the work happens in.
@@ -95,6 +102,13 @@ export function StripeCard({ stage, settings }: { stage: string; settings: Envir
           recycled. Deploying the payment stack — or waiting — is the second step, and a payment
           taken in between fails verification rather than being accepted.
         </p>
+        <p>
+          <span className="text-foreground/80">The payment methods are Stripe&apos;s own setting.</span>{" "}
+          A checkout here offers every method this account has activated that fits the amount and
+          the currency: cards, and Klarna, Afterpay or Affirm once they are switched on. Stripe
+          decides, so there is nothing here to configure — and an instalment line needs the buyer to
+          be somewhere Stripe can quote a plan, which it learns from their customer.
+        </p>
         <p className="flex items-center gap-1.5">
           <ExternalLinkIcon className="size-3.5 shrink-0" />
           <span>
@@ -115,6 +129,15 @@ export function StripeCard({ stage, settings }: { stage: string; settings: Envir
               rel="noreferrer"
             >
               API keys
+            </a>{" "}
+            ·{" "}
+            <a
+              className="text-foreground/80 underline decoration-dotted underline-offset-2"
+              href="https://dashboard.stripe.com/settings/payment_methods"
+              target="_blank"
+              rel="noreferrer"
+            >
+              payment methods
             </a>
           </span>
         </p>
