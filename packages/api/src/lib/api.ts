@@ -1,6 +1,5 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type {
-  AddPaymentMethodResponse,
   AddQuizQuestionsResponse,
   ApproveAuthorizationResponse,
   AudioResponse,
@@ -91,6 +90,8 @@ import type {
   QuizPaperResponse,
   QuizCheckResponse,
   RefundPaymentResponse,
+  SavePaymentMethodPayload,
+  SavePaymentMethodResponse,
   ResendInvitationResponse,
   ResendSpaceInvitationResponse,
   RevokeRewardGrantResponse,
@@ -98,6 +99,7 @@ import type {
   RewardResponse,
   RotateClientSecretResponse,
   SectionResponse,
+  SetupIntentResponse,
   SpaceMemberResponse,
   SpaceMemberRole,
   SpaceProgressResponse,
@@ -1054,15 +1056,30 @@ export const api = {
   listPaymentMethods: () => request<ListPaymentMethodsResponse>('/me/payment-methods'),
 
   /**
-   * Asking to add one, and being sent to Stripe to enter it.
+   * Opening a card form.
    *
-   * A **URL**, like the checkout: this service never sees a card number, so the
-   * form is Stripe's hosted page and the caller redirects. Nothing is stored
-   * until Stripe tells the webhook a card was entered, which is why the screen
-   * somebody returns to waits rather than drawing a list it cannot know yet.
+   * The form is drawn in the browser with Stripe Elements, so this is not a
+   * redirect: it hands back the client secret an Element confirms and the
+   * publishable key Stripe.js is loaded with. Neither is a secret this service
+   * keeps — one lives for one attempt, the other is served to browsers.
    */
   startPaymentMethodSetup: () =>
-    request<AddPaymentMethodResponse>('/me/payment-methods', { method: 'POST' }),
+    request<SetupIntentResponse>('/me/payment-methods/setup-intent', { method: 'POST' }),
+
+  /**
+   * Saving the card that form confirmed.
+   *
+   * The id is all the browser sends: the server reads the intent back from
+   * Stripe and refuses it unless it succeeded, names a card, and belongs to this
+   * account's own customer — so a client cannot talk it into recording somebody
+   * else's card, and a card appears the moment it is saved rather than when a
+   * webhook is delivered.
+   */
+  savePaymentMethod: (payload: SavePaymentMethodPayload) =>
+    request<SavePaymentMethodResponse>('/me/payment-methods', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 
   /** Removes one: at Stripe first, then here. */
   removePaymentMethod: (paymentMethodId: string) =>

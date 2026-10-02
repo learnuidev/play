@@ -199,22 +199,43 @@ export async function stripeCustomerIdFor(user: AuthUser): Promise<string> {
 /**
  * Writing down the card somebody just entered.
  *
- * The event names a **setup intent** and nothing else, so the card is two reads
- * away: the intent says which payment method was saved, and the method says
+ * The intent names the card and nothing else, so the card is two reads away: the
+ * setup intent says which payment method was saved, and the payment method says
  * which brand and which four digits it is. Both are needed, because a row with a
  * token and no digits is a card nobody can recognize in a list.
  *
- * Called from the webhook, which is why it takes ids rather than a parsed event:
- * what is worth testing here is the two reads and the row, not Stripe's JSON.
+ * ## What it refuses, and why that is the point
+ *
+ * - **An intent that has not succeeded** has saved nothing, whatever the browser
+ *   says: the status is Stripe's, and it is the only answer that counts.
+ * - **An intent belonging to another customer** is refused rather than recorded.
+ *   The id travels through a browser, so the check that it belongs to *this*
+ *   caller's Stripe customer is the whole of the authorization here.
+ * - **A payment method that is not a card** — Stripe Link and the bank debits
+ *   are their own types, with no brand and no last four digits — is refused too.
+ *   That refusal is what a wallet full of nothing was made of once: the hosted
+ *   page offered Link, somebody used it, and the row was never written with
+ *   nothing anywhere saying why. The form this service draws collects a card,
+ *   so a `link` here means something is wrong upstream rather than that a person
+ *   did something unusual.
  */
-export async function recordSetupSession(input: {
+export async function recordSetupIntent(input: {
   userId: string;
   setupIntentId: string;
-  /** The customer the session was opened for, when Stripe named one. */
-  stripeCustomerId?: string;
+  /**
+   * The customer this user's cards belong to. Omitted only by the webhook, which
+   * has no caller to check against — a route always passes it.
+   */
+  expectedCustomerId?: string;
 }): Promise<SavedPaymentMethodRow | null> {
   const intent = await getSetupIntent(input.setupIntentId);
-  if (!intent.payment_method) return null;
+
+  if (intent.status !== 'succeeded' || !intent.payment_method) return null;
+  if (input.expectedCustomerId && intent.customer !== input.expectedCustomerId) {
+    throw new Error(
+      `Setup intent ${intent.id} belongs to ${intent.customer}, not to this account's customer`,
+    );
+  }
 
   const method = await getPaymentMethod(intent.payment_method);
   const card = cardOf(method);
@@ -223,12 +244,11 @@ export async function recordSetupSession(input: {
   // another kind would be a row the screen cannot draw.
   if (!card) return null;
 
-  // The customer the session named, falling back to the one on the intent —
-  // both are the same id, and an absent one leaves the field off rather than
-  // writing an empty string into it. An empty string reads as a customer id
-  // everywhere it is used (falsy, so a new customer gets made) and is a value
-  // in the table that looks like data and is not.
-  const customerId = input.stripeCustomerId ?? intent.customer ?? undefined;
+  // The customer the intent names. An absent one leaves the field off rather
+  // than writing an empty string into it: an empty string reads as a customer id
+  // everywhere it is used (falsy, so a new customer gets made) and is a value in
+  // the table that looks like data and is not.
+  const customerId = intent.customer ?? undefined;
 
   const row: SavedPaymentMethodRow = {
     userId: input.userId,

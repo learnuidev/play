@@ -262,13 +262,12 @@ export function LogsView({ stage }: { stage: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeading
-          title="Function"
-          hint={`${functions.length} Lambda${functions.length === 1 ? "" : "s"} in ${stage}. Search for one to switch — enter opens the first match.`}
-        />
-
-        <div className="mt-5 grid gap-3">
+      {/* The function switcher: a box, the history, and the matches while you
+          type. No heading, no count, no log-group path — the name of what you
+          are reading is on the logs card below, and a card whose whole job is
+          one input should be the height of one input. */}
+      <Card flush className="p-4">
+        <div className="grid gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative min-w-64 flex-1">
               <SearchIcon className="text-muted-foreground pointer-events-none absolute top-3 left-3.5 size-4" />
@@ -302,12 +301,6 @@ export function LogsView({ stage }: { stage: string }) {
                 </button>
               ) : null}
             </div>
-
-            <span className="text-muted-foreground text-xs">
-              {query
-                ? `${matches.length} match${matches.length === 1 ? "" : "es"}`
-                : `${functions.length} functions`}
-            </span>
           </div>
 
           {/* The search history, as what it is worth keeping: the functions it
@@ -389,11 +382,6 @@ export function LogsView({ stage }: { stage: string }) {
           ) : null}
         </div>
 
-        {selectedFunction ? (
-          <p className="text-muted-foreground mt-2 font-mono text-xs">
-            {selectedFunction.logGroup}
-          </p>
-        ) : null}
       </Card>
 
       {/* What it did, before what it said: a chart answers "is this being
@@ -420,6 +408,15 @@ export function LogsView({ stage }: { stage: string }) {
         <div className="flex flex-wrap items-center gap-3 px-6 pt-6">
           <h2 className="text-base font-semibold tracking-tight">
             Last {windowLabel(range.minutes)}
+            {selectedFunction ? (
+              <span
+                className="text-muted-foreground font-mono text-sm font-normal"
+                title={selectedFunction.logGroup}
+              >
+                {" · "}
+                {selectedFunction.key}
+              </span>
+            ) : null}
           </h2>
           {loading ? <Chip tone="run">reading</Chip> : null}
           {applied ? (

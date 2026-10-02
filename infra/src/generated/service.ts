@@ -2654,6 +2654,26 @@ export const FUNCTIONS: FunctionSpec[] = [
     s3: [],
     eventBridge: [],
   },
+  /**
+   *  Opening a card form, and saving what it confirmed.
+   *
+   *  **Two routes rather than one**, because the form is drawn in the browser by
+   *  Stripe Elements now: the first hands the page a setup intent and the
+   *  publishable key, and the second is what turns a confirmed intent into a
+   *  card on the account. Neither is a redirect — there is no Stripe-hosted page
+   *  in this flow — so nothing here waits on a webhook to tell it a card was
+   *  saved, which is what a wallet that only filled in minutes later was made of.
+   */
+  {
+    key: 'create-setup-intent',
+    entry: 'src/functions/payments/create-setup-intent.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"me/payment-methods/setup-intent","method":"POST","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
   {
     key: 'add-payment-method',
     entry: 'src/functions/payments/add-payment-method.ts',

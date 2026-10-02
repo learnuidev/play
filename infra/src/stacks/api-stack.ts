@@ -384,6 +384,12 @@ export class PlayApiStack extends Stack {
         resources: [
           parameterArn(this, config.cloudFrontPrivateKeyParam),
           parameterArn(this, config.cloudFrontPublicKeyIdParam),
+          // The Stripe **publishable** key, which is the one secret-shaped value
+          // here that is not a secret: it is what a browser loads Stripe.js
+          // with, and the route that reads it hands it to the marketplace's card
+          // form. Same reasoning as the two above — it is named exactly rather
+          // than reached with a wildcard.
+          parameterArn(this, config.stripePublishableKeyParam),
         ],
       }),
     );

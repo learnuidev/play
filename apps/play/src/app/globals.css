@@ -181,6 +181,22 @@
   }
 
   /*
+   * A row that opens — a log line, a row of table data.
+   *
+   * The disclosure marker is **ours**: each of those rows draws a chevron of its
+   * own inside the summary, so the browser's triangle is removed rather than
+   * left beside it. Two markers on one row reads as a rendering fault rather
+   * than as a control.
+   */
+  summary {
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /*
    * A running step breathes rather than spins.
    *
    * `animate-pulse` on a whole row makes the text flicker, which is the one

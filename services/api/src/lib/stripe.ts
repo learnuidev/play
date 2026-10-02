@@ -4,6 +4,7 @@ import {
   GetSecretValueCommand,
   SecretsManagerClient,
 } from '@aws-sdk/client-secrets-manager';
+import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 
 import { env } from './config';
 
@@ -23,6 +24,7 @@ import { env } from './config';
  */
 
 const secrets = new SecretsManagerClient({});
+const ssm = new SSMClient({});
 
 /**
  * The Stripe API, as one function.
@@ -267,66 +269,98 @@ export async function createCustomer(input: {
 }
 
 /**
- * The page a person enters a card on, without buying anything.
+ * A SetupIntent: the thing a card form confirms, and the record of what it saved.
  *
- * `mode=setup` rather than `mode=payment`, which is the whole difference: no
- * line item, no amount, nothing charged — Stripe collects a card and attaches it
- * to the customer, and the session completes with a **setup intent** that names
- * the payment method. That is why the webhook reads `setup_intent` off the
- * session rather than a payment intent: there is no money in this event at all.
+ * **`payment_method_types[0]=card`, which is the one place this service tells
+ * Stripe which methods to offer.** Everywhere else the account's own
+ * configuration decides, and deliberately — but a page whose whole job is "save
+ * the card I pay with" has to collect a *card*: Stripe's other setup methods are
+ * wallets and bank debits that are not a card, and Stripe Link in particular
+ * saves as a `link` payment method with no brand and no last four digits, which
+ * is a row this product cannot draw in a wallet.
  *
- * **Managed Payments is turned off for this request, and it is not optional on
- * this repo's account.** Stripe enables it by default on a new account, and it
- * refuses a setup session outright:
+ * It did draw nothing, and that is worth writing down: the hosted page offered
+ * Link, the person used it, the payment method came back as `link`, and the row
+ * was refused as un-renderable — a saved card that never appeared anywhere,
+ * with nothing in any log saying why. A form this service owns cannot make that
+ * mistake.
  *
- *   Invalid mode: setup. Managed Payments … only supports mode: subscription or
- *   mode: payment. Use a supported mode, or pass managed_payments[enabled]=false
+ * `usage: off_session` is the honest declaration of what these cards are for:
+ * they are saved so a later purchase does not have to be typed in again.
  *
- * Which is the right answer for this page and not a workaround: Managed Payments
- * is Stripe acting as merchant of record — it does the tax and the invoicing for
- * a *sale* — and there is no sale here. Saving a card is a request to remember
- * one, and a card saved under a merchant-of-record arrangement would be one this
- * deployment may not be the merchant for. The purchase path keeps whatever the
- * account is configured to do; only this one asks for it to stand aside.
- *
- * **`currency` is required even though nothing is charged**, which is the
- * request the mode check is followed by: `Missing required param: currency`.
- * A setup session has no amount, but which payment methods a hosted page may
- * offer is partly a currency question — a US bank debit is USD, a SEPA debit EUR
- * — so Stripe cannot build the page without one. The caller passes the currency
- * the person actually buys in; see `billingContextFor`.
- *
- * Nothing here sets `payment_method_types`. Stripe decides which methods the
- * account accepts and which currencies they work in, and a list written here
- * would be this repository's second opinion about that.
+ * **Neither a currency nor Managed Payments belongs here**, and both were tried:
+ * a SetupIntent takes no `currency` and no `managed_payments` — Stripe refuses
+ * them as unknown parameters — because neither is a thing an intent that charges
+ * nothing can have. Those two were the checkout session's requirements, and this
+ * is not a checkout session.
  */
-export async function createSetupSession(input: {
+/**
+ * The publishable key, read once per container.
+ *
+ * The one Stripe value that is **not a secret** and is nevertheless not in a
+ * Lambda's environment: it is served to browsers — it is what a marketplace page
+ * loads Stripe.js with — so it sits in SSM as a plain `String`, and the
+ * environment carries only the parameter's *name*, like every other value this
+ * service reads at request time.
+ *
+ * Required in the response that opens a card form, because the app cannot draw
+ * an Element without it. Read here rather than handed to the frontends as
+ * `NEXT_PUBLIC_…` so that a deployment has one source for it: the console
+ * already shows this value on its Checklist, and a copy in `.env.local` would be
+ * a second one to keep in step.
+ */
+let publishable: Promise<string> | undefined;
+
+export function publishableKey(): Promise<string> {
+  publishable ??= readPublishableKey().catch((error: unknown) => {
+    // Not remembered, so a transient failure is not one stale error for the life
+    // of the container — the same rule the CloudFront readers keep.
+    publishable = undefined;
+    throw error;
+  });
+  return publishable;
+}
+
+async function readPublishableKey(): Promise<string> {
+  const { Parameter } = await ssm.send(
+    new GetParameterCommand({ Name: env.stripePublishableKeyParam }),
+  );
+  const value = Parameter?.Value?.trim();
+  if (!value) {
+    throw new Error(
+      `${env.stripePublishableKeyParam} is empty. Set it from the console's Checklist tab — ` +
+        'the marketplace loads Stripe.js with the publishable key, so a card form cannot open without it.',
+    );
+  }
+  return value;
+}
+
+export async function createSetupIntent(input: {
   customerId: string;
-  /** ISO 4217, lower case. Names the money the page's methods are offered in. */
-  currency: string;
-  successUrl: string;
-  cancelUrl: string;
   metadata: Record<string, string>;
-}): Promise<{ id: string; url: string | null }> {
+}): Promise<{ id: string; client_secret: string | null; status: string }> {
   const params: Record<string, string> = {
-    mode: 'setup',
     customer: input.customerId,
-    currency: input.currency,
-    success_url: input.successUrl,
-    cancel_url: input.cancelUrl,
-    'managed_payments[enabled]': 'false',
+    usage: 'off_session',
+    'payment_method_types[0]': 'card',
   };
 
   for (const [key, value] of Object.entries(input.metadata)) {
     params[`metadata[${key}]`] = value;
   }
 
-  return stripeRequest<{ id: string; url: string | null }>('POST', 'checkout/sessions', params);
+  return stripeRequest<{ id: string; client_secret: string | null; status: string }>(
+    'POST',
+    'setup_intents',
+    params,
+  );
 }
 
 /** A setup intent, as much of it as this service reads. */
 export interface StripeSetupIntent {
   id: string;
+  /** `succeeded` once a card is on it. Anything else has saved nothing yet. */
+  status: string;
   /** The card that was saved. Null until the intent succeeds. */
   payment_method: string | null;
   customer: string | null;
@@ -335,11 +369,16 @@ export interface StripeSetupIntent {
 /**
  * The setup intent a completed setup session produced.
  *
- * The session names the intent and not the card, so this is the first of the two
+ * The intent names the card and not its digits, so this is the first of the two
  * reads that turn "somebody entered a card" into a row this service can show
- * them. It cannot fail for a completed session — Stripe does not complete one
- * without the card — and a null `payment_method` is still handled by the caller,
- * because a row with no card id would be a card that cannot be removed.
+ * them. It is read by the **route** now rather than only by the webhook: the
+ * form confirms the intent in the browser and then says so, and the server
+ * checks it against Stripe before writing anything, which is what makes a saved
+ * card appear immediately instead of whenever an event is delivered.
+
+ * A null `payment_method` is still possible — an intent that was never confirmed
+ * — and the caller refuses it, because a row with no card id is a card that
+ * cannot be removed.
  */
 export async function getSetupIntent(setupIntentId: string): Promise<StripeSetupIntent> {
   return stripeRequest<StripeSetupIntent>(

@@ -1,16 +1,9 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { CreditCardIcon, Loader2Icon, PlusIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  billingKeys,
-  useAddPaymentMethod,
-  usePaymentMethods,
-  useRemovePaymentMethod,
-} from '@play/api';
+import { usePaymentMethods, useRemovePaymentMethod } from '@play/api';
 import type { SavedPaymentMethod } from '@play/types';
 import { formatDate } from '@play/ui';
 import { Button } from '@ui/components/ui/button';
@@ -23,102 +16,38 @@ import {
   DialogTitle,
 } from '@ui/components/ui/dialog';
 import { Skeleton } from '@ui/components/ui/skeleton';
+import { AddCardDialog } from '@/components/account/add-card-dialog';
 
 /**
  * The cards somebody has saved for the next time they buy a course.
  *
- * ## Why the form is not here
+ * **The form is a dialog this app draws with Stripe Elements**, and the two
+ * halves of that are worth separating. The *field* is Stripe's: the number is
+ * typed into Stripe's own iframe, so it never touches this app's DOM and this
+ * page is not in PCI scope. The *form* is ours: which methods are offered, what
+ * the frame looks like, and what happens next — and that is what makes a saved
+ * card a card.
  *
- * There is no card field on this page, and that is the design rather than an
- * omission: a card number typed into a page this repository serves would be a
- * card number this repository stores, and the whole of what makes that safe is
- * that it never touches us. "Add a card" sends the browser to Stripe's own
- * hosted form — the same page a purchase is paid on, in `mode=setup` so nothing
- * can be charged from it — and Stripe hands back a token this service stores
- * instead of a card.
+ * The hosted page this replaced offered Stripe Link as well, somebody used it,
+ * and the payment method came back as `link` — no brand, no last four digits,
+ * nothing this screen could draw. A form that collects a card collects a card.
  *
- * What is stored is the token, the brand, the last four digits and the expiry.
- * The screen says exactly that rather than promising what Stripe will do with
- * the card afterwards, which is Stripe's own configuration to decide.
+ * ## Nothing to wait for
  *
- * ## Why the page waits after the redirect
- *
- * Stripe sends the browser back the moment the card is entered, and the row that
- * remembers it is written by the webhook a second or two later. So a page that
- * simply redrew its list would show a person the cards they had *before* the one
- * they just added — which reads as a save that did not work. While `?added=1` is
- * set, the page polls for the new card instead, and says what it is doing.
+ * The card used to be written by a webhook, so this page had to poll for a row
+ * it could not see coming. The dialog now quotes the confirmed setup intent back
+ * to the API, the API checks it with Stripe and writes the row, and the list is
+ * redrawn from that answer: the card is in the wallet the moment it is saved.
  */
 export default function PaymentCardsPage() {
-  return (
-    // `useSearchParams` needs a boundary in the App Router, which is the whole
-    // reason this page is split in two: the flag Stripe comes back with is read
-    // below it rather than above.
-    <Suspense
-      fallback={
-        <div className="grid gap-3 rounded-3xl border border-border/60 bg-card p-6">
-          <Skeleton className="h-16 w-full rounded-2xl" />
-          <Skeleton className="h-16 w-full rounded-2xl" />
-        </div>
-      }
-    >
-      <PaymentCards />
-    </Suspense>
-  );
-}
-
-/** The screen itself, below the boundary the query string needs. */
-function PaymentCards() {
-  const search = useSearchParams();
-  const returning = search.get('added') === '1';
-
-  const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = usePaymentMethods();
   const cards = data?.paymentMethods ?? [];
 
-  /**
-   * How many cards there were when this mount settled on an answer.
-   *
-   * The count and not a flag, because somebody with one card who adds a second
-   * starts with a non-empty list: "wait for it to stop being empty" would stop
-   * immediately and say nothing. What is being waited for is one **more** card
-   * than this.
-   */
-  const [baseline, setBaseline] = useState<number | null>(null);
-  useEffect(() => {
-    if (baseline === null && !isLoading) setBaseline(cards.length);
-  }, [baseline, isLoading, cards.length]);
-
-  // Four attempts over about ten seconds, exactly as the course page does after
-  // a payment: what is being waited for is a webhook with no channel to this
-  // browser, and a card that has not arrived by then is one to reload for.
-  const [waited, setWaited] = useState(0);
-  /** Whether the card that was just entered has turned up in the list. */
-  const arrived = baseline !== null && cards.length > baseline;
-  const waiting = returning && baseline !== null && !arrived && waited < 4;
-  const gaveUp = returning && baseline !== null && !arrived && !waiting;
-
-  useEffect(() => {
-    if (!waiting) return;
-    const timer = setTimeout(() => {
-      setWaited((n) => n + 1);
-      void queryClient.invalidateQueries({ queryKey: billingKeys.paymentMethods() });
-    }, 2500);
-    return () => clearTimeout(timer);
-  }, [waiting, queryClient]);
-
-  const add = useAddPaymentMethod();
   const remove = useRemovePaymentMethod();
+  /** The card whose removal is being confirmed, if one is. */
   const [confirming, setConfirming] = useState<SavedPaymentMethod | null>(null);
-
-  async function startAdding() {
-    try {
-      const session = await add.mutateAsync();
-      window.location.assign(session.url);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not open the card form');
-    }
-  }
+  /** Whether the add-a-card dialog is open. */
+  const [adding, setAdding] = useState(false);
 
   async function confirmRemoval() {
     if (!confirming) return;
@@ -141,34 +70,11 @@ function PaymentCards() {
             digits so you can tell them apart.
           </p>
         </div>
-        <Button size="sm" onClick={() => void startAdding()} disabled={add.isPending}>
-          {add.isPending ? <Loader2Icon className="animate-spin" /> : <PlusIcon />}
-          {add.isPending ? 'Opening Stripe…' : 'Add a card'}
+        <Button size="sm" onClick={() => setAdding(true)}>
+          <PlusIcon />
+          Add a card
         </Button>
       </header>
-
-      {waiting ? (
-        <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Loader2Icon className="animate-spin size-4" />
-          Stripe has your card and the confirmation is on its way. This page is checking for it.
-        </p>
-      ) : null}
-
-      {/* Said out loud rather than left to be noticed: the list below changes a
-          second after the redirect, and a person who has just entered a card
-          should be told that it worked rather than left to count rows. */}
-      {returning && arrived ? (
-        <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
-          Your card is saved. Remove it whenever you like.
-        </p>
-      ) : null}
-
-      {gaveUp ? (
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Stripe has your card. It appears here as soon as the confirmation reaches us — reload this
-          page in a moment and it will be here.
-        </p>
-      ) : null}
 
       {isLoading ? (
         <div className="grid gap-3">
@@ -223,6 +129,8 @@ function PaymentCards() {
           ))}
         </ul>
       )}
+
+      <AddCardDialog open={adding} onOpenChange={setAdding} />
 
       <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
         <DialogContent>

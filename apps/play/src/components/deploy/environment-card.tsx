@@ -3,7 +3,7 @@
 import { ShieldAlertIcon } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
-import { Chip, Dot, Spinner, type Tone } from "@/components/ui/chip";
+import { Chip, Dot, type Tone } from "@/components/ui/chip";
 import { backendState, STACK_WORDS } from "@/lib/backends";
 import { cn } from "@/lib/cn";
 import { apiHost, stackInitials, stackWord } from "@/lib/format";
@@ -57,7 +57,7 @@ export function EnvironmentCard({
             <h2 className="truncate font-mono text-2xl font-semibold tracking-tight">{stage}</h2>
             {reading ? null : (
               <Chip tone={status.tone}>
-                {status.running ? <Spinner tone={status.tone} /> : <Dot tone={status.tone} />}
+                <Dot tone={status.tone} />
                 {status.label}
               </Chip>
             )}

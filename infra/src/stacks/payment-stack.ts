@@ -184,12 +184,12 @@ export class PlayPaymentStack extends Stack {
     // feature and needs the same two secrets.
     role.addToPolicy(stripeCredentialsGrant(this, config));
 
-    // The publishable key, which is not a secret and is not read yet: a hosted
-    // checkout needs no Stripe.js on the page, so nothing in this service asks
-    // for it. The grant is here because this is the stack that owns the Stripe
-    // side of the deployment, and because the day something does read it — an
-    // embedded checkout, a price shown before signing in — the alternative is
-    // another 500 found in CloudWatch.
+    // The publishable key, which is not a secret and **is** read now: the
+    // marketplace draws its card field with Stripe Elements, so the route that
+    // opens that form hands the page this key to load Stripe.js with. The grant
+    // is here because this is the stack that owns the Stripe side of the
+    // deployment; the API stack's role has the same one, because that is where
+    // the route runs.
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['ssm:GetParameter'],

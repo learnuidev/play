@@ -1,7 +1,7 @@
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 
 import { isConditionalCheckFailed } from '../../lib/dynamodb';
-import { recordSetupSession } from '../../lib/payment-methods';
+import { recordSetupIntent } from '../../lib/payment-methods';
 import {
   findPaymentByIntent,
   recordPayment,
@@ -31,12 +31,14 @@ import { stripeCredentials, verifyStripeSignature } from '../../lib/stripe';
  * twice is not an error: the membership write is conditional, and a second
  * payment for a course somebody is already in leaves the first membership alone.
  *
- * **The other kind of checkout session is a card being saved.** Saving a card so
- * it can be used at the next purchase is the same hosted page in `mode=setup`:
- * no line item, nothing charged, and it completes with a setup intent instead of
- * a payment intent. It arrives as the same `checkout.session.completed`, so it is
- * branched on `mode` before anything else is read, and what it writes is a card
- * on the person rather than a sale — see `recordSetup`.
+ * **The other kind of checkout session is a card being saved.** It is the same
+ * hosted page in `mode=setup` — no line item, nothing charged, completing with a
+ * setup intent instead of a payment intent — and it is branched on `mode` before
+ * anything else is read. This used to be *how* a card was saved; the marketplace
+ * now draws its own card field with Elements and records the result through
+ * `POST /me/payment-methods`, so what is left here is the straggler: a hosted
+ * page somebody still has open. It writes the same row through the same
+ * function, so the two paths cannot disagree about a card.
  *
  * ## Idempotency, which is the whole difficulty of a webhook
  *
@@ -270,7 +272,7 @@ async function recordCheckout(session: CheckoutSession): Promise<string> {
  *
  * The event names a setup intent and nothing else, and the two reads that turn
  * it into a card — the intent for the payment method, the method for its brand
- * and last four digits — are `recordSetupSession`'s, because what is worth
+ * and last four digits — are `recordSetupIntent`'s, because what is worth
  * testing there is the row and not Stripe's JSON.
  *
  * A session with no `userId` is not ours to record: the row exists only to be
@@ -292,10 +294,9 @@ async function recordSetup(session: CheckoutSession): Promise<string> {
     return `setup session ${session.id} completed without a setup intent`;
   }
 
-  const card = await recordSetupSession({
+  const card = await recordSetupIntent({
     userId,
     setupIntentId: session.setup_intent,
-    ...(session.customer ? { stripeCustomerId: session.customer } : {}),
   });
 
   return card

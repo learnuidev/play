@@ -26,17 +26,31 @@ export function usePaymentMethods() {
 }
 
 /**
- * Adding a card.
+ * Opening a card form, and saving what it confirmed.
  *
- * **Nothing is invalidated here**, and that is the same deliberate asymmetry the
- * checkout flow has: this answers with a Stripe URL and the caller leaves the
- * app, so no card exists yet. The card is written by the webhook, seconds after
- * the person comes back, and the screen they land on is the one that waits for
- * it — a cache refreshed here would be a cache refreshed on a promise.
+ * Two mutations because they are two steps with Stripe in the middle: the first
+ * asks for a setup intent to confirm, the second records the result. **The
+ * second is what invalidates** — it is the one that makes a card exist, and it
+ * answers with the row, so the list beside it is redrawn from an answer rather
+ * than from a refetch that might not have caught up.
+ *
+ * Nothing waits on a webhook here, which is the difference between a saved card
+ * appearing at once and a screen that polls for a delivery it cannot see.
  */
-export function useAddPaymentMethod() {
+export function useStartPaymentMethodSetup() {
   return useMutation({
     mutationFn: () => api.startPaymentMethodSetup(),
+  });
+}
+
+export function useSavePaymentMethod() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: { setupIntentId: string }) => api.savePaymentMethod(payload),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: billingKeys.paymentMethods() });
+    },
   });
 }
 

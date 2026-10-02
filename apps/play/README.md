@@ -125,9 +125,12 @@ loudest is the one that is working correctly. That verdict comes from
 from `/api/state`, which is cached and costs two `aws` processes — a deploy's
 progress is stale within seconds, a stack's status is not. The same function
 draws the chip on the environment's own page and on the deploy card, so a row
-cannot say "deploying" above a page that says "partly deployed". While that is
-true the row's **Deploy** button is disabled rather than hidden, because the chip
-beside the name already says why — and a refusal the server *does* send, from the
+cannot say "deploying" above a page that says "partly deployed" — **though only
+the row spins.** On the environment's own page that chip is a still dot: the
+checklist underneath it is the progress, with a bar and the step being worked on,
+and an indicator turning beside it says the same thing a second time. While that
+is true the row's **Deploy** button is disabled rather than hidden, because the
+chip beside the name already says why — and a refusal the server *does* send, from the
 race between two tabs, is printed in the row rather than swallowed.
 
 ### Checklist — what a person has to supply

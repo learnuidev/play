@@ -40,6 +40,14 @@ export interface ParsedLogLine {
   fields: LogField[];
   /** The line's object, compact — the handler's payload, drawn beside the text. */
   json: string | null;
+  /**
+   * The object itself, for the row somebody opened.
+   *
+   * The compact string is what the closed line shows; this is what the opened
+   * one pretty-prints. Keeping both is what makes the two renderings the same
+   * data rather than two parses of it.
+   */
+  data: unknown | null;
   /** An exception's stack, if it brought one. */
   stack: string | null;
 }
@@ -72,6 +80,7 @@ export function parseLogLine(message: string): ParsedLogLine {
     text: "",
     fields: [],
     json: null,
+    data: null,
     stack: null,
   };
 
@@ -142,6 +151,7 @@ export function parseLogLine(message: string): ParsedLogLine {
       text: message ?? "",
       fields: [],
       json: Object.keys(rest).length ? clip(compact(rest)) : null,
+      data: record,
       stack: null,
     };
   }
@@ -180,10 +190,12 @@ function reportFields(rest: string): LogField[] {
 }
 
 /** An exception, in its three parts. */
-function errorParts(raw: string): Pick<ParsedLogLine, "text" | "stack" | "fields" | "level"> {
+function errorParts(
+  raw: string,
+): Pick<ParsedLogLine, "text" | "stack" | "fields" | "level" | "data"> {
   const parsed = tryJson(raw.trim());
   if (parsed === null || typeof parsed !== "object") {
-    return { text: raw.trim(), stack: null, fields: [], level: "ERROR" };
+    return { text: raw.trim(), stack: null, fields: [], level: "ERROR", data: null };
   }
 
   const error = parsed as Record<string, unknown>;
@@ -198,6 +210,7 @@ function errorParts(raw: string): Pick<ParsedLogLine, "text" | "stack" | "fields
     level: "ERROR",
     stack: stack ? clip(stack, 4000) : null,
     fields: type ? [{ label: "Type", value: type }] : [],
+    data: error,
   };
 }
 

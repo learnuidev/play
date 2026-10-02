@@ -13,7 +13,7 @@ import { useNameStage, useShell } from "@/components/console/state";
 import { DeployView } from "@/components/deploy/deploy-view";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
-import { Chip, Dot, Spinner } from "@/components/ui/chip";
+import { Chip, Dot } from "@/components/ui/chip";
 import { EnvTable } from "@/components/ui/env-table";
 import { Tabs, useTabParam } from "@/components/ui/tabs";
 import { BACKEND_TABS, backendBlurb, backendState, runningFor } from "@/lib/backends";
@@ -103,7 +103,7 @@ export function BackendView({ stage }: { stage: string }) {
               would say it about every environment. */}
           {reading ? null : (
             <Chip tone={status.tone}>
-              {status.running ? <Spinner tone={status.tone} /> : <Dot tone={status.tone} />}
+              <Dot tone={status.tone} />
               {status.label}
             </Chip>
           )}

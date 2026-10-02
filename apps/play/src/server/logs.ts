@@ -118,6 +118,23 @@ interface RawEvent {
 }
 
 /**
+ * The two lines Lambda's runtime writes around every invocation.
+ *
+ * `START RequestId: … Version: $LATEST` and `END RequestId: …` say nothing the
+ * page does not already know — the invocation's own line carries the same id,
+ * and the report carries the outcome — and on a busy function they are about
+ * forty per cent of a page. Excluding them is not cosmetic: the page holds 200
+ * events, so a fifth of it being bookends is the difference between reading one
+ * invocation and reading several.
+ *
+ * **Filtered in CloudWatch rather than hidden here**, so the slots are spent on
+ * lines somebody can use. The syntax is two plain exclusion terms, which is the
+ * documented way to say "must not contain"; the price is that a handler which
+ * prints the literal word `START` in capitals loses that line too.
+ */
+const PLATFORM_LINES = ["-START", "-END"];
+
+/**
  * Recent events for one function.
  *
  * `filter-log-events` rather than `tail`: `tail` streams until interrupted, which
@@ -150,9 +167,11 @@ export async function recentLogs(
     String(limit),
     "--interleaved",
   ];
-  if (options.pattern?.trim()) {
-    argv.push("--filter-pattern", options.pattern.trim());
-  }
+  // The platform's bookends are excluded from every read — see `PLATFORM_LINES`.
+  argv.push(
+    "--filter-pattern",
+    [options.pattern?.trim(), ...PLATFORM_LINES].filter(Boolean).join(" "),
+  );
 
   const body = await awsJson<{ events?: RawEvent[] }>(argv, { ...ctx, optional: true }).catch(
     () => null,

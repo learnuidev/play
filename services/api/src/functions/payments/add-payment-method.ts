@@ -1,57 +1,56 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireUser } from '../../lib/auth';
-import { env } from '../../lib/config';
-import { handle, ok } from '../../lib/http';
-import { billingContextFor } from '../../lib/payment-methods';
-import { createSetupSession } from '../../lib/stripe';
+import { HttpError, handle, jsonBody, ok } from '../../lib/http';
+import { billingContextFor, recordSetupIntent, toSavedPaymentMethod } from '../../lib/payment-methods';
 
 /**
- * Sending a learner to Stripe to save a card.
+ * Saving the card a form just confirmed.
  *
- * The mirror of the checkout route and deliberately the same shape: this service
- * does not take card details, so the form is Stripe's hosted page and what comes
- * back is a URL to redirect to. The difference is what has been asked for —
- * `mode=setup` has no line item and no amount, so nothing can be charged by the
- * page somebody lands on, and the event Stripe sends afterwards names a setup
- * intent rather than a payment.
+ * The browser has already talked to Stripe — Elements collected the number,
+ * `confirmSetup` attached it to the customer — and this route is how that
+ * becomes a row. **Nothing here trusts the browser's word for it**: the setup
+ * intent is read back from Stripe, and it has to be `succeeded`, to name a card,
+ * and to belong to *this caller's* customer before anything is written. A client
+ * that posted somebody else's intent id would be reading their card, and the
+ * check is what makes that impossible rather than merely unlikely.
  *
- * Nothing is written here. The row appears when the webhook hears that a card was
- * entered, because "they opened the form" and "they saved a card" are different
- * facts — the same distinction the checkout route draws between a session being
- * created and money arriving.
+ * ## Why a route and not the webhook
  *
- * The customer is resolved first, and only then is a session opened for it: a
- * card is saved *against a customer*, and the one it is saved against has to be
- * the same one this person's purchases were made under. The **currency** comes
- * from the same read — Stripe requires one even though nothing is charged, and
- * the honest answer is the money this person already buys in rather than a
- * constant chosen here. Both are `billingContextFor`; see it for why.
+ * The webhook is how a **purchase** is recorded, because money arriving is
+ * Stripe's news to break — nobody in a browser can be asked to vouch for it.
+ * Saving a card is the other way round: the person is standing there, the
+ * confirmation happened in their browser, and the only thing a webhook adds is a
+ * wait. So the card is written when the form is confirmed, and the row appears
+ * in the wallet immediately.
+ *
+ * A setup session that *is* delivered later — an old hosted page somebody still
+ * has open — is handled by the webhook as well. Both paths write the same row
+ * through the same function, so they cannot disagree about it.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const user = requireUser(event);
+  const { setupIntentId } = jsonBody<{ setupIntentId?: string }>(event);
 
-  const { customerId, currency } = await billingContextFor(user);
-
-  // Where Stripe sends the browser back to: the screen the card is added from,
-  // which is the marketplace's, and the flag is what tells that page to wait for
-  // the webhook rather than drawing the list it had a moment ago.
-  const cardsUrl = `${env.marketplaceBaseUrl}/account/payment-cards`;
-
-  const session = await createSetupSession({
-    customerId,
-    currency,
-    successUrl: `${cardsUrl}?added=1`,
-    cancelUrl: cardsUrl,
-    metadata: { userId: user.userId },
-  });
-
-  if (!session.url) {
-    // A session with no URL cannot be opened, and answering with one would be a
-    // redirect to nowhere.
-    throw new Error(`Stripe created setup session ${session.id} with no checkout URL`);
+  if (!setupIntentId) {
+    throw new HttpError(400, 'A setupIntentId is required — it is what the card form confirmed.');
   }
 
-  return ok({ url: session.url, setupId: session.id });
+  const { customerId } = await billingContextFor(user);
+
+  const card = await recordSetupIntent({
+    userId: user.userId,
+    setupIntentId,
+    expectedCustomerId: customerId,
+  });
+
+  if (!card) {
+    throw new HttpError(
+      409,
+      'That card was not saved: Stripe has no card on that setup intent. Fill the form in again.',
+    );
+  }
+
+  return ok({ paymentMethod: toSavedPaymentMethod(card) });
 }
 
 export const handler = handle(main);

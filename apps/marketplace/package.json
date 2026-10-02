@@ -16,6 +16,8 @@
     "@play/learning": "*",
     "@play/types": "*",
     "@play/ui": "*",
+    "@stripe/react-stripe-js": "^3.11.0",
+    "@stripe/stripe-js": "^5.10.0",
     "@tanstack/react-query": "^5.101.4",
     "aws-amplify": "^6.7.0",
     "lucide-react": "^1.31.0",

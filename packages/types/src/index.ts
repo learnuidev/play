@@ -782,16 +782,34 @@ export interface ListPaymentMethodsResponse {
 }
 
 /**
- * Where to send somebody to add a card.
+ * What a card form needs to open.
  *
- * A URL rather than a card, for the reason a checkout is: the card form is
- * Stripe's hosted page, and nothing is stored until Stripe says the card was
- * entered. The id is the setup session, so a support question about the redirect
- * names something.
+ * The marketplace draws the card field itself with Stripe Elements, so this is
+ * not a redirect to anywhere: it is the two values an Element cannot work
+ * without — a **client secret** for a SetupIntent, and the **publishable key**
+ * Stripe.js is loaded with — plus the intent's id, which is what the form quotes
+ * back once Stripe says the card is on it.
+ *
+ * Both come from the deployment rather than from the app's environment, so a
+ * deployment has one source for them: the console already shows the publishable
+ * key on its Checklist, and a copy in `.env.local` would be a second one to keep
+ * in step.
  */
-export interface AddPaymentMethodResponse {
-  url: string;
-  setupId: string;
+export interface SetupIntentResponse {
+  setupIntentId: string;
+  /** `seti_…_secret_…`: what `stripe.confirmSetup` is given. */
+  clientSecret: string;
+  /** `pk_…`: what `loadStripe` is given. Not a secret — it is served to browsers. */
+  publishableKey: string;
+}
+
+/** Saving the card a form just confirmed. */
+export interface SavePaymentMethodPayload {
+  setupIntentId: string;
+}
+
+export interface SavePaymentMethodResponse {
+  paymentMethod: SavedPaymentMethod;
 }
 
 /**

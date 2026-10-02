@@ -75,45 +75,41 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       <Rail />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* The bar is full-bleed and its **contents are not**: they sit in the
-            same `max-w-5xl` column as the page below, so the environment chip on
-            the left lines up with the page's own heading and the refresh button
-            on the right lines up with the last card's edge. A bar whose contents
-            ran the whole width of the window would be a second left margin on
-            every screen, and the page would read as though it were indented
-            under its own chrome. */}
-        <header className="border-border/40 bg-background/70 sticky top-0 z-30 flex h-12 items-center border-b px-4 backdrop-blur-xl sm:px-6">
-          <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
-            <MobilePicker />
+        {/* The bar runs the whole width of the content column, and its contents
+            with it: the environment chip at one edge, the refresh and the theme
+            at the other. The page below is a narrower column — a checklist and a
+            transcript read better in one — and the bar is deliberately not: it
+            is chrome around the window rather than a row of the page. */}
+        <header className="border-border/40 bg-background/70 sticky top-0 z-30 flex h-12 items-center gap-3 border-b px-4 backdrop-blur-xl sm:px-6">
+          <MobilePicker />
 
-            <div className="hidden min-w-0 items-center gap-2 sm:flex">
-              <Chip tone="accent" monospace>
-                {stage}
+          <div className="hidden min-w-0 items-center gap-2 sm:flex">
+            <Chip tone="accent" monospace>
+              {stage}
+            </Chip>
+            {state?.identity ? (
+              <span className="text-muted-foreground truncate font-mono text-xs">
+                {state.identity.account} · {state.region}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="ml-auto flex items-center gap-1">
+            {error ? (
+              <Chip tone="bad" className="mr-1 hidden md:inline-flex">
+                {error}
               </Chip>
-              {state?.identity ? (
-                <span className="text-muted-foreground truncate font-mono text-xs">
-                  {state.identity.account} · {state.region}
-                </span>
-              ) : null}
-            </div>
-
-            <div className="ml-auto flex items-center gap-1">
-              {error ? (
-                <Chip tone="bad" className="mr-1 hidden md:inline-flex">
-                  {error}
-                </Chip>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={refresh}
-                busy={refreshing || loading}
-                className="font-mono"
-              >
-                refresh
-              </Button>
-              <ThemeToggle />
-            </div>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={refresh}
+              busy={refreshing || loading}
+              className="font-mono"
+            >
+              refresh
+            </Button>
+            <ThemeToggle />
           </div>
         </header>
 
