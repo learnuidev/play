@@ -227,6 +227,28 @@ so fanning out per request would be 158 API calls to draw a screen. The
 event-driven ones come first because they never answer a request and therefore
 have nowhere else to say anything.
 
+**The function is searched for, not selected from a list.** An environment has
+around 165 Lambdas, and a `<select>` holding all of them is a control you scroll
+rather than one you use. So there is a search box — substring, case-insensitive,
+over the key *and* the deployed name, because the string somebody has is often
+the one out of a stack trace — and the matches appear **only while something is
+typed**: list is the answer to a search rather than a piece of furniture, and 165
+names standing open under the box is the panel this replaced. Enter opens the
+first match, Escape puts the box back, and the matches scroll rather than page.
+
+**It remembers what you were looking at**, per stage, in `localStorage`: the
+function last opened is reopened on the next visit, and the handful before it are
+offered as chips under the search box — the history of what you went looking for,
+shown whenever nothing is typed. Opening a function empties the box and closes
+the list, so the logs are never under a panel; the function you just opened
+becomes the first chip. That is the same reasoning the shell uses for the
+selected environment — a console that forgets is one you re-navigate every time —
+and the history is keyed by stage because `extract` is `extract` in every
+environment while *which* ones you are working on is not. What is **not** stored
+is the query text: restoring a filter on load would hide most of the list from
+somebody who has not typed anything, and the thing worth coming back to is the
+function, not the string that found it.
+
 For a frontend: the `next dev` output, straight from the process the console
 started — including one started before the page was opened, because the server
 keeps the buffer.
@@ -761,6 +783,8 @@ src/server/
   plan.ts          THE BACKEND PLANS, one per direction: the fourteen steps a
                    deploy walks, and the six a delete walks
   signing-key.ts   the CloudFront key pair: is it in SSM, and putting it there
+  tables.ts        the environment's DynamoDB tables: what they are, and a page
+                   of what is in one — every call a read
   run.ts           the run engine — steps, transcript, cancel, result — for both
                    kinds of run
   run-api.ts       one step's transcript after the fact, and the live stream
@@ -819,8 +843,10 @@ src/app/api/
 
 src/components/
   console/         the frame: the rail, the environment picker, the theme
-  backends/        the list of environments, one environment's four tabs, and
-                   the checklist of what it needs from a person
+  backends/        the list of environments, one environment's tabs, and the
+                   three that are a file each because they are big enough to be
+                   one: the checklist of what it needs from a person, the tables
+                   it reads, and its logs
   frontends/       the list, one app's page, the environment picker both use,
                    and the Vercel deploy card
   integrations/    AWS and Vercel, and the sign-in stream
@@ -831,6 +857,14 @@ src/components/
   settings/        the credentials form, the two cards the integrations have to
                    be told about (Google and Stripe), and the hook that loads it
   ui/              button, card, chip, field, tabs, picker — the design system
+
+src/lib/
+  types.ts         every shape the server sends and a page draws
+  backends.ts      a stage's words: its states, its blurbs, its five tabs
+  frontends.ts     the same for the three apps
+  format.ts        durations, times, sizes — every string a page formats
+  dynamo.ts        DynamoDB's wire format, rendered for a person
+  cn.ts            class-name merging
 ```
 
 ## Deleting an environment

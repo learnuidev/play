@@ -8,6 +8,28 @@ import { awsJson } from "./aws";
  * derived rather than discovered, because `api-stack.ts` sets `functionName` and
  * CloudWatch names the group after it.
  *
+ * ## Why the list is log groups and not functions
+ *
+ * It was `lambda list-functions`, filtered by name in this process — and that
+ * was **wrong in a way nothing said out loud**: the call is paginated
+ * account-wide, so a stage's Lambdas were only listed if they happened to fall
+ * in the first page. On an account with a few hundred functions in it, `dev`'s
+ * 163 came back as 80, and the missing half of the alphabet simply was not
+ * there to search for.
+ *
+ * `DescribeLogGroups` takes a **name prefix**, and the prefix is the stage:
+ * one call, filtered by the service rather than by this process, and complete
+ * whatever else the account holds. It is also the more honest source for this
+ * tab, which reads logs and nothing else — a function the console has no log
+ * group for is a function it cannot show you anything about. The trade is that a
+ * function which has **never been invoked** has no log group yet, unless the
+ * stack declared one; that function has no logs to read either, so what is lost
+ * is a row saying "nothing" rather than a row that works.
+ *
+ * Each row also carries how many bytes of log data the group holds, which is
+ * the one number this list can offer that nothing else can: it is how you find
+ * the function that is filling CloudWatch up.
+ *
  * ## Why one function at a time
  *
  * `FilterLogEvents` takes a *single* log group, and a new environment has 158 of
@@ -31,34 +53,54 @@ export const EVENT_DRIVEN = [
   "link-federated-user",
 ];
 
-interface RawFunction {
-  FunctionName: string;
-  Runtime?: string;
-  LastModified?: string;
+interface RawLogGroup {
+  logGroupName?: string;
+  storedBytes?: number;
+  retentionInDays?: number;
 }
+
+/**
+ * How many log groups are read in one go.
+ *
+ * The API answers fifty at a time and the CLI's own paginator walks the pages
+ * inside this one process, so this is the ceiling on a stage's function count
+ * rather than a page size — well above the ~165 this repository deploys, and
+ * there is no server-side way to ask for "all of them" that is cheaper.
+ */
+const MAX_GROUPS = 1000;
 
 export async function backendFunctions(
   stage: string,
   ctx: { profile?: string; region?: string } = {},
 ): Promise<BackendFunctionView[]> {
-  const functions = await awsJson<RawFunction[]>(
-    ["lambda", "list-functions", "--max-items", "400", "--query", "Functions"],
+  const logGroupPrefix = `/aws/lambda/play-${stage}-`;
+
+  const body = await awsJson<{ logGroups?: RawLogGroup[] }>(
+    [
+      "logs",
+      "describe-log-groups",
+      "--log-group-name-prefix",
+      logGroupPrefix,
+      "--max-items",
+      String(MAX_GROUPS),
+    ],
     { ...ctx, optional: true },
   ).catch(() => null);
 
-  if (!functions) return [];
+  if (!body) return [];
 
-  const prefix = `play-${stage}-`;
-  return functions
-    .filter((fn) => fn.FunctionName.startsWith(prefix))
-    .map((fn) => {
-      const key = fn.FunctionName.slice(prefix.length);
+  return (body.logGroups ?? [])
+    .filter((group): group is RawLogGroup & { logGroupName: string } =>
+      Boolean(group.logGroupName?.startsWith(logGroupPrefix)),
+    )
+    .map((group) => {
+      const key = group.logGroupName.slice(logGroupPrefix.length);
       return {
-        name: fn.FunctionName,
+        name: `play-${stage}-${key}`,
         key,
-        logGroup: `/aws/lambda/${fn.FunctionName}`,
-        runtime: fn.Runtime ?? null,
-        modified: fn.LastModified ?? null,
+        logGroup: group.logGroupName,
+        storedBytes: group.storedBytes ?? 0,
+        retentionDays: group.retentionInDays ?? null,
         /** Worth showing first: a function nothing calls has nothing to show. */
         eventDriven: EVENT_DRIVEN.includes(key),
       };

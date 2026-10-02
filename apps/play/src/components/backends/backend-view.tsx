@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftIcon, ExternalLinkIcon, RefreshCwIcon, TerminalIcon } from "lucide-react";
+import { ArrowLeftIcon, ExternalLinkIcon, RefreshCwIcon } from "lucide-react";
 
 import { ChecklistView } from "@/components/backends/checklist-view";
+import { LogsView } from "@/components/backends/logs-view";
 import { TablesView } from "@/components/backends/tables-view";
 import { useNameStage, useShell } from "@/components/console/state";
 import { DeployView } from "@/components/deploy/deploy-view";
@@ -12,17 +13,10 @@ import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardHeading } from "@/components/ui/card";
 import { Chip, Dot, Spinner } from "@/components/ui/chip";
 import { EnvTable } from "@/components/ui/env-table";
-import { Picker } from "@/components/ui/picker";
 import { Tabs, useTabParam } from "@/components/ui/tabs";
 import { BACKEND_TABS, backendBlurb, backendState, runningFor } from "@/lib/backends";
 import { apiHost, relative } from "@/lib/format";
-import type {
-  BackendEnvView,
-  BackendFunctionView,
-  BackendLogs,
-  DeploymentHistoryView,
-  EnvironmentView,
-} from "@/lib/types";
+import type { BackendEnvView, DeploymentHistoryView, EnvironmentView } from "@/lib/types";
 
 /**
  * One environment's backend: what went into it and what came out, what has been
@@ -124,7 +118,7 @@ export function BackendView({ stage }: { stage: string }) {
         <EnvTab stage={stage} environment={environment} reading={reading} />
       ) : null}
       {tab === "deployments" ? <DeploymentsTab stage={stage} /> : null}
-      {tab === "logs" ? <LogsTab stage={stage} /> : null}
+      {tab === "logs" ? <LogsView stage={stage} /> : null}
       {tab === "tables" ? <TablesView stage={stage} /> : null}
     </div>
   );
@@ -322,132 +316,4 @@ function statusTone(status: string) {
   if (status.endsWith("_COMPLETE")) return "ok" as const;
   if (status.endsWith("_IN_PROGRESS")) return "run" as const;
   return "muted" as const;
-}
-
-/* ------------------------------------------------------------------ *
- * Tab 3 — logs
- * ------------------------------------------------------------------ */
-
-function LogsTab({ stage }: { stage: string }) {
-  const [functions, setFunctions] = useState<BackendFunctionView[]>([]);
-  const [selected, setSelected] = useState<string>("");
-  const [logs, setLogs] = useState<BackendLogs | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(
-    (fn?: string) => {
-      setLoading(true);
-      setError(null);
-      const query = fn ? `?function=${encodeURIComponent(fn)}` : "";
-      fetch(`/api/backends/${encodeURIComponent(stage)}/logs${query}`, { cache: "no-store" })
-        .then(async (response) => {
-          const body = (await response.json()) as {
-            functions?: BackendFunctionView[];
-            logs?: BackendLogs | null;
-            error?: string;
-          };
-          if (!response.ok) {
-            setError(body.error ?? "The logs could not be read.");
-            return;
-          }
-          if (body.functions) setFunctions(body.functions);
-          if (body.logs) setLogs(body.logs);
-        })
-        .catch(() => setError("The logs could not be read."))
-        .finally(() => setLoading(false));
-    },
-    [stage],
-  );
-
-  // The function list first, then the default one — an event-driven function,
-  // because those are the ones whose silence is invisible everywhere else.
-  useEffect(() => {
-    setFunctions([]);
-    setLogs(null);
-    setSelected("");
-    load();
-  }, [stage, load]);
-
-  useEffect(() => {
-    if (selected || functions.length === 0) return;
-    const first = functions[0];
-    setSelected(first.name);
-    load(first.name);
-  }, [functions, selected, load]);
-
-  return (
-    <div className="flex flex-col gap-6">
-      <Card>
-        <CardHeading
-          title="Function"
-          hint={`${functions.length} Lambda${functions.length === 1 ? "" : "s"} in ${stage}. The first few are the event-driven ones.`}
-        />
-
-        <div className="mt-5">
-          <Picker
-            label="CloudWatch log group"
-            value={selected}
-            onChange={(next) => {
-              setSelected(next);
-              load(next);
-            }}
-            options={
-              functions.length
-                ? functions.map((fn) => ({
-                    value: fn.name,
-                    label: fn.key,
-                    hint: fn.eventDriven ? "event-driven" : undefined,
-                  }))
-                : [{ value: "", label: "no functions" }]
-            }
-          />
-        </div>
-
-        {logs ? (
-          <p className="text-muted-foreground mt-4 font-mono text-xs">{logs.logGroup}</p>
-        ) : null}
-      </Card>
-
-      {error ? (
-        <Card>
-          <p className="text-destructive text-sm">{error}</p>
-        </Card>
-      ) : null}
-
-      <Card flush className="pb-4">
-        <div className="flex flex-wrap items-center gap-3 px-6 pt-6">
-          <h2 className="text-base font-semibold tracking-tight">Last hour</h2>
-          {loading ? <Chip tone="run">reading</Chip> : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto font-mono"
-            onClick={() => selected && load(selected)}
-            busy={loading}
-          >
-            refresh
-          </Button>
-        </div>
-
-        <div className="cp-transcript mt-4 max-h-96 overflow-auto px-6">
-          {logs?.events.length ? (
-            logs.events.map((event, index) => (
-              <div key={`${event.at}-${index}`} className="flex gap-3 py-0.5 font-mono text-xs">
-                <span className="text-muted-foreground/70 shrink-0 tabular-nums">
-                  {new Date(event.at).toLocaleTimeString()}
-                </span>
-                <span className="min-w-0 flex-1 break-all whitespace-pre-wrap">{event.message}</span>
-              </div>
-            ))
-          ) : (
-            <p className="text-muted-foreground flex items-center gap-2 py-2 text-xs">
-              <TerminalIcon className="size-3.5" />
-              {logs?.note ?? "Choose a function."}
-            </p>
-          )}
-        </div>
-      </Card>
-    </div>
-  );
 }

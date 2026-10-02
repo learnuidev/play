@@ -489,6 +489,50 @@ export interface BackendLogs {
 }
 
 /* ------------------------------------------------------------------ *
+ * What a function did
+ * ------------------------------------------------------------------ */
+
+/**
+ * One time slot of a function's activity.
+ *
+ * **Dense, including the quiet slots.** CloudWatch omits a period in which
+ * nothing happened rather than answering with a zero, so a chart drawn straight
+ * from its datapoints would compress an idle hour into a single pixel — which is
+ * the one thing a chart of "is this thing running" must not do. The server fills
+ * the gaps, and `durationP95` stays `null` there rather than becoming `0`: no
+ * invocations is not a fast response.
+ */
+export interface MetricBucket {
+  /** The bucket's start, epoch milliseconds. */
+  at: number;
+  invocations: number;
+  errors: number;
+  /** Milliseconds, or null when nothing ran in this slot. */
+  durationP95: number | null;
+}
+
+export interface FunctionMetrics {
+  function: string;
+  /** The window that was asked for, in minutes. */
+  minutes: number;
+  /** How wide each bucket is, in seconds. */
+  periodSeconds: number;
+  buckets: MetricBucket[];
+  totals: {
+    invocations: number;
+    errors: number;
+    /** The worst p95 in the window — what "how slow does it get" means. */
+    durationP95: number | null;
+  };
+  /**
+   * Why there is nothing to draw, when there is nothing. A function nobody has
+   * called and a function whose metrics are not published yet are different
+   * answers, and the chart cannot tell them apart on its own.
+   */
+  note: string | null;
+}
+
+/* ------------------------------------------------------------------ *
  * The tables an environment reads
  * ------------------------------------------------------------------ */
 
