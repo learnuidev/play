@@ -801,6 +801,14 @@ export interface SetupIntentResponse {
   clientSecret: string;
   /** `pk_…`: what `loadStripe` is given. Not a secret — it is served to browsers. */
   publishableKey: string;
+  /**
+   * The billing country this account is set to, from the last card it saved.
+   *
+   * ISO 3166-1 alpha-2, upper case, as Stripe spells it. **Null is "they have not
+   * said"** — a different answer from the deployment's own country, and the
+   * reason the form starts empty rather than assuming one.
+   */
+  country: string | null;
 }
 
 /** Saving the card a form just confirmed. */

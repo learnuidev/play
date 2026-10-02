@@ -1,10 +1,9 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import { CardElement, Elements, useElements, useStripe } from '@stripe/react-stripe-js';
+import { useEffect, useMemo, useState } from 'react';
+import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
 import { Loader2Icon, LockIcon } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { useSavePaymentMethod, useStartPaymentMethodSetup } from '@play/api';
 import { Button } from '@ui/components/ui/button';
@@ -45,9 +44,62 @@ export function AddCardDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const setup = useStartPaymentMethodSetup();
-  const { resolvedTheme: theme } = useTheme();
-  const [session, setSession] = useState<{ clientSecret: string; stripe: Promise<Stripe | null> } | null>(null);
+  const { mutateAsync: startSetup } = useStartPaymentMethodSetup();
+  const dark = useDarkDocument();
+
+  const [session, setSession] = useState<{
+    clientSecret: string;
+    stripe: Promise<Stripe | null>;
+    country: string | null;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  /** Bumped by "Try again", and the only reason this effect ever runs twice. */
+  const [attempt, setAttempt] = useState(0);
+
+  /**
+   * Opening the dialog *is* asking for the form.
+   *
+   * The intent used to be fetched behind a Start button inside the dialog, and
+   * that button was a step that existed only to be clicked: the person had
+   * already said what they wanted by pressing "Add a card", and the answer they
+   * were waiting for was a card field. So the intent is asked for here, when the
+   * dialog opens, and what they see is a form — or the sentence saying why there
+   * is not one.
+   *
+   * A client secret is fetched per opening rather than with the page, because it
+   * belongs to one attempt: minted on a page load it would expire while somebody
+   * read the sentence above it.
+   */
+  useEffect(() => {
+    if (!open) {
+      setSession(null);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setError(null);
+
+    void (async () => {
+      try {
+        const intent = await startSetup();
+        if (cancelled) return;
+        setSession({
+          clientSecret: intent.clientSecret,
+          stripe: loadStripe(intent.publishableKey),
+          country: intent.country,
+        });
+      } catch (cause) {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : 'Could not open the card form');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, attempt, startSetup]);
 
   /**
    * Stripe.js is loaded once per publishable key.
@@ -59,26 +111,8 @@ export function AddCardDialog({
    */
   const stripePromise = useMemo(() => session?.stripe ?? null, [session]);
 
-  const begin = useCallback(async () => {
-    try {
-      const intent = await setup.mutateAsync();
-      setSession({
-        clientSecret: intent.clientSecret,
-        stripe: loadStripe(intent.publishableKey),
-      });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not open the card form');
-    }
-  }, [setup]);
-
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) setSession(null);
-        onOpenChange(next);
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add a card</DialogTitle>
@@ -88,34 +122,56 @@ export function AddCardDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* The intent is fetched when the dialog opens rather than with the page:
-            a client secret is per attempt, and one minted on a page load is one
-            that expires before somebody finishes reading the sentence above. */}
-        {!session ? (
-          <Button onClick={() => void begin()} disabled={setup.isPending}>
-            {setup.isPending ? <Loader2Icon className="animate-spin" /> : null}
-            {setup.isPending ? 'Preparing…' : 'Start'}
-          </Button>
+        {error ? (
+          <div className="grid gap-3">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button onClick={() => setAttempt((n) => n + 1)}>Try again</Button>
+          </div>
+        ) : !session ? (
+          <p className="inline-flex items-center gap-2 py-2 text-sm text-muted-foreground">
+            <Loader2Icon className="size-4 animate-spin" />
+            Opening the card form…
+          </p>
         ) : (
           <Elements
             stripe={stripePromise}
             options={{
               clientSecret: session.clientSecret,
-              // The app's own radius, and the theme the reader is actually in:
-              // an Element with its own fixed palette reads as somebody else's
-              // form dropped into this page.
+              /**
+               * The theme the reader is actually in, and **the only place the
+               * colours are set**.
+               *
+               * An Element draws inside Stripe's own iframe, so it cannot
+               * inherit anything from this page — `color: 'inherit'` on the
+               * card field resolves against the iframe's document and comes out
+               * black, which is a number field nobody can read on a dark card.
+               * That is what it did. The appearance API is the supported way to
+               * say it instead: two named themes, one radius, and no per-field
+               * style object to get wrong.
+               */
               appearance: {
-                theme: theme === 'dark' ? 'night' : 'stripe',
-                variables: { borderRadius: '12px' },
+                theme: dark ? 'night' : 'stripe',
+                variables: {
+                  borderRadius: '12px',
+                  fontFamily:
+                    'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+                  fontSizeBase: '14px',
+                  // Spelled out for the same reason the theme is: an Element is
+                  // an iframe and inherits nothing, so every colour it draws with
+                  // has to be given to it. These are the digits.
+                  colorText: dark ? '#f8fafc' : '#0f172a',
+                  colorTextSecondary: dark ? '#94a3b8' : '#64748b',
+                  colorTextPlaceholder: dark ? '#94a3b8' : '#64748b',
+                  colorDanger: '#f87171',
+                  colorBackground: dark ? '#0b0b0c' : '#ffffff',
+                },
               },
             }}
           >
             <CardForm
               clientSecret={session.clientSecret}
-              onSaved={() => {
-                setSession(null);
-                onOpenChange(false);
-              }}
+              country={session.country}
+              onSaved={() => onOpenChange(false)}
             />
           </Elements>
         )}
@@ -132,25 +188,70 @@ export function AddCardDialog({
  * one is sent to Stripe and back — which is Stripe's business rather than a
  * screen this app has to draw.
  */
-function CardForm({ clientSecret, onSaved }: { clientSecret: string; onSaved: () => void }) {
+function CardForm({
+  clientSecret,
+  country,
+  onSaved,
+}: {
+  clientSecret: string;
+  /** Their own country from last time, or null if they have never said. */
+  country: string | null;
+  onSaved: () => void;
+}) {
   const stripe = useStripe();
   const elements = useElements();
   const save = useSavePaymentMethod();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Confirm, then record — the two halves of saving a card.
+   *
+   * Three steps, in this order, and the order is Stripe's: `elements.submit()`
+   * validates what is in the Element and hands it over, `confirmSetup` confirms
+   * it, and the API records the result. `redirect: 'if_required'` is what keeps
+   * the confirmation on this page for a card that needs no 3-D Secure step, and
+   * a card that does need one is sent to Stripe and back, which is Stripe's
+   * business rather than a screen this app draws.
+   *
+   * The **country is required** and Stripe enforces it: a billing address with no
+   * country is refused before the intent is confirmed, which is the "ask me to
+   * select one" half of it. What the person chooses is then written onto their
+   * account by the API, so the next form opens on it.
+   */
   async function submit() {
     if (!stripe || !elements) return;
-
-    const card = elements.getElement(CardElement);
-    if (!card) return;
 
     setBusy(true);
     setError(null);
 
-    // The secret is the intent's own and the Element fills the payment method
-    // in: nothing about the card reaches this app.
-    const result = await stripe.confirmCardSetup(clientSecret, { payment_method: { card } });
+    /**
+     * **`elements.submit()` first, and before anything asynchronous.**
+     *
+     * The Payment Element is a *deferred* integration: the fields live in
+     * Stripe's iframe, nothing is sent anywhere while somebody types, and the
+     * confirmation is refused outright until the Element has been told to
+     * validate and hand its data over. Calling `confirmSetup` without it is an
+     * `IntegrationError` rather than a failed card, which is what this did
+     * before.
+     *
+     * It is also where an incomplete billing address is caught: no country, or a
+     * postal code that does not fit the country chosen, comes back here as a
+     * sentence next to the form instead of as a card that never saves.
+     */
+    const { error: submitError } = await elements.submit();
+    if (submitError) {
+      setError(submitError.message ?? 'Check the card details and try again.');
+      setBusy(false);
+      return;
+    }
+
+    const result = await stripe.confirmSetup({
+      elements,
+      clientSecret,
+      confirmParams: { return_url: window.location.href },
+      redirect: 'if_required',
+    });
 
     if (result.error) {
       setError(result.error.message ?? 'That card could not be saved.');
@@ -178,21 +279,27 @@ function CardForm({ clientSecret, onSaved }: { clientSecret: string; onSaved: ()
 
   return (
     <div className="grid gap-4">
-      <div className="rounded-2xl border border-border/60 bg-background/60 px-4 py-3">
-        <CardElement
-          options={{
-            hidePostalCode: false,
-            style: {
-              base: {
-                fontSize: '14px',
-                color: 'inherit',
-                '::placeholder': { color: 'rgb(148 163 184)' },
-              },
-              invalid: { color: 'rgb(248 113 113)' },
-            },
-          }}
-        />
-      </div>
+      {/* **A Payment Element, not a Card Element**, and the difference is the
+          country. The card field drew a postal code and nothing else — a bare
+          `12345` box, which is a United States address and no other kind — and
+          there was no way to say otherwise, because that Element has no country
+          in it at all.
+
+          This one collects the billing address: a country first, and then the
+          postal code that country actually has, checked against it. It opens on
+          the country this account was last set to, which is what "save it to my
+          preferences" means here — the API writes whatever was chosen onto the
+          Stripe customer, because that is the address a receipt is issued
+          against and it is already what every card and purchase here hangs off.
+          With no preference it starts unanswered, and Stripe refuses to confirm
+          the card until it is filled in. */}
+      <PaymentElement
+        options={{
+          defaultValues: {
+            billingDetails: { address: country ? { country } : undefined },
+          },
+        }}
+      />
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
@@ -208,4 +315,31 @@ function CardForm({ clientSecret, onSaved }: { clientSecret: string; onSaved: ()
       </div>
     </div>
   );
+}
+
+/**
+ * Whether the page is dark — read from the document, not from the theme library.
+ *
+ * The first version of this asked `next-themes` what the theme was, and the card
+ * field came out with the *light* theme's dark digits on a dark card. Which
+ * theme a library remembers is not the question; the question is what colour the
+ * page around the field actually is, and that is the `dark` class on `<html>`.
+ *
+ * A `MutationObserver` on that class is how a toggle reaches the field: Stripe
+ * redraws an Element when its appearance changes, so following the document
+ * keeps the digits legible whichever way the toggle is pressed.
+ */
+function useDarkDocument(): boolean {
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const read = () => setDark(document.documentElement.classList.contains('dark'));
+    read();
+
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, { attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  return dark;
 }

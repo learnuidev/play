@@ -1,9 +1,8 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { requireUser } from '../../lib/auth';
-import { env } from '../../lib/config';
 import { handle, ok } from '../../lib/http';
 import { billingContextFor } from '../../lib/payment-methods';
-import { createSetupIntent, publishableKey } from '../../lib/stripe';
+import { createSetupIntent, getCustomerCountry, publishableKey } from '../../lib/stripe';
 
 /**
  * Opening a card form.
@@ -30,9 +29,13 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 
   const { customerId } = await billingContextFor(user);
 
-  const [intent, key] = await Promise.all([
+  const [intent, key, country] = await Promise.all([
     createSetupIntent({ customerId, metadata: { userId: user.userId } }),
     publishableKey(),
+    // Their own choice from the last card they saved, if they have made one.
+    // Null is "they have not said", which the form shows as an empty country
+    // rather than as this deployment's.
+    getCustomerCountry(customerId),
   ]);
 
   if (!intent.client_secret) {
@@ -45,8 +48,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     setupIntentId: intent.id,
     clientSecret: intent.client_secret,
     publishableKey: key,
-    /** Shown nowhere yet; here so the marketplace's env has one less thing to hold. */
-    marketplaceUrl: env.marketplaceBaseUrl,
+    country,
   });
 }
 

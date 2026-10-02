@@ -397,6 +397,17 @@ export interface StripePaymentMethod {
     exp_month: number;
     exp_year: number;
   };
+  /**
+   * The billing details the card was saved with.
+   *
+   * Only the country is read, and it is read for one reason: it is the one piece
+   * of an address a person has to state, because a postal code is only
+   * meaningful next to it. Whatever they chose is kept on the customer below, so
+   * the next card form opens on it rather than on this deployment's country.
+   */
+  billing_details?: {
+    address?: { country?: string | null } | null;
+  } | null;
 }
 
 /** One saved payment method, by id. */
@@ -595,4 +606,38 @@ export function verifyStripeSignature(input: {
   }
 
   return { ok: false, reason: 'no v1 signature matched' };
+}
+
+/**
+ * The billing country this person's account is set to, if any.
+ *
+ * Read to **prefill** a card form. Stripe's own customer object is where an
+ * address of record belongs — it is what a receipt is issued against and what
+ * tax is computed from, and it is already the thing every card and every
+ * purchase here hangs off — so the choice somebody makes in a card form is
+ * written there rather than into a table of this service's own.
+ *
+ * A customer with no address is `null` rather than a guess: "they have not said"
+ * and "they are in the United States" are different answers, and a form that
+ * assumed the second would be the reason nobody ever checks it.
+ */
+export async function getCustomerCountry(customerId: string): Promise<string | null> {
+  try {
+    const customer = await stripeRequest<{ address?: { country?: string | null } | null }>(
+      'GET',
+      `customers/${encodeURIComponent(customerId)}`,
+    );
+    return customer.address?.country ?? null;
+  } catch {
+    // A customer that cannot be read is a form that opens unprefilled, which is
+    // a far smaller problem than a card form that will not open.
+    return null;
+  }
+}
+
+/** Remembering it, when a card says what it is. */
+export async function setCustomerCountry(customerId: string, country: string): Promise<void> {
+  await stripeRequest<{ id: string }>('POST', `customers/${encodeURIComponent(customerId)}`, {
+    'address[country]': country,
+  });
 }

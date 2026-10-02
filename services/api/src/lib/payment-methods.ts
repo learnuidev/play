@@ -9,6 +9,7 @@ import {
   createCustomer,
   getPaymentMethod,
   getSetupIntent,
+  setCustomerCountry,
   type StripePaymentMethod,
 } from './stripe';
 
@@ -264,6 +265,13 @@ export async function recordSetupIntent(input: {
   };
 
   await putPaymentMethod(row);
+
+  // The country the card was saved with becomes the account's, so the next card
+  // form opens where this one ended rather than on the deployment's own country.
+  // A card that came without one changes nothing: no address is not an address.
+  const country = method.billing_details?.address?.country;
+  if (country && customerId) await setCustomerCountry(customerId, country);
+
   return row;
 }
 
