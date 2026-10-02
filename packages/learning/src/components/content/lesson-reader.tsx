@@ -18,16 +18,17 @@ import type { LessonPanelTab } from '@learning/hooks/use-lesson-tab';
  * lesson player, because that is a lesson page this product has already decided
  * it likes.
  *
- * One frame, and **both** kinds of content draw themselves in it: a lesson puts
- * its video in the card and a quiz puts one question there, and neither has to
- * know how a bar, a card, a dock or a rail is put together. `LessonReaderFrame`
- * is the arrangement; everything above it is one of the four pieces it places.
+ * This file is the *shell*: the bar, the dock, the rail, and a middle that is
+ * left to whoever is drawing it. The middle is where the two kinds of content
+ * differ, so each has a view of its own — `VideoView` for a lesson, `QuizView`
+ * for a question — and neither has to know how a bar, a dock or a rail is put
+ * together.
  *
  * ```
  * ┌──────────────────────────────────────────────────────────────┐
  * │ ✕   ‹─── progress, an arrow each side ───›   ●●○●●  12   ☾   │  LessonNavBar
  * ├───────────────────────────────────────────┬───┬──────────────┤
- * │ ┌ card ──────────────────────────────────┐ │ ☰ │ ┌ rail ────┐ │
+ * │ ┌ a view ────────────────────────────────┐ │ ☰ │ ┌ rail ────┐ │
  * │ │   what this is, in the middle of it    │ │ 📝 │ │          │ │
  * │ │                                        │ │ 📄 │ │          │ │
  * │ ├────────────────────────────────────────┤ │ 🔁 │ │          │ │
@@ -38,15 +39,15 @@ import type { LessonPanelTab } from '@learning/hooks/use-lesson-tab';
  * ```
  *
  * The dock is the one piece skld does not have, because skld's rail holds one
- * thing and opens from a pill on the card. A lesson here holds five or six, and
+ * thing and opens from a pill on the view. A lesson here holds five or six, and
  * a row of pills per material was a row of pills that grew with the material —
- * so they are stacked as icons beside the card instead, always in the same
+ * so they are stacked as icons beside the view instead, always in the same
  * place, and the rail opens to the right of them. A quiz draws the same dock
  * with what a quiz has, which is the contents of the course and its discussion.
  *
  * Nothing here reads the API: every value and every handler is the caller's,
- * passed in. That is what keeps a lesson and a quiz in one frame rather than two
- * pages that have to be kept in step.
+ * passed in. That is what keeps the shell one arrangement rather than two pages
+ * that have to be kept in step.
  */
 
 /**
@@ -351,6 +352,23 @@ function LessonDock({
 }
 
 /**
+ * How wide the rail is when it is open.
+ *
+ * **One number, used in two places, because the two have to agree**: the slot is
+ * how much room the rail takes from the card, and the box inside it is what the
+ * rail actually *is*, held at its real size whatever the slot is doing so its
+ * contents do not reflow their way through the opening animation. Two literals
+ * that drifted apart would be a rail that slides out to one width and settles at
+ * another.
+ *
+ * `440px`, up from 380. The rail is where a lesson's transcript, notes, files and
+ * discussion live, and 380 was narrow enough that a transcript wrapped to a
+ * measure which made paragraphs read like lists and a file's name arrived with
+ * its type on the next line.
+ */
+const RAIL_WIDTH = 'lg:w-[440px]';
+
+/**
  * The rail: the material, off the screen until the dock asks for it.
  *
  * A column at the right-hand edge on a wide screen and a panel under the dock on
@@ -383,13 +401,20 @@ function LessonRail({
       className={cn(
         'shrink-0 overflow-hidden transition-[width,height] duration-300 ease-out motion-reduce:transition-none',
         className,
-        open ? 'visible h-[45svh] lg:h-full lg:w-[380px]' : 'invisible h-0 lg:h-full lg:w-0',
+        open
+          ? `visible h-[45svh] lg:h-full ${RAIL_WIDTH}`
+          : 'invisible h-0 lg:h-full lg:w-0',
       )}
     >
       {/* The inner box keeps the rail's real size whatever the slot is doing,
           which is what stops its contents reflowing their way through the
           opening animation. */}
-      <div className="flex h-full min-h-0 w-full flex-col rounded-2xl border border-border/60 bg-card sm:rounded-3xl lg:w-[380px]">
+      <div
+        className={cn(
+          'flex h-full min-h-0 w-full flex-col rounded-2xl border border-border/60 bg-card sm:rounded-3xl',
+          RAIL_WIDTH,
+        )}
+      >
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 pt-4 pb-2">
           <h2 className="truncate text-sm font-semibold tracking-tight">{title}</h2>
           <button
@@ -409,30 +434,19 @@ function LessonRail({
 }
 
 /**
- * What the card's frame is made of, and when it says anything.
+ * The reading shell: the bar, the dock, the rail, and the middle left to a view.
  *
- * A border is grey by default and stays grey — it is the frame the content sits
- * in, and a frame that changes colour is a frame the eye goes to instead of the
- * picture inside it. A *video* in particular has nothing to be right or wrong
- * about, so its frame never answers at all: whether a lesson is finished is said
- * once, by the pill under it, and a second green answer around the picture is
- * the same fact shouted twice.
+ * What it arranges is the three things every kind of content has in common —
+ * where the way out is, where the buttons are, and where the material slides out
+ * — and it says **nothing** about what the middle looks like. That belongs to the
+ * view for the type of content: `VideoView` puts a stage there and nothing else,
+ * because a lesson is a picture somebody came to watch, and `QuizView` puts a
+ * card there whose edge carries the verdict, because a question is read and
+ * answers back.
  *
- * A question is the one thing here with an answer, so a marked one tints its own
- * frame — skld's verdict border, which is the whole reason the frame has states
- * at all.
- */
-export type LessonCardVerdict = 'pending' | 'right' | 'wrong';
-
-/** What the card's border says, one entry per state the frame knows. */
-const CARD_BORDER: Record<LessonCardVerdict, string> = {
-  pending: 'border-border/60',
-  right: 'border-emerald-600/40',
-  wrong: 'border-destructive/40',
-};
-
-/**
- * The reading layout itself: one screen, and nothing on it scrolls as a whole.
+ * **The middle used to be one `card` prop on this component**, with a border
+ * whose colour changed for a quiz — which is how a video came to be drawn as a
+ * card with a frame around it, and why the two are now two views.
  *
  * **The dock is pinned to the right-hand edge, and it is the same column at every
  * width.** That is the arrangement: the buttons are the one part of the screen
@@ -441,22 +455,17 @@ const CARD_BORDER: Record<LessonCardVerdict, string> = {
  * row entirely and hung down the right of it, and the row keeps a strip of its own
  * width clear for them.
  *
- * What is *in* the row is therefore only the card and the rail: side by side on a
- * wide screen, stacked with the rail under the card on a narrow one, which is the
+ * What is *in* the row is therefore only the view and the rail: side by side on a
+ * wide screen, stacked with the rail under the view on a narrow one, which is the
  * shape a phone has room for. The strip stays reserved at both widths, so the
  * buttons have the same home on a laptop and on a phone.
  *
- * **The shell behind all of it is grey, in both themes.** A lesson is a card on a
- * canvas rather than a page: the video, the rail and the dock are all `bg-card`,
- * and a white card with a hairline edge on a white page is a rectangle rather
- * than a thing lifted off the page. In the dark theme the canvas is already the
- * darkest surface there is, so it stays exactly as it was — what changes is only
- * the light one, where the canvas and the card were the same white.
+ * **The canvas behind all of it is grey in the light theme**, so a card drawn on
+ * it is a thing lifted off the page rather than a rectangle on white; in the dark
+ * theme it is already the darkest surface there is and stays as it was.
  */
-export function LessonReaderFrame({
+export function LessonReaderShell({
   bar,
-  cardState = 'pending',
-  card,
   materials,
   activeMaterial,
   onToggleMaterial,
@@ -465,13 +474,10 @@ export function LessonReaderFrame({
   railTitle,
   onCloseRail,
   rail,
-  footer,
+  children,
 }: {
   /** The bar across the top, already built: a lesson's or a quiz's. */
   bar: React.ReactNode;
-  /** What the card's border says: pending, done, or how a question went. */
-  cardState?: LessonCardVerdict;
-  card: React.ReactNode;
   materials: LessonMaterial[];
   activeMaterial: LessonPanelTab | null;
   onToggleMaterial: (value: LessonPanelTab) => void;
@@ -481,8 +487,8 @@ export function LessonReaderFrame({
   railTitle: string;
   onCloseRail: () => void;
   rail: React.ReactNode;
-  /** The row of pills under the card: the decisions this screen offers. */
-  footer: React.ReactNode;
+  /** The reading area: whatever this kind of content looks like. */
+  children: React.ReactNode;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-muted dark:bg-background">
@@ -491,23 +497,7 @@ export function LessonReaderFrame({
       {/* `pr-16` is the dock's strip: the row's own padding on the left, and room
           for the column of buttons on the right, at every width. */}
       <div className="relative flex min-h-0 flex-1 flex-col gap-3 pb-3 pl-3 pr-16 sm:gap-4 sm:pb-8 sm:pl-8 lg:flex-row">
-        <main
-          className={cn(
-            'flex min-h-0 flex-1 flex-col rounded-2xl border-2 bg-card transition-colors duration-300 sm:rounded-3xl',
-            CARD_BORDER[cardState],
-          )}
-        >
-          <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-6 [scrollbar-width:none] [-ms-overflow-style:none] sm:px-8 sm:py-10 [&::-webkit-scrollbar]:hidden">
-            {/* `min-h-full` inside the scroller rather than centring the scroller
-                itself: a flex container that scrolls clips the top of anything
-                taller than it. */}
-            <div className="flex min-h-full flex-col items-center justify-center">{card}</div>
-          </div>
-
-          <div className="flex w-full shrink-0 flex-wrap items-center justify-center gap-2 px-5 pt-4 pb-5">
-            {footer}
-          </div>
-        </main>
+        {children}
 
         <LessonRail open={railOpen} title={railTitle} onClose={onCloseRail}>
           {rail}

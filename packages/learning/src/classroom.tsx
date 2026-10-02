@@ -72,11 +72,11 @@ import { PlayingNext } from "@learning/components/content/playing-next";
 import {
   LessonNavBar,
   LessonPrimaryPill,
-  LessonReaderFrame,
   LessonSecondaryPill,
   type LessonMark,
   type LessonMaterial,
 } from "@learning/components/content/lesson-reader";
+import { VideoStage, VideoView } from "@learning/components/content/video-view";
 import { GenerateQuizDialog } from "@learning/components/quiz/generate-quiz-dialog";
 import { QuizPanel } from "@learning/components/quiz/quiz-panel";
 import {
@@ -168,7 +168,7 @@ const TAB_STRIP =
 /**
  * The same strip, in the rail.
  *
- * Six tabs in a 380px column do not spread: `justify-evenly` would put the
+ * Six tabs in a rail-width column do not spread: `justify-evenly` would put the
  * overflow of the last one off the edge with no sign it is there. So they start
  * at the left and run — and the row scrolls, with its bar hidden, for the same
  * reason the column's does. No rule under them either: the rail's own head draws
@@ -1148,16 +1148,16 @@ function ClassroomBody({
   /**
    * Waiting, and failing, both happen *inside* the reading layout's frame.
    *
-   * The frame is what a reader is looking at while a lesson loads, and a frame
-   * that arrived after the lesson did would move the bar, the card and the dock
-   * on the screen the moment it turned up. So the shell is drawn at its real
-   * size from the first paint and only the card's contents change — the same
-   * thing the quiz does with the same frame.
+   * The view is what a reader is looking at while a lesson loads, and a view that
+   * arrived after the lesson did would move the bar, the stage and the dock on the
+   * screen the moment it turned up. So the shell is drawn at its real size from
+   * the first paint and only the stage behind the title changes — the same thing a
+   * quiz does with its own view.
    */
   if (isError || isLoading || !content) {
     if (reader) {
       return (
-        <LessonReaderFrame
+        <VideoView
           bar={
             <LessonNavBar
               exitHref={routes.course(spaceId)}
@@ -1167,16 +1167,16 @@ function ClassroomBody({
               stepLabel="lesson"
             />
           }
-          card={
+          title={<Skeleton className="h-6 w-64" />}
+          stage={
             isError ? (
               <p className="text-sm text-destructive">
                 {error instanceof Error ? error.message : "Failed to load this content"}
               </p>
             ) : (
-              <div className="grid w-full max-w-3xl gap-4">
-                <Skeleton className="mx-auto h-7 w-1/2 rounded-full" />
+              <VideoStage>
                 <Skeleton className="aspect-video w-full rounded-2xl" />
-              </div>
+              </VideoStage>
             )
           }
           materials={[]}
@@ -1187,7 +1187,7 @@ function ClassroomBody({
           railTitle="The lesson"
           onCloseRail={() => {}}
           rail={null}
-          footer={<Skeleton className="h-12 w-48 max-w-full rounded-full" />}
+          pills={<Skeleton className="h-12 w-48 max-w-full rounded-full" />}
         />
       );
     }
@@ -1489,17 +1489,78 @@ function ClassroomBody({
   const materials = readerMaterials(content);
 
   /**
-   * The reading layout: the frame, with this lesson in its card.
+   * The reading layout: the video view, with the lesson's stage in it.
    *
-   * Everything about how the bar, the dock, the rail and the footer are arranged
-   * is `LessonReaderFrame`'s — the same frame a quiz draws itself in, which is
-   * what keeps a lesson and a question looking like two things in one product.
-   * What is here is only what a *lesson* puts in it: the course's progress in
-   * the bar, its video in the card, and the material a lesson holds in the dock.
+   * Everything about how the bar, the dock and the rail are arranged is
+   * `LessonReaderShell`'s, and everything about how a *video* is staged is
+   * `VideoView`'s — the frame a quiz draws itself in is the same shell with a
+   * different view in the middle, which is what keeps a lesson and a question
+   * looking like two things in one product while letting each be drawn the way
+   * its content wants. What is here is only what this lesson has: the course's
+   * progress in the bar, the player and its loops on the stage, and the material
+   * a lesson holds in the dock.
    */
   if (reader) {
     return (
-      <LessonReaderFrame
+      <VideoView
+        title={content.title}
+        stage={
+          <VideoStage>
+            {content.videoId ? (
+              // Opened, and playing: a lesson is a thing you came to watch, and
+              // having to press play on the thing you just asked for is a step
+              // that only ever stood between the reader and the lesson. The
+              // browser gets to refuse an unmuted page starting itself, and the
+              // player answers that by starting muted rather than not at all.
+              <LessonVideo
+                videoId={content.videoId}
+                playerRef={playerRef}
+                autoPlay
+                tracks={tracks}
+                onActiveTrackChange={followCaptionsLanguage}
+              >
+                <div className="mt-4">
+                  {draft && (
+                    <LoopBar
+                      durationMs={getDuration()}
+                      getTimeMs={getTime}
+                      seekTo={handleSeek}
+                      initialRange={draft}
+                      accentColor={editingLoop ? loopColor(editingLoop) : "#6366f1"}
+                      lines={lines}
+                      selectedLines={linesInRange(lines, draft.startMs, draft.endMs).length}
+                      selectedText={transcriptTextFor(lines, draft.startMs, draft.endMs)}
+                      editingName={editingLoop?.name}
+                      previewing={previewing}
+                      onTogglePreview={togglePreview}
+                      onSave={saveLoop}
+                      onCancel={closePicker}
+                    />
+                  )}
+                </div>
+              </LessonVideo>
+            ) : (
+              <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 text-center">
+                <VideoOffIcon className="size-5 text-muted-foreground/60" />
+                <p className="text-sm text-muted-foreground">This lesson has no video yet.</p>
+              </div>
+            )}
+
+            {/* On the stage rather than floating over the page: it counts down to
+                what plays next, so it belongs on the picture that is about to
+                change — and at the page's own corner it would sit over the
+                pills. */}
+            {next && upNext.seconds !== null && (
+              <PlayingNext
+                title={next.title}
+                seconds={upNext.seconds}
+                total={upNext.total}
+                onPlayNow={upNext.playNow}
+                onCancel={upNext.cancel}
+              />
+            )}
+          </VideoStage>
+        }
         bar={
           <LessonNavBar
             exitHref={routes.course(spaceId)}
@@ -1528,75 +1589,6 @@ function ClassroomBody({
             }}
           />
         }
-        card={
-          <>
-            <h1 className="max-w-3xl text-center text-lg font-semibold tracking-tight sm:text-xl">
-              {content.title}
-            </h1>
-
-            {/* As wide as the height it has allows, and no wider. A video's
-                shape is fixed, so a stage sized only by width would letterbox
-                itself on a short window or push the footer off a tall one; the
-                cap keeps the picture whole and the row where it belongs, and
-                `max-h-full` is the belt to that braces, so a window this
-                arithmetic got wrong clips nothing. */}
-            <div className="relative mt-4 w-full max-h-full max-w-[min(64rem,calc((100svh_-_19rem)*16_/_9))]">
-              {content.videoId ? (
-                // Opened, and playing: a lesson is a thing you came to watch, and
-                // having to press play on the thing you just asked for is a step
-                // that only ever stood between the reader and the lesson. The
-                // browser gets to refuse an unmuted page starting itself, and the
-                // player answers that by starting muted rather than not at all.
-                <LessonVideo
-                  videoId={content.videoId}
-                  playerRef={playerRef}
-                  autoPlay
-                  tracks={tracks}
-                  onActiveTrackChange={followCaptionsLanguage}
-                >
-                  <div className="mt-4">
-                    {draft && (
-                      <LoopBar
-                        durationMs={getDuration()}
-                        getTimeMs={getTime}
-                        seekTo={handleSeek}
-                        initialRange={draft}
-                        accentColor={editingLoop ? loopColor(editingLoop) : "#6366f1"}
-                        lines={lines}
-                        selectedLines={linesInRange(lines, draft.startMs, draft.endMs).length}
-                        selectedText={transcriptTextFor(lines, draft.startMs, draft.endMs)}
-                        editingName={editingLoop?.name}
-                        previewing={previewing}
-                        onTogglePreview={togglePreview}
-                        onSave={saveLoop}
-                        onCancel={closePicker}
-                      />
-                    )}
-                  </div>
-                </LessonVideo>
-              ) : (
-                <div className="flex aspect-video w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed bg-muted/20 text-center">
-                  <VideoOffIcon className="size-5 text-muted-foreground/60" />
-                  <p className="text-sm text-muted-foreground">This lesson has no video yet.</p>
-                </div>
-              )}
-
-              {/* Inside the card rather than floating over the page: the card
-                  counts down to what plays next, so it belongs on the picture
-                  that is about to change — and at the page's own corner it would
-                  sit over the footer. */}
-              {next && upNext.seconds !== null && (
-                <PlayingNext
-                  title={next.title}
-                  seconds={upNext.seconds}
-                  total={upNext.total}
-                  onPlayNow={upNext.playNow}
-                  onCancel={upNext.cancel}
-                />
-              )}
-            </div>
-          </>
-        }
         materials={materials}
         activeMaterial={railOpen ? panelTab : null}
         onToggleMaterial={toggleMaterial}
@@ -1605,7 +1597,7 @@ function ClassroomBody({
         railTitle={materials.find((item) => item.value === panelTab)?.label ?? "The lesson"}
         onCloseRail={() => setRailOpen(false)}
         rail={panel}
-        footer={
+        pills={
           <LessonPrimaryPill busy={completion.isPending} onClick={toggleCompletion}>
             {completed ? "Completed" : "Complete lesson"}
           </LessonPrimaryPill>

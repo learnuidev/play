@@ -22,10 +22,10 @@ import { ContentComments } from '@learning/components/content/content-comments';
 import {
   LessonNavBar,
   LessonPrimaryPill,
-  LessonReaderFrame,
   LessonSecondaryPill,
   type LessonMaterial,
 } from '@learning/components/content/lesson-reader';
+import { QuizView } from '@learning/components/quiz/quiz-view';
 import type { LessonPanelTab } from '@learning/hooks/use-lesson-tab';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -43,12 +43,12 @@ import type { QuizAttempt, QuizAttemptAnswer, QuizPaperQuestion } from '@play/ty
  * answer key and edits them, and a learner is handed the same questions without
  * it and answers them.
  *
- * **It is drawn in the lesson's own frame.** `LessonReaderFrame` is the bar, the
- * card, the dock and the rail, and this puts one question in its card — which is
- * what a quiz in `skld-app` is: a block on the card the lesson is read in, at the
- * same size, with the same footer under it. A learner moving from a lesson to the
- * quiz beside it is moving to the next thing in the course, not to a different
- * product.
+ * **It is drawn in the classroom's reading shell.** That shell is the bar, the
+ * dock and the rail; `QuizView` is what a question puts in the middle of it — a
+ * card with the verdict on its edge, which is what a quiz in `skld-app` is: a
+ * block on the card a lesson is read beside, at the same size, with the same row
+ * of pills under it. A learner moving from a lesson to the quiz beside it is
+ * moving to the next thing in the course, not to a different product.
  *
  * Four rules it is built on:
  *
@@ -327,7 +327,7 @@ export function QuizTaking({
 
   if (isError || isLoading || !data || total === 0) {
     return (
-      <LessonReaderFrame
+      <QuizView
         bar={
           <LessonNavBar
             exitHref={routes.course(spaceId)}
@@ -337,7 +337,7 @@ export function QuizTaking({
             stepLabel="question"
           />
         }
-        card={card}
+        question={card}
         materials={materials}
         activeMaterial={railOpen ? material : null}
         onToggleMaterial={toggleMaterial}
@@ -351,7 +351,7 @@ export function QuizTaking({
         // The pill that is about to be there, at the size it will be: a footer
         // that grew by a button when the quiz arrived would take those 48px out
         // of the card, which is the question moving before anybody touched it.
-        footer={<Skeleton className="h-12 w-48 max-w-full rounded-full" />}
+        pills={<Skeleton className="h-12 w-48 max-w-full rounded-full" />}
       />
     );
   }
@@ -372,7 +372,7 @@ export function QuizTaking({
   const tallyCount = result ? result.correctCount : checkedRight;
 
   return (
-    <LessonReaderFrame
+    <QuizView
       bar={
         <LessonNavBar
           exitHref={routes.course(spaceId)}
@@ -389,12 +389,12 @@ export function QuizTaking({
           }}
         />
       }
-      // The card answers per question, which is skld's verdict border: green
-      // where it went right, red where it did not, plain while it is unanswered.
-      cardState={
+      // The card answers per question, which is the verdict edge: green where it
+      // went right, red where it did not, plain while it is unanswered.
+      verdict={
         marked ? (marked.correct ? 'right' : 'wrong') : verdict ? (verdict.correct ? 'right' : 'wrong') : 'pending'
       }
-      card={card}
+      question={card}
       materials={materials}
       activeMaterial={railOpen ? material : null}
       onToggleMaterial={toggleMaterial}
@@ -405,7 +405,7 @@ export function QuizTaking({
       rail={
         <QuizRail material={material} contentId={contentId} spaceId={spaceId} viewerId={viewerId} />
       }
-      footer={
+      pills={
         <>
           <LessonSecondaryPill
             disabled={at === 0}
