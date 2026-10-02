@@ -1,7 +1,8 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { requireUserId } from '../../lib/auth';
+import { requireUser } from '../../lib/auth';
 import { handle, ok } from '../../lib/http';
-import { listPaymentMethods, toSavedPaymentMethod } from '../../lib/payment-methods';
+import { existingCustomerIdFor, listPaymentMethods, toSavedPaymentMethod } from '../../lib/payment-methods';
+import { getCustomer } from '../../lib/stripe';
 
 /**
  * The cards this person has saved.
@@ -19,13 +20,27 @@ import { listPaymentMethods, toSavedPaymentMethod } from '../../lib/payment-meth
  * The rows are mapped rather than answered with, so what crosses the wire is the
  * card as its owner recognizes it: the two ids on the row are the caller's own
  * `sub` and a Stripe customer reference, and neither is anything a screen has a
- * use for.
+ * use for. Which one is the default comes from Stripe, not from the row.
  */
 async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-  const userId = requireUserId(event);
-  const rows = await listPaymentMethods(userId);
+  const user = requireUser(event);
+  const rows = await listPaymentMethods(user.userId);
 
-  return ok({ paymentMethods: rows.map(toSavedPaymentMethod) });
+  /**
+   * Which of these is the default, according to Stripe.
+   *
+   * Read from the customer rather than kept on our own rows, so "the default" is
+   * one fact in one place: the card Stripe would charge is the card this screen
+   * marks. Only asked when there is a customer to ask about — a wallet with
+   * nothing in it needs no round trip — and a Stripe call that fails leaves the
+   * list drawn with nothing marked rather than the whole screen failing.
+   */
+  const customer = rows.length ? await existingCustomerIdFor(user) : null;
+  const defaultId = customer ? (await getCustomer(customer.customerId)).defaultPaymentMethodId : null;
+
+  return ok({
+    paymentMethods: rows.map((row) => toSavedPaymentMethod(row, row.paymentMethodId === defaultId)),
+  });
 }
 
 export const handler = handle(main);

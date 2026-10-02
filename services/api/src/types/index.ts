@@ -1143,6 +1143,8 @@ export interface SavedPaymentMethod {
   expMonth: number;
   expYear: number;
   createdAt: number;
+  /** Whether Stripe would charge it by default — see `getCustomer`. */
+  isDefault: boolean;
 }
 
 /**

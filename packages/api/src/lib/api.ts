@@ -1081,6 +1081,19 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  /**
+   * Making one of the caller's cards the default.
+   *
+   * Written to the customer's `invoice_settings.default_payment_method`, which
+   * is the field Stripe itself charges against — so the card this screen marks
+   * and the card Stripe would use cannot be two different cards. Nothing comes
+   * back; the list re-reads and marks it.
+   */
+  setDefaultPaymentMethod: (paymentMethodId: string) =>
+    request<void>(`/me/payment-methods/${encodeURIComponent(paymentMethodId)}/default`, {
+      method: 'PUT',
+    }),
+
   /** Removes one: at Stripe first, then here. */
   removePaymentMethod: (paymentMethodId: string) =>
     request<void>(`/me/payment-methods/${encodeURIComponent(paymentMethodId)}`, {

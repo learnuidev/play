@@ -775,6 +775,14 @@ export interface SavedPaymentMethod {
   expMonth: number;
   expYear: number;
   createdAt: number;
+  /**
+   * Whether Stripe would charge this card by default.
+   *
+   * Read from the customer's `invoice_settings.default_payment_method`, not from
+   * a flag of ours: the card Stripe would use and the card this product calls
+   * the default are then one fact rather than two that can disagree.
+   */
+  isDefault: boolean;
 }
 
 export interface ListPaymentMethodsResponse {

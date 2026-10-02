@@ -73,7 +73,11 @@ export async function listPaymentMethods(userId: string): Promise<SavedPaymentMe
  * the card as somebody recognizes it — and mapping here rather than in the
  * client is what keeps a handler from answering with a row it happens to hold.
  */
-export function toSavedPaymentMethod(row: SavedPaymentMethodRow): SavedPaymentMethod {
+export function toSavedPaymentMethod(
+  row: SavedPaymentMethodRow,
+  /** Whether Stripe would charge this card by default — see `getCustomer`. */
+  isDefault = false,
+): SavedPaymentMethod {
   return {
     paymentMethodId: row.paymentMethodId,
     brand: row.brand,
@@ -81,6 +85,7 @@ export function toSavedPaymentMethod(row: SavedPaymentMethodRow): SavedPaymentMe
     expMonth: row.expMonth,
     expYear: row.expYear,
     createdAt: row.createdAt,
+    isDefault,
   };
 }
 
@@ -174,9 +179,32 @@ export interface BillingContext {
  * is what a course with no currency set sells for.
  */
 export async function billingContextFor(user: AuthUser): Promise<BillingContext> {
+  const known = await existingCustomerIdFor(user);
+  const currency = known?.currency ?? DEFAULT_CURRENCY;
+
+  if (known) return { customerId: known.customerId, currency };
+
+  const created = await createCustomer({
+    ...(user.email ? { email: user.email } : {}),
+    userId: user.userId,
+  });
+  return { customerId: created.id, currency };
+}
+
+/**
+ * The customer this person already has, **without making one**.
+ *
+ * The difference matters on a read. A wallet that is empty is a wallet that
+ * needs no customer, and a page that created one for merely being looked at
+ * would leave an empty customer behind for every person who ever opened their
+ * account — which is exactly what the comment above calls out as the thing to
+ * avoid. Only the two routes that are about to *save* something create one.
+ */
+export async function existingCustomerIdFor(
+  user: AuthUser,
+): Promise<{ customerId: string; currency: string } | null> {
   const cards = await listPaymentMethods(user.userId);
   const payments = await listPaymentsForUser(user.userId);
-
   const currency = payments.find((payment) => payment.currency)?.currency ?? DEFAULT_CURRENCY;
 
   const fromCard = cards[0]?.stripeCustomerId;
@@ -185,11 +213,7 @@ export async function billingContextFor(user: AuthUser): Promise<BillingContext>
   const fromPayment = payments.find((payment) => payment.stripeCustomerId)?.stripeCustomerId;
   if (fromPayment) return { customerId: fromPayment, currency };
 
-  const created = await createCustomer({
-    ...(user.email ? { email: user.email } : {}),
-    userId: user.userId,
-  });
-  return { customerId: created.id, currency };
+  return null;
 }
 
 /** The one place a buyer's customer is wanted without the rest. */

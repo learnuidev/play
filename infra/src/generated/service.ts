@@ -2685,6 +2685,16 @@ export const FUNCTIONS: FunctionSpec[] = [
     eventBridge: [],
   },
   {
+    key: 'set-default-payment-method',
+    entry: 'src/functions/payments/set-default-payment-method.ts',
+    handlerExport: 'handler',
+    timeout: 29,
+    memorySize: 512,
+    http: [{"path":"me/payment-methods/{paymentMethodId}/default","method":"PUT","authorized":true}],
+    s3: [],
+    eventBridge: [],
+  },
+  {
     key: 'remove-payment-method',
     entry: 'src/functions/payments/remove-payment-method.ts',
     handlerExport: 'handler',

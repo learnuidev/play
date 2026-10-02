@@ -55,6 +55,24 @@ export function useSavePaymentMethod() {
 }
 
 /**
+ * Choosing the default.
+ *
+ * Invalidated like removal, and for the same reason: this is an operation that
+ * completes inside the app, and the list on screen is stale the moment it lands
+ * — one card gains a badge and another loses it.
+ */
+export function useSetDefaultPaymentMethod() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (paymentMethodId: string) => api.setDefaultPaymentMethod(paymentMethodId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: billingKeys.paymentMethods() });
+    },
+  });
+}
+
+/**
  * Removing one.
  *
  * This *does* invalidate, because it is the one card operation that completes

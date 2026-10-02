@@ -622,22 +622,71 @@ export function verifyStripeSignature(input: {
  * assumed the second would be the reason nobody ever checks it.
  */
 export async function getCustomerCountry(customerId: string): Promise<string | null> {
-  try {
-    const customer = await stripeRequest<{ address?: { country?: string | null } | null }>(
-      'GET',
-      `customers/${encodeURIComponent(customerId)}`,
-    );
-    return customer.address?.country ?? null;
-  } catch {
-    // A customer that cannot be read is a form that opens unprefilled, which is
-    // a far smaller problem than a card form that will not open.
-    return null;
-  }
+  return (await getCustomer(customerId)).country;
 }
 
 /** Remembering it, when a card says what it is. */
 export async function setCustomerCountry(customerId: string, country: string): Promise<void> {
   await stripeRequest<{ id: string }>('POST', `customers/${encodeURIComponent(customerId)}`, {
     'address[country]': country,
+  });
+}
+
+/**
+ * The two things this service reads off a customer, in one call.
+ *
+ * The **billing country** and the **default payment method**, because they are
+ * asked for together: a page that draws a wallet wants to know which card is the
+ * default and a card form wants to know where to open. Two `GET`s for two fields
+ * of one object would be two round trips to Stripe for the same answer.
+ */
+export interface StripeCustomer {
+  country: string | null;
+  /** The `pm_…` id the account charges by default, if one is set. */
+  defaultPaymentMethodId: string | null;
+}
+
+export async function getCustomer(customerId: string): Promise<StripeCustomer> {
+  const empty: StripeCustomer = { country: null, defaultPaymentMethodId: null };
+
+  try {
+    const customer = await stripeRequest<{
+      address?: { country?: string | null } | null;
+      invoice_settings?: { default_payment_method?: string | null } | null;
+    }>('GET', `customers/${encodeURIComponent(customerId)}`);
+
+    return {
+      country: customer.address?.country ?? null,
+      // An id rather than an object: nothing here expands the reference, and a
+      // caller that assumed an object would read `undefined` off a string.
+      defaultPaymentMethodId:
+        typeof customer.invoice_settings?.default_payment_method === 'string'
+          ? customer.invoice_settings.default_payment_method
+          : null,
+    };
+  } catch {
+    // A customer that cannot be read is a wallet with no default marked and a
+    // form that opens unprefilled — both far smaller problems than a page that
+    // will not load.
+    return empty;
+  }
+}
+
+/**
+ * Making one card the account's default.
+ *
+ * `invoice_settings.default_payment_method` rather than a flag on our own row,
+ * for the reason the country is on the customer too: it is the field Stripe
+ * itself charges against, so a card this service calls the default and a card
+ * Stripe would use cannot be two different cards. Detaching that card clears the
+ * field on Stripe's side, which is the behaviour a wallet wants and one less
+ * thing here to keep in step.
+ */
+export async function setDefaultPaymentMethod(
+  customerId: string,
+  paymentMethodId: string,
+): Promise<void> {
+  await stripeRequest<{ id: string }>('POST', `customers/${encodeURIComponent(customerId)}`, {
+    'invoice_settings[default_payment_method]': paymentMethodId,
   });
 }

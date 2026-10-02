@@ -50,6 +50,9 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     );
   }
 
+  // Not the default: saving a card does not change which card Stripe charges,
+  // and a screen that marked the newest one would be inventing a preference
+  // nobody expressed. The list is where the default is read.
   return ok({ paymentMethod: toSavedPaymentMethod(card) });
 }
 
