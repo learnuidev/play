@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeftIcon, ExternalLinkIcon, RefreshCwIcon, TerminalIcon } from "lucide-react";
 
 import { ChecklistView } from "@/components/backends/checklist-view";
+import { TablesView } from "@/components/backends/tables-view";
 import { useNameStage, useShell } from "@/components/console/state";
 import { DeployView } from "@/components/deploy/deploy-view";
 import { Button, IconButton } from "@/components/ui/button";
@@ -31,12 +32,14 @@ import type {
  * `/frontends/<app>` makes and for the same reasons: a link to one environment's
  * backend can be sent to somebody, the back button returns to the list, and the
  * list keeps saying what every environment is doing while you read about one.
- * The four tabs below are that page's four views, in the order they are asked:
+ * The five tabs below are that page's five views, in the order they are asked:
  * **is this environment ready** (Checklist — the things a person supplies), what
- * is in it and what came out (Env variables), what has been deployed to it, and
- * what it is saying. Which one is showing is `?tab=` — in the URL, so that a
- * reload and a link both land on the same view, and `replace`d rather than
- * pushed so the back button still leaves the page rather than walking the strip.
+ * is in it and what came out (Env variables), what has been deployed to it, what
+ * it is saying, and what it actually holds (DynamoDB tables — the one view that
+ * reads the product's own rows rather than the deployment's account of itself).
+ * Which one is showing is `?tab=` — in the URL, so that a reload and a link both
+ * land on the same view, and `replace`d rather than `pushed` so the back button
+ * still leaves the page rather than walking the strip.
  *
  * There is deliberately no 404 here, unlike `/frontends/<app>`. The set of
  * frontends is three names the console knows; the set of environments is open,
@@ -122,6 +125,7 @@ export function BackendView({ stage }: { stage: string }) {
       ) : null}
       {tab === "deployments" ? <DeploymentsTab stage={stage} /> : null}
       {tab === "logs" ? <LogsTab stage={stage} /> : null}
+      {tab === "tables" ? <TablesView stage={stage} /> : null}
     </div>
   );
 }

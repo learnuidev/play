@@ -65,3 +65,29 @@ export function stackInitials(word: string): string {
   if (word.toLowerCase() === "api") return "API";
   return word;
 }
+
+/**
+ * A table's size, as somebody would say it out loud.
+ *
+ * Decimal units, because that is what AWS reports and bills in: a table of
+ * 1,400,000 bytes is `1.4 MB` here, and it is the number a console should agree
+ * with the invoice about. Zero is `0 B` rather than a dash — an empty table is a
+ * fact, not a missing value.
+ */
+export function bytes(count: number): string {
+  if (!Number.isFinite(count) || count < 0) return "—";
+  if (count < 1000) return `${Math.round(count)} B`;
+  const units = ["kB", "MB", "GB", "TB"];
+  let value = count / 1000;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
+}
+
+/** `29 rows`, `1 row` — the console counts rows in more than one place. */
+export function plural(count: number, noun: string): string {
+  return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
+}

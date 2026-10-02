@@ -33,6 +33,7 @@ import {
   stripeWebhookSecretName,
 } from "./settings";
 import { ensureSigningKey, signingKeyParams, signingKeyState } from "./signing-key";
+import { stageTableNames } from "./tables";
 import { display, lastMeaningfulLines, run, type PipedChild } from "./exec";
 
 /**
@@ -2431,20 +2432,10 @@ async function resourcesOf(ctx: StepContext): Promise<StageResources> {
   const config = readConfig(ctx.stage);
   const before = ctx.data.resourcesBefore as { videosBucket?: string | null } | undefined;
 
-  const listedTables = await awsJson<{ TableNames?: string[] }>(["dynamodb", "list-tables"], {
-    profile: ctx.profile,
-    region: ctx.region,
-    optional: true,
-  }).catch(() => null);
-  const held = new Set(listedTables?.TableNames ?? []);
-
-  const tables = new Set<string>();
-  for (const name of Object.values(config?.existing?.tables ?? {})) {
-    if (held.has(name)) tables.add(name);
-  }
-  for (const name of held) {
-    if (name.startsWith(`play-${ctx.stage}-`)) tables.add(name);
-  }
+  // The same two sources the DynamoDB tables tab lists, in the same function —
+  // a table this tab shows and the plan does not delete is a table left behind,
+  // and one the plan deletes that the tab never showed is worse.
+  const tables = new Set(await stageTableNames(ctx.stage, { profile: ctx.profile, region: ctx.region }));
 
   const listedBuckets = await awsJson<{ Buckets?: Array<{ Name: string }> }>(["s3api", "list-buckets"], {
     profile: ctx.profile,

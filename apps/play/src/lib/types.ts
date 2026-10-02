@@ -488,6 +488,115 @@ export interface BackendLogs {
   note: string | null;
 }
 
+/* ------------------------------------------------------------------ *
+ * The tables an environment reads
+ * ------------------------------------------------------------------ */
+
+/**
+ * One table, as the list of them draws it.
+ *
+ * `key` is the label and `name` is the physical table, and both are shown: the
+ * label is what a person scans for (`PaymentsTable`) and the name is the string
+ * that goes into a CLI (`play-dev-payments-table`). They differ because the two
+ * kinds of table are named by different things — see `server/tables.ts`.
+ */
+export interface TableSummaryView {
+  /** The physical name in this account. */
+  name: string;
+  /** The logical id the config uses, or the name with the stage prefix taken off. */
+  key: string;
+  /** The config's own key, for a stage that imports its data. Null when created. */
+  logical: string | null;
+  /** Named by the config, so no deploy here can change or delete it. */
+  imported: boolean;
+}
+
+export interface TableSummaryList {
+  tables: TableSummaryView[];
+  note: string | null;
+}
+
+export interface TableKeyView {
+  name: string;
+  /** `S`, `N` or `B` — what the attribute is stored as. */
+  type: string;
+  kind: "HASH" | "RANGE";
+}
+
+export interface TableIndexView {
+  name: string;
+  keys: TableKeyView[];
+  projection: string;
+}
+
+/**
+ * What a table *is*, as `DescribeTable` answers.
+ *
+ * `itemCount` and `sizeBytes` are DynamoDB's own figures, which are updated
+ * about every six hours rather than per write — so the tab says so beside them.
+ * A count that is a few hours stale is still the only count there is: getting a
+ * live one means counting every row.
+ */
+export interface TableDetailView {
+  name: string;
+  status: string;
+  itemCount: number;
+  sizeBytes: number;
+  billingMode: string | null;
+  created: number | null;
+  keys: TableKeyView[];
+  indexes: TableIndexView[];
+  /**
+   * The attributes a `Query` can be answered from — the table's partition key and
+   * each index's — as labels like `userId via UserCreatedIndex`.
+   */
+  targets: string[];
+}
+
+/**
+ * One row, exactly as DynamoDB answered it: `{ paymentId: { S: "cs_…" } }`.
+ *
+ * The wire format and not a flattened one, because the same read is drawn twice
+ * — as a table and as JSON — and a mapping done on the server would be a second
+ * answer to "what does this row say" that only one of the two renderings used.
+ * `lib/dynamo.ts` is the one place it is turned into something a person reads.
+ */
+export type DynamoRow = Record<string, unknown>;
+
+/**
+ * A page of rows, and what reading them cost.
+ *
+ * `scanned` against `matched` is the number that matters on a filtered read:
+ * DynamoDB applies a filter *after* it has read the rows, so a scan that returns
+ * five rows may have read fifty thousand, and the two counts are the only place
+ * that is visible from a browser.
+ */
+export interface TableItemsView {
+  rows: DynamoRow[];
+  matched: number;
+  scanned: number;
+  /** The CLI's own cursor for the next page, opaque and handed back untouched. */
+  token: string | null;
+  /**
+   * Which call answered it. A `Query` needs a partition key and reads what it
+   * returns; a `Scan` reads the table to find it.
+   */
+  via: "query" | "scan";
+  /** The read, written out — `Query on the key: spaceId = "sp_…"`. */
+  expression: string | null;
+  /**
+   * What the value was compared as: `S`, `N` or `BOOL`.
+   *
+   * Sent back because the form may have left it to the table to decide, and
+   * because it is the answer to the question a read that matched nothing raises:
+   * an `N` compared as an `S` matches nothing, and the type is the half of that
+   * nobody can see in the value they typed. Null when nothing was compared.
+   */
+  valueType: string | null;
+  indexName: string | null;
+  note: string | null;
+}
+
 /**
  * One row of an environment's variables.
  *

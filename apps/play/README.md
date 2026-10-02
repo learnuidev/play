@@ -231,6 +231,53 @@ For a frontend: the `next dev` output, straight from the process the console
 started — including one started before the page was opened, because the server
 keeps the buffer.
 
+### DynamoDB tables — the one view that reads the product
+
+Everything else in the console describes the *deployment*: what it needs, what it
+published, what CloudFormation did, what it logged. This tab reads the rows —
+whether the webhook wrote the payment, whether the membership is there, whether a
+profile picked up the name somebody typed. Those questions otherwise end in a
+terminal and a shell history nobody else can read, which is this console's whole
+reason for existing.
+
+The table is picked first, because everything below it is about that table, and
+there are then **two views** of it — `?view=`, so `?tab=tables&view=info` is a
+link somebody can be sent:
+
+| View | What it is |
+| --- | --- |
+| **Data** | A page of rows, as a table (TanStack Table, sortable within the page) or as JSON. The JSON is the CLI's own output, `{ S: … }` wrappers and all, because that is the form that can be pasted back into `put-item` |
+| **Info** | What the table *is*, from `DescribeTable`: status, size, key schema, indexes — and the row count, which DynamoDB refreshes about every six hours rather than per write |
+
+**Aiming a read is a button on the Data view, not a third view.** Pressing
+**query** opens the form *over* the table and pressing it again puts it away: a
+query is something done to the rows in front of you, so the rows stay where they
+are and the answer appears under the form that asked for it. As a view it would
+have made "where am I" and "what am I doing" the same question, and running a
+query would have moved you somewhere to show you the result.
+
+The form is an attribute, an operator, a value and a type. **The two calls are
+not the same read, and the tab says which one it made.** A `Query` needs a
+partition key, and this tab knows which attributes those are because
+`DescribeTable` says so: asking about a key is one round trip that reads what it
+returns. Anything else is a `Scan` with a filter, which reads the table and
+throws away what does not match — so the read is written out above the rows and
+the counts underneath say how many rows it actually read. The keys are offered as
+buttons, because that is the difference between one round trip and a full table
+read and nobody should have to read a schema to take it.
+
+Two smaller decisions worth knowing. The **type** of a value is always part of
+what the tab says — `S`, `N`, `BOOL`, in words — because `172348` and `"172348"`
+look identical and match differently, and a read that matched nothing says so
+when the value looks numeric. And the **rows are sent to the browser exactly as
+DynamoDB answered them**: both renderings come from one read, and a mapping in
+the server would be a second answer to "what does this row say" that only one of
+them used.
+
+**It reads and never writes.** `DescribeTable`, `Query`, `Scan` — there is no
+edit field and no delete button anywhere on it, deliberately: a control room that
+can change the product's rows is one where a slip is data loss with no undo.
+
 ## Why it is a step at all
 
 `cdk deploy` is one command, and the checklist around it is the point. A stage
@@ -753,6 +800,11 @@ src/app/api/
                    CloudFormation's own history            (GET)
   backends/[stage]/logs
                    the stage's functions, or one's logs    (GET)
+  backends/[stage]/tables
+                   the stage's tables, or one table's      (GET)
+                   shape and a page of its rows —
+                   `?table=`, and the form's `attribute`,
+                   `operator`, `value` and `type`
   frontends/[app]/env
                    what one app is handed, for one stage   (GET)
   vercel           projects, deployments, env vars,       (GET / PUT)

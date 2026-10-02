@@ -168,6 +168,13 @@ function listOf(parts: string[]): string {
  * row that says which of them is missing. Env variables is the read-only half of
  * the same picture: the outputs a deploy published and the inputs it read.
  *
+ * **DynamoDB tables is last because it is the deepest** — it is the one view
+ * that reads the product's own rows rather than the deployment's description of
+ * itself, and it is reached for a specific question ("did the webhook write this
+ * payment?") rather than read on the way past. Putting it beside Logs is
+ * deliberate: they are the two tabs somebody opens when something did not
+ * happen, and they are the two that answer "what did it actually do".
+ *
  * Which one is showing is `?tab=`, and the list below is the whole of what a URL
  * may ask for: `useTabParam` matches against it and treats anything else as the
  * first tab, so a link written before a tab existed still lands somewhere real.
@@ -192,5 +199,10 @@ export const BACKEND_TABS = [
     id: "logs",
     label: "Logs",
     hint: "CloudWatch, one function at a time. Event-driven functions first — they are the ones with nowhere else to speak.",
+  },
+  {
+    id: "tables",
+    label: "DynamoDB tables",
+    hint: "Every table this environment reads, what is in one, and a page of its rows. Read-only: the console queries and scans, and never writes.",
   },
 ] as const;
