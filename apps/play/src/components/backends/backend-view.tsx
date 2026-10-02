@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeftIcon, ExternalLinkIcon, RefreshCwIcon } from "lucide-react";
 
 import { ChecklistView } from "@/components/backends/checklist-view";
-import { DeployButton } from "@/components/backends/deploy-button";
+import { DeployAction } from "@/components/deploy/deploy-action";
+import { BACKEND_RUN, useDeploy, type DeployState } from "@/components/deploy/use-deploy";
 import { LogsView } from "@/components/backends/logs-view";
 import { TablesView } from "@/components/backends/tables-view";
 import { useNameStage, useShell } from "@/components/console/state";
@@ -59,6 +60,18 @@ export function BackendView({ stage }: { stage: string }) {
   const reading = state === null;
   /** Null when there is nothing worth a line — see `backendBlurb`. */
   const blurb = backendBlurb(environment);
+  /** The run going against this environment, in either direction. */
+  const running = runningFor(runs, stage);
+
+  /**
+   * This environment's run — one instance for the whole page.
+   *
+   * The header carries the Deploy button, and the Deployments tab draws the run
+   * it starts, so the two have to be the *same* run: a hook per component would
+   * be two streams, and pressing the button would leave the checklist behind it
+   * waiting for a run it never hears about.
+   */
+  const deploy = useDeploy(BACKEND_RUN, { stage });
 
   // The environment in the path becomes the environment the rest of the console
   // is looking at — the chip in the bar, and what a frontend would be started
@@ -95,13 +108,40 @@ export function BackendView({ stage }: { stage: string }) {
             </Chip>
           )}
 
-          {/* The environment's own Deploy, in the corner: the same press the
-              list row and the Deployments tab make, for the fourth deploy of an
-              environment that has been up for months rather than for a first
-              one. The checklist is still where a first deploy is read, and the
-              button's own title says which plan it runs. */}
-          <div className="ml-auto">
-            <DeployButton stage={stage} running={runningFor(runs, stage)} onStarted={refreshRuns} />
+          {/* The environment's Deploy, in the corner — and it is **the same
+              control as the deploy page's**, down to the primary variant and the
+              label: one component, `DeployAction`, so the two can never drift
+              into a small grey button on one screen and the real one on another.
+
+              Pressing it starts the same run and then opens the tab that is the
+              deploy page, because that is where a run is read: the checklist,
+              the transcript, and the button that would stop it. On that tab the
+              header shows nothing — that card below already carries this
+              button, and two of them on one screen is one too many. */}
+          <div className="ml-auto flex flex-col items-end gap-1">
+            <DeployAction
+              stage={stage}
+              // The press, and then the console's own list of what is running:
+              // the chip beside the name comes from that list, and without the
+              // nudge it would take its next scheduled read — up to fifteen
+              // seconds — to say "deploying" about a run that is already going.
+              onDeploy={() => {
+                void deploy.start({ stage }).then(() => refreshRuns());
+              }}
+              busy={deploy.starting}
+              disabled={running !== null}
+              title={
+                running
+                  ? `A ${running.action === "destroy" ? "delete" : "deploy"} is already running against ${stage}`
+                  : `Deploy ${stage} — the same plan the Deployments tab runs`
+              }
+            />
+            {/* The refusal goes beside the button that produced it. On the
+                Deployments tab the page's own banner says the same thing, and
+                one sentence twice is worse than once. */}
+            {deploy.error && tab !== "deployments" ? (
+              <span className="text-destructive max-w-64 text-right text-xs">{deploy.error}</span>
+            ) : null}
           </div>
         </div>
 
@@ -135,7 +175,7 @@ export function BackendView({ stage }: { stage: string }) {
       {tab === "env" ? (
         <EnvTab stage={stage} environment={environment} reading={reading} />
       ) : null}
-      {tab === "deployments" ? <DeploymentsTab stage={stage} /> : null}
+      {tab === "deployments" ? <DeploymentsTab stage={stage} deploy={deploy} /> : null}
       {tab === "logs" ? <LogsView stage={stage} /> : null}
       {tab === "tables" ? <TablesView stage={stage} /> : null}
     </div>
@@ -258,7 +298,7 @@ function EnvTab({
  * Tab 2 — deployments
  * ------------------------------------------------------------------ */
 
-function DeploymentsTab({ stage }: { stage: string }) {
+function DeploymentsTab({ stage, deploy }: { stage: string; deploy: DeployState }) {
   const [history, setHistory] = useState<DeploymentHistoryView | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -282,7 +322,7 @@ function DeploymentsTab({ stage }: { stage: string }) {
       {/* The checklist is the console's whole reason for existing, so it is
           rendered here rather than summarised — this tab *is* the deploy page,
           and the environment it runs against is the one in the URL. */}
-      <DeployView stage={stage} embedded />
+      <DeployView stage={stage} deploy={deploy} embedded />
 
       <Card>
         <CardHeading

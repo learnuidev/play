@@ -1,8 +1,7 @@
 "use client";
 
-import { RocketIcon, ShieldAlertIcon } from "lucide-react";
+import { ShieldAlertIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Chip, Dot, Spinner, type Tone } from "@/components/ui/chip";
 import { backendState, STACK_WORDS } from "@/lib/backends";
@@ -32,17 +31,12 @@ export function EnvironmentCard({
   stage,
   environment,
   state,
-  onDeploy,
-  deployable,
-  busy,
   activity,
 }: {
   stage: string;
   environment: EnvironmentView | null;
   state: ConsoleState | null;
-  onDeploy: () => void;
-  deployable: boolean;
-  busy: boolean;
+
   /** A run against this stage is going — possibly started in another tab. */
   activity: RunAction | null;
 }) {
@@ -81,15 +75,9 @@ export function EnvironmentCard({
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          onClick={onDeploy}
-          disabled={!deployable}
-          busy={busy}
-          icon={<RocketIcon className="size-4" />}
-        >
-          Deploy {stage}
-        </Button>
+        {/* No Deploy button here: it lives in the page header, top right, where
+            it is reachable from every tab rather than only from this one. The
+            card is what this environment *is*; the button is in the chrome. */}
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4">

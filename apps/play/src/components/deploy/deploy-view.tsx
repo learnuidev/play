@@ -21,7 +21,7 @@ import { EnvironmentCard } from "@/components/deploy/environment-card";
 import { DestroyCard } from "@/components/deploy/destroy-card";
 import { StepList } from "@/components/deploy/step-list";
 import { Transcript } from "@/components/deploy/transcript";
-import { BACKEND_RUN, useDeploy } from "@/components/deploy/use-deploy";
+import type { DeployState } from "@/components/deploy/use-deploy";
 import { useSettings } from "@/components/settings/use-settings";
 import { useShell } from "@/components/console/state";
 import { backendPath } from "@/lib/backends";
@@ -51,11 +51,24 @@ import type { RunStatus, StepView } from "@/lib/types";
  * wrong in the loudest possible way.
  */
 
-export function DeployView({ stage, embedded = false }: { stage: string; embedded?: boolean }) {
+export function DeployView({
+  stage,
+  deploy,
+  embedded = false,
+}: {
+  stage: string;
+  /**
+   * The run for this environment, from the page that owns it.
+   *
+   * A prop rather than a hook of this view's own, because the page header
+   * carries the Deploy button now: one `useDeploy` for the whole page means the
+   * button and this checklist are the same run, and starting one from the
+   * header is followed here without a second stream or a reload.
+   */
+  deploy: DeployState;
+  embedded?: boolean;
+}) {
   const { state, runs } = useShell();
-  // Scoped to this environment: with two stages deploying at once, "the run" is
-  // not a thing this page can ask for.
-  const deploy = useDeploy(BACKEND_RUN, { stage });
 
   const environment = state?.environments.find((item) => item.stage === stage) ?? null;
   // Whether there is a config file is a fact about the repository, so it is only
@@ -127,10 +140,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
         stage={stage}
         environment={environment}
         state={state}
-        deployable={!running}
-        busy={deploy.starting}
         activity={activity}
-        onDeploy={() => void deploy.start({ stage })}
       />
 
       {unknown ? (
@@ -339,7 +349,7 @@ export function DeployView({ stage, embedded = false }: { stage: string; embedde
  * they come from. A card that recited what a delete *usually* leaves would be a
  * second description of the plan, which is the one thing this app does not do.
  */
-function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["run"]> }) {
+function DeletedCard({ run }: { run: NonNullable<DeployState["run"]> }) {
   const total = run.finishedAt ? run.finishedAt - run.startedAt : 0;
   // Read off the steps rather than assumed, both of them: a stage that had no
   // config file deletes just as cleanly, and the card should not claim to have
@@ -401,7 +411,7 @@ function DeletedCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["r
  * What came out
  * ------------------------------------------------------------------ */
 
-function ResultCard({ run }: { run: NonNullable<ReturnType<typeof useDeploy>["run"]> }) {
+function ResultCard({ run }: { run: NonNullable<DeployState["run"]> }) {
   const result = run.result!;
   const total = run.finishedAt ? run.finishedAt - run.startedAt : 0;
 
