@@ -60,7 +60,7 @@ export default function BillingHistoryPage() {
       <header>
         <h2 className="text-base font-semibold tracking-tight">Billing history</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Every course you have paid for, and every checkout that did not go through.
+          Every course you have paid for, and what became of the payments that did not go through.
         </p>
       </header>
 
@@ -281,6 +281,12 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
  * nobody finished, and to a person reading their own history that is "you
  * started this and did not go through with it" rather than anything about a
  * session having lapsed.
+ *
+ * `PENDING` is spelled out although no row on this screen can be one — the API
+ * leaves payments still in flight out of the receipts, because a checkout page
+ * somebody closed is not a fact about money. It is here because the status has
+ * five values and a switch that knew four would not compile, which is the type
+ * doing its job rather than a case this screen expects to draw.
  */
 function statusSentence(status: PaymentStatus): string {
   switch (status) {

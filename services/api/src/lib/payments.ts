@@ -88,6 +88,11 @@ export function isRefundable(payment: Payment, now: number = Date.now()): boolea
  * are counted in tens, and the two callers that are not the billing history —
  * "did they buy this course", "is this a purchase" — cannot answer from a page.
  * The ceiling is a stop for a pathological account rather than a page size.
+ *
+ * **Everything includes the attempts**, which is what those two questions need:
+ * an intent opened on a checkout page is a payment that exists, and whether it
+ * is `PAID` is the answer either way. A caller drawing a list of *receipts* is
+ * the one that leaves them out — see `functions/payments/list-payments.ts`.
  */
 const MY_PAYMENTS_CEILING = 500;
 
