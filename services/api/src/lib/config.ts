@@ -71,6 +71,47 @@ export const env = {
     'STRIPE_PUBLISHABLE_KEY_PARAM',
     process.env.STRIPE_PUBLISHABLE_KEY_PARAM,
   ),
+  /**
+   * The Stripe **product tax code** every course is sold under.
+   *
+   * Not optional and not cosmetic. Stripe's *Managed Payments* is enabled by default
+   * on a new account, and it refuses to open a checkout session for a product with
+   * no tax code:
+   *
+   *   Invalid line_items[0]: the product tax code is missing. Set the product's
+   *   tax_code field to an eligible product tax code.
+   *
+   * Which code is a **tax classification**, not a technical choice, and it is the
+   * one thing here this repository cannot decide for the product. The default is the
+   * closest match to what a Play course is — video lessons streamed over the web,
+   * bought once, watched but not owned:
+   *
+   *   txcd_10402000  Digital Audio Visual Works - streamed - non subscription -
+   *                  with limited rights
+   *
+   * Stripe's own list is the authority, and the candidates a course might reasonably
+   * be instead are worth knowing by name, because their descriptions are what
+   * decides it:
+   *
+   *   txcd_10000000  General - Electronically Supplied Services — the catch-all for
+   *                  a digital service; Stripe asks you to prefer something more
+   *                  specific "especially if you sell in the US".
+   *   txcd_20060058  Training Services - Self-study Web-based — for a course taught
+   *                  rather than watched, and it explicitly *excludes* "downloads or
+   *                  streaming of video replays", which is why it is not the default.
+   *   txcd_20060052  Educational Services — academic classes from a school.
+   *
+   * Read the whole list for the account this is deploying to with:
+   *
+   *   curl -H "Authorization: Bearer $STRIPE_SECRET_KEY" \
+   *     "https://api.stripe.com/v1/tax_codes?limit=100" | jq '.data[] | "\(.id)  \(.name)"'
+   *
+   * Changing it is a value, not a code change: the function's own `environment` in
+   * `infra/src/generated/service.ts`, beside `BEDROCK_MODEL_ID`. Prices already made
+   * carry the old code, and the next checkout replaces them — see `productTaxCode`
+   * in `lib/stripe`.
+   */
+  stripeProductTaxCode: process.env.STRIPE_PRODUCT_TAX_CODE ?? 'txcd_10402000',
   bucket: required('VIDEOS_BUCKET', process.env.VIDEOS_BUCKET),
   cloudfrontDomain: required('CLOUDFRONT_DOMAIN', process.env.CLOUDFRONT_DOMAIN),
   /**

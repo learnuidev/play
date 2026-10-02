@@ -76,6 +76,25 @@ export interface StripePrice {
   active: boolean;
   currency: string;
   unit_amount: number | null;
+  /**
+   * The product it belongs to. An **object** when the request asked Stripe to
+   * expand it — which `findPrice` does — and a bare id otherwise, because that is
+   * what the API does with an unexpanded reference.
+   */
+  product?: string | { id: string; tax_code?: string | null };
+}
+
+/**
+ * The tax code of the product a price is for, or null.
+ *
+ * Read through the two shapes `product` comes in, so that a caller cannot get an
+ * empty answer merely because nothing expanded the reference: "no tax code" and "I
+ * did not ask" would otherwise be the same null, and they mean opposite things.
+ */
+export function productTaxCode(price: StripePrice): string | null {
+  return typeof price.product === 'object' && price.product !== null
+    ? (price.product.tax_code ?? null)
+    : null;
 }
 
 /**
@@ -95,7 +114,13 @@ export interface StripePrice {
  */
 export async function findPrice(priceId: string): Promise<StripePrice | null> {
   try {
-    return await stripeRequest<StripePrice>('GET', `prices/${encodeURIComponent(priceId)}`);
+    // The product is expanded rather than fetched separately: whether the price is
+    // still usable depends on the *product's* tax code, and a price fetched without
+    // it would answer "no tax code" for every price ever made.
+    return await stripeRequest<StripePrice>(
+      'GET',
+      `prices/${encodeURIComponent(priceId)}?expand[]=product`,
+    );
   } catch {
     // A price that has been deleted in the dashboard, or an id that belongs to
     // another Stripe account — the caller's answer is the same either way: make
@@ -117,11 +142,27 @@ export async function createPrice(input: {
   title: string;
   amountCents: number;
   currency: string;
+  /**
+   * The product tax code, required rather than optional.
+   *
+   * Not defaulted here: a default in this function would be a second place the
+   * classification is decided, and the one that is wrong is always the one nobody
+   * looked at. `lib/config` holds the deployment's answer; this takes it.
+   */
+  taxCode: string;
 }): Promise<StripePrice> {
   return stripeRequest<StripePrice>('POST', 'prices', {
     currency: input.currency,
     unit_amount: String(input.amountCents),
     'product_data[name]': input.title,
+    // The tax code belongs to the *product*, and the product is created inline with
+    // the price, so this is the only place it can be set in one call. Stripe accepts
+    // any string here and validates it when a session is opened, which is why a
+    // wrong code shows up as a failed checkout rather than a failed price.
+    'product_data[tax_code]': input.taxCode,
+    // Expanded back, so the caller sees the code it just set rather than the id of
+    // a product it would have to fetch to check.
+    'expand[]': 'product',
   });
 }
 

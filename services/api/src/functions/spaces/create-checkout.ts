@@ -5,7 +5,7 @@ import { HttpError, handle, ok, pathParam } from '../../lib/http';
 import { recordPayment } from '../../lib/payments';
 import { getSpaceMember } from '../../lib/space-members';
 import { getSpace, setSpaceStripePrice } from '../../lib/spaces';
-import { createCheckoutSession, createPrice, findPrice } from '../../lib/stripe';
+import { createCheckoutSession, createPrice, findPrice, productTaxCode } from '../../lib/stripe';
 
 /**
  * Sending a learner to Stripe to pay for a course.
@@ -67,6 +67,7 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
     title: space.title,
     priceCents,
     currency,
+    taxCode: env.stripeProductTaxCode,
     cachedPriceId: space.stripePriceId,
   });
 
@@ -124,17 +125,26 @@ async function main(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult>
 /**
  * The Stripe price this course is sold at right now.
  *
- * The cached id is used only when Stripe still has that price, it is active, and
- * it is for exactly this amount and currency. Anything else is a new price — and
- * the write-back is conditional on the course's price not having changed while
- * this was in flight, so two checkouts racing after an author edits the amount do
- * not leave the course pointing at whichever finished last.
+ * The cached id is used only when Stripe still has that price, it is active, it is
+ * for exactly this amount and currency, and **its product carries this deployment's
+ * tax code**. Anything else is a new price — and the write-back is conditional on
+ * the course's price not having changed while this was in flight, so two checkouts
+ * racing after an author edits the amount do not leave the course pointing at
+ * whichever finished last.
+ *
+ * That last check is not belt-and-braces. Stripe validates the tax code when a
+ * *session* is opened, not when the price is made, so a price created before this
+ * deployment set a code — or before the code was changed — is a price that fails
+ * every checkout with a message about the line item while looking perfectly
+ * healthy in the dashboard. Checking it here is what makes such a price get
+ * replaced rather than reused.
  */
 async function priceForCourse(input: {
   spaceId: string;
   title: string;
   priceCents: number;
   currency: string;
+  taxCode: string;
   cachedPriceId?: string;
 }): Promise<{ id: string }> {
   if (input.cachedPriceId) {
@@ -142,7 +152,12 @@ async function priceForCourse(input: {
     if (
       cached?.active &&
       cached.unit_amount === input.priceCents &&
-      cached.currency === input.currency
+      cached.currency === input.currency &&
+      // Not belt-and-braces: Stripe validates the tax code when a *session* is
+      // opened, not when the price is made, so a price with none is a price that
+      // fails every checkout with a message about the line item while looking
+      // perfectly healthy in the dashboard.
+      productTaxCode(cached) === input.taxCode
     ) {
       return { id: cached.id };
     }
@@ -152,6 +167,7 @@ async function priceForCourse(input: {
     title: input.title,
     amountCents: input.priceCents,
     currency: input.currency,
+    taxCode: input.taxCode,
   });
 
   await setSpaceStripePrice(input.spaceId, created.id, {
