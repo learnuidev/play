@@ -175,6 +175,8 @@ function BackendRow({
 }) {
   const status = backendState(environment, account, running?.action ?? null);
   const stacks = environment?.stacks ?? [];
+  /** Null when there is nothing worth a line — see `backendBlurb`. */
+  const blurb = backendBlurb(environment);
   const complete = stacks.filter((stack) => stack.healthy).length;
 
   const [starting, setStarting] = useState(false);
@@ -231,9 +233,14 @@ function BackendRow({
               </Chip>
             )}
           </div>
-          <p className="text-muted-foreground mt-1.5 text-sm">
-            {loading ? "Reading the environment…" : backendBlurb(environment)}
-          </p>
+          {/* Nothing at all for an environment whose blurb is empty — an
+              importing stage — rather than a paragraph with nothing in it,
+              which is the space a line takes without saying anything. */}
+          {loading ? (
+            <p className="text-muted-foreground mt-1.5 text-sm">Reading the environment…</p>
+          ) : blurb ? (
+            <p className="text-muted-foreground mt-1.5 text-sm">{blurb}</p>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">

@@ -125,8 +125,16 @@ export function runProgress(run: RunSummary): string {
  * because that is what decides whether a deploy here can change what another
  * environment reads. `dev` imports; a new environment creates. So the sentence
  * leads with the data rather than with the API.
+ *
+ * **An importing environment gets no line at all.** It used to say how many
+ * tables it imports and that they are shared with every other importing stage —
+ * a fact about *resources* rather than about this environment, repeated by every
+ * screen that mentions the environment. The tabs that show those resources are
+ * where it belongs: the tables tab lists them by name, and the Deployments tab is
+ * where a deploy that cannot touch them is run. What is left above it — the
+ * stage, its state, its address — is what the environment *is*.
  */
-export function backendBlurb(environment: EnvironmentView | null): string {
+export function backendBlurb(environment: EnvironmentView | null): string | null {
   if (!environment) {
     return (
       "No config file yet — that is what the plan's third step writes. " +
@@ -137,21 +145,7 @@ export function backendBlurb(environment: EnvironmentView | null): string {
     return "Creates everything it stands on — its own tables, videos bucket, distribution and user pool.";
   }
 
-  const imported = [
-    environment.tables > 0 ? `${environment.tables} tables` : null,
-    environment.ownership?.media === false ? "the videos bucket" : null,
-    environment.ownership?.auth === false ? "the user pool" : null,
-  ].filter((part): part is string => part !== null);
-
-  return imported.length
-    ? `Imports ${listOf(imported)} — shared with every other stage that imports them, so a deploy here points at the same data.`
-    : "Imports what it stands on — an imported resource is one a deploy can neither change nor delete.";
-}
-
-/** `["a", "b", "c"]` → `a, b and c`. */
-function listOf(parts: string[]): string {
-  if (parts.length < 2) return parts[0] ?? "";
-  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  return null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -175,6 +169,12 @@ function listOf(parts: string[]): string {
  * deliberate: they are the two tabs somebody opens when something did not
  * happen, and they are the two that answer "what did it actually do".
  *
+ * **A `hint` is the line the strip draws under itself**, and a tab is better off
+ * without one when its screen already says what it is. The Checklist has none:
+ * its rows are the sentence — a tick and the reason beside it — and a paragraph
+ * above them explaining that a tick means a requirement is met is one screen
+ * telling somebody the same thing twice.
+ *
  * Which one is showing is `?tab=`, and the list below is the whole of what a URL
  * may ask for: `useTabParam` matches against it and treats anything else as the
  * first tab, so a link written before a tab existed still lands somewhere real.
@@ -183,7 +183,6 @@ export const BACKEND_TABS = [
   {
     id: "checklist",
     label: "Checklist",
-    hint: "What this environment needs from a person — its config file, the Google credentials nothing can discover, and the signing key the console generates. A tick is a requirement that is met.",
   },
   {
     id: "env",

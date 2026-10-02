@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeftIcon, ExternalLinkIcon, RefreshCwIcon } from "lucide-react";
 
 import { ChecklistView } from "@/components/backends/checklist-view";
+import { DeployButton } from "@/components/backends/deploy-button";
 import { LogsView } from "@/components/backends/logs-view";
 import { TablesView } from "@/components/backends/tables-view";
 import { useNameStage, useShell } from "@/components/console/state";
@@ -42,7 +43,7 @@ import type { BackendEnvView, DeploymentHistoryView, EnvironmentView } from "@/l
  */
 
 export function BackendView({ stage }: { stage: string }) {
-  const { state, runs } = useShell();
+  const { state, runs, refreshRuns } = useShell();
   const nameStage = useNameStage();
   // The tab lives in the URL rather than in this component: `?tab=logs` is what a
   // reload, the back button and a link somebody is sent all have in common.
@@ -56,6 +57,8 @@ export function BackendView({ stage }: { stage: string }) {
   );
   /** Before the first read, nothing about this environment is known — not even whether it exists. */
   const reading = state === null;
+  /** Null when there is nothing worth a line — see `backendBlurb`. */
+  const blurb = backendBlurb(environment);
 
   // The environment in the path becomes the environment the rest of the console
   // is looking at — the chip in the bar, and what a frontend would be started
@@ -92,23 +95,38 @@ export function BackendView({ stage }: { stage: string }) {
             </Chip>
           )}
 
-          {environment?.apiUrl ? (
-            <a
-              href={environment.apiUrl}
-              target="_blank"
-              rel="noreferrer"
-              title={`Open ${environment.apiUrl}`}
-              className="border-border/70 bg-card hover:bg-accent ml-auto inline-flex h-8 max-w-full items-center gap-2 rounded-full border px-3 text-xs font-medium transition-colors"
-            >
-              <span className="truncate font-mono">{apiHost(environment.apiUrl)}</span>
-              <ExternalLinkIcon className="size-3.5 shrink-0" />
-            </a>
-          ) : null}
+          {/* The environment's own Deploy, in the corner: the same press the
+              list row and the Deployments tab make, for the fourth deploy of an
+              environment that has been up for months rather than for a first
+              one. The checklist is still where a first deploy is read, and the
+              button's own title says which plan it runs. */}
+          <div className="ml-auto">
+            <DeployButton stage={stage} running={runningFor(runs, stage)} onStarted={refreshRuns} />
+          </div>
         </div>
 
-        <p className="text-muted-foreground text-sm">
-          {reading ? "Reading the environment…" : backendBlurb(environment)}
-        </p>
+        {/* The address of this environment, on its own line under its name
+            rather than out at the right: it is what the environment *is* — the
+            thing somebody pastes into a client, an `.env` or a bug report — and
+            not a control competing with the one button on the page. */}
+        {environment?.apiUrl ? (
+          <a
+            href={environment.apiUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open ${environment.apiUrl}`}
+            className="border-border/70 bg-card hover:bg-accent inline-flex h-8 w-fit max-w-full items-center gap-2 rounded-full border px-3 text-xs font-medium transition-colors"
+          >
+            <span className="truncate font-mono">{apiHost(environment.apiUrl)}</span>
+            <ExternalLinkIcon className="size-3.5 shrink-0" />
+          </a>
+        ) : null}
+
+        {reading ? (
+          <p className="text-muted-foreground text-sm">Reading the environment…</p>
+        ) : blurb ? (
+          <p className="text-muted-foreground text-sm">{blurb}</p>
+        ) : null}
       </header>
 
       <Tabs tabs={BACKEND_TABS} value={tab} onChange={select} />

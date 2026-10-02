@@ -53,13 +53,23 @@ should be looking at.
 
 Starting a frontend is **above the tabs**, beside the environment it would be
 started against: it is the page's subject rather than one of its three views. A
-backend has no equivalent control there, because its equivalent *is* one of the
-tabs — the Deployments tab is the deploy page, and the six-hundred-word
-consequences of pressing the button belong next to the button. The **short
-Deploy on each row of the list** is the other half of that trade: the same press,
-one page earlier, for the fourth deploy of an environment that has been up for
-months. It is the small secondary button rather than the primary one, and the
-Deployments tab is still where the checklist is read before a first deploy.
+backend's page has the same shape — a short **Deploy** in the corner of its
+header, beside the stage's name and state — and it is the *same press* as the
+Deployments tab's and as the list row's, because it is the same component
+(`backends/deploy-button.tsx`). Two implementations of a control that writes to
+AWS would be two answers to "what does this button say while a run is going", and
+that is the one question about it that has to have one answer.
+
+What the header's Deploy is *for* is the fourth deploy of an environment that has
+been up for months. The Deployments tab is still where a first one is read: it
+holds the fourteen-step checklist and the transcript, and the header button's own
+title says it runs the same plan. It is the small secondary button rather than the
+primary one, so the tab's button remains the page's subject.
+
+The stage's **address** sits on its own line under its name rather than in that
+corner: it is what the environment *is* — the thing somebody pastes into a
+client, an `.env` or a bug report — and not a control competing with the one
+button above the tabs.
 
 ### Why `/backends` is a list of environments
 
